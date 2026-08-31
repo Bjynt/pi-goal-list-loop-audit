@@ -19,7 +19,7 @@
  * extracted in a later step. This file has no flags of its own.
  */
 
-import { appendLedger, type State } from "./goal-loop-core.js";
+import { appendStateSnapshot, type State } from "./goal-loop-core.js";
 
 /** The single mutable state object. goal.ts reads `state.goal` etc. through
  * this imported binding (property reads/mutations are fine); replacing the
@@ -70,23 +70,5 @@ export function replaceState(next: State): void {
  * The UI side of a persist (notifyPersistenceState / refreshUI) is goal.ts's
  * wrapper — this is the disk write, not the HUD. */
 export function persistStateLine(cwd: string, s: State): boolean {
-  return appendLedger(cwd, "state", {
-    goal: s.goal,
-    list: s.list ?? [],
-    loop: s.loop ?? null,
-    mainModelRecovery: s.mainModelRecovery ?? null,
-    lastModelRef: s.lastModelRef,
-    ...(typeof s.lastCompactionAt === "number" ? { lastCompactionAt: s.lastCompactionAt } : { lastCompactionAt: null }),
-    ...(typeof s.supervisorPausedAt === "number" ? { supervisorPausedAt: s.supervisorPausedAt } : { supervisorPausedAt: null }),
-    ...(typeof s.loadHoldAt === "number" ? { loadHoldAt: s.loadHoldAt } : { loadHoldAt: null }),
-    // v0.35.34 (audit finding 2026-08-23): v0.35.30 claimed a DURABLE
-    // last-outcome record but this writer never serialized it — the field
-    // died with the process and any restart blanked the widget retention
-    // line within its 24h window (the exact failure v0.35.30 fixed). Same
-    // latent class as the lastCompactionAt trap documented above.
-    // ALWAYS serialized (null when absent): readState spreads successive
-    // state events, so an omitted key would resurrect the previous value
-    // and /glla wipe could never clear the record from disk.
-    ...(s.lastOutcome ? { lastOutcome: s.lastOutcome } : { lastOutcome: null }),
-  });
+  return appendStateSnapshot(cwd, s);
 }

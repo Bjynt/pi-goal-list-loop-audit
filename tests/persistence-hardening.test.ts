@@ -287,7 +287,14 @@ test("E1: all four persistence entry points run through runPersistStep", () => {
 
 test("E1: archive removes the active md ONLY when the archive landed", () => {
   assert.match(GOAL, /const archived = runPersistStep\("archiveCurrentGoal"[\s\S]*?\) === true;/);
-  assert.match(GOAL, /if \(archived\) \{\s*\n\s*try \{ fs\.unlinkSync\(goalMdPath/);
+  assert.match(GOAL, /writeArchiveIntent\(ctx\.cwd, \{/);
+  assert.match(GOAL, /updateArchiveIntentPhase\(ctx\.cwd, "published"\)/);
+  assert.match(GOAL, /updateArchiveIntentPhase\(ctx\.cwd, "state-persisted"\)/);
+  assert.match(GOAL, /finalizeArchiveIntent\(ctx\.cwd, goal\.id\)/);
+  const statePersisted = GOAL.indexOf("const terminalStateLanded = persistState(ctx);");
+  const finalized = GOAL.indexOf("finalizeArchiveIntent(ctx.cwd, goal.id)");
+  assert.ok(statePersisted >= 0 && finalized > statePersisted, "active markdown cleanup follows terminal state persistence");
+  assert.doesNotMatch(GOAL.slice(0, statePersisted), /fs\.unlinkSync\(goalMdPath/, "archive publication must not remove active markdown early");
 });
 
 test("E1: archive destination is exclusive and cannot clobber a winner", () => {

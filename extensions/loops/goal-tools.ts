@@ -112,7 +112,7 @@ import {
   writeGoalMd,
   writeQueueItemFile,
   readQueueFromDisk,
-  deleteQueueItemFile,
+  deleteQueueItemFileResult,
   missingGllaTools,
   runPersistStep,
   isPersistenceDegraded,
@@ -2790,7 +2790,15 @@ function registerAgentTools(pi: any): void {
         const srcId = repairTarget.id;
         const queuedSrc = listQueue().find((q: NonNullable<State["list"]>[number]) => q.id === srcId);
         if (queuedSrc && queuedSrc.objective === repairTarget.objective && !queuedSrc.repairTarget) {
-          deleteQueueItemFile(liveCtx.cwd, srcId);
+          const deletedSource = deleteQueueItemFileResult(liveCtx.cwd, srcId);
+          if (deletedSource.failed) {
+            appendLedger(liveCtx.cwd, "faulty_objective_source_consume_failed", { targetId: srcId, path: deletedSource.path });
+            liveCtx.ui.notify("The repaired source item remains queued because its durable sidecar could not be removed. Fix disk access and retry the repair completion.", "warning");
+            return {
+              content: [{ type: "text", text: "Repair accepted, but the original source item was kept queued because its durable sidecar could not be removed." }],
+              details: {},
+            };
+          }
           replaceState({ ...state, list: listQueue().filter((q: NonNullable<State["list"]>[number]) => q.id !== srcId) });
           persistState(liveCtx);
           appendLedger(liveCtx.cwd, "faulty_objective_source_consumed", {

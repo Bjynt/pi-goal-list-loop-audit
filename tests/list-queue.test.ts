@@ -165,7 +165,7 @@ test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", (
   assert.match(SRC, /if \(\/\^log\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /function cmdLog\(args: string, ctx: ExtensionContext\): void/);
   assert.match(SRC, /const LOG_NOISE = new Set\(\["state", "send_rearm_start", "heartbeat_suppressed_tick"\]\);/);
-  assert.match(SRC, /entries\.filter\(\(e\) => !LOG_NOISE\.has\(e\.type\)\)/);
+  assert.match(SRC, /readLedgerTail\(ctx\.cwd, n, \(entry\) => all \|\| !LOG_NOISE\.has\(entry\.type\)\)/);
   assert.match(SRC, /parseInt\(nMatch\?\.\[1\] \?\? "15", 10\)/);
 });
 

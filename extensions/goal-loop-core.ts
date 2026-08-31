@@ -1118,6 +1118,163 @@ export function ledgerPath(cwd: string): string {
   return path.join(piGlaDir(cwd), "active.jsonl");
 }
 
+/** The live ledger is intentionally small enough for interactive tails and
+ * cold-start recovery. Older events stay immutable in this directory so
+ * forensic/history views retain their exact source without making the hot
+ * file grow forever. */
+export const LEDGER_ROTATION_BYTES = 8 * 1024 * 1024;
+const LEDGER_SEGMENTS_DIR = "ledger-segments";
+const LEDGER_ROTATION_LOCK = "ledger-rotation.lock";
+const LEDGER_ROTATION_STALE_LOCK_MS = 5 * 60_000;
+
+export function ledgerSegmentDir(cwd: string): string {
+  return path.join(piGlaDir(cwd), LEDGER_SEGMENTS_DIR);
+}
+
+/** Return immutable ledger segments oldest-first, followed by the live file.
+ * A missing segment directory is normal; permission/I/O failures are allowed
+ * to reach the caller's persistence boundary instead of being mistaken for an
+ * empty history. Symlinks are ignored so a state-root scan never follows an
+ * arbitrary external tree. */
+export function ledgerFiles(cwd: string): string[] {
+  const segmentDir = ledgerSegmentDir(cwd);
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(segmentDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.startsWith("segment-") && entry.name.endsWith(".jsonl"))
+      .map((entry) => entry.name)
+      .sort();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+  const files = names.map((name) => path.join(segmentDir, name));
+  if (fs.existsSync(ledgerPath(cwd))) files.push(ledgerPath(cwd));
+  return files;
+}
+
+/** Terminal archive journal. The archive markdown, terminal state snapshot,
+ * and active-goal markdown are separate projections; this intent bridges a
+ * crash between any two of them. It is deliberately one-record and
+ * idempotent, so startup can finish a published archive without guessing. */
+export type ArchiveIntentPhase = "prepared" | "published" | "state-persisted";
+
+export interface ArchiveIntent {
+  schema: 1;
+  at: string;
+  goalId: string;
+  status: "complete" | "aborted";
+  stopReason?: string;
+  archivePath: string;
+  terminalGoal: Goal;
+  phase: ArchiveIntentPhase;
+}
+
+export function archiveIntentPath(cwd: string): string {
+  return path.join(piGlaDir(cwd), "archive-intent.json");
+}
+
+function validArchiveIntentPhase(value: unknown): value is ArchiveIntentPhase {
+  return value === "prepared" || value === "published" || value === "state-persisted";
+}
+
+export function readArchiveIntent(cwd: string): ArchiveIntent | null {
+  if (stateRootPending()) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(archiveIntentPath(cwd), "utf8")) as Record<string, unknown>;
+    const terminalGoal = raw.terminalGoal;
+    if (
+      raw.schema !== 1
+      || typeof raw.at !== "string"
+      || Number.isNaN(Date.parse(raw.at))
+      || typeof raw.goalId !== "string"
+      || !isSafePersistedId(raw.goalId)
+      || (raw.status !== "complete" && raw.status !== "aborted")
+      || !validArchiveIntentPhase(raw.phase)
+      || !terminalGoal
+      || typeof terminalGoal !== "object"
+      || Array.isArray(terminalGoal)
+    ) return null;
+    const goal = terminalGoal as Goal;
+    if (goal.id !== raw.goalId || goal.status !== raw.status) return null;
+    return {
+      schema: 1,
+      at: raw.at,
+      goalId: raw.goalId,
+      status: raw.status,
+      ...(typeof raw.stopReason === "string" ? { stopReason: raw.stopReason } : {}),
+      archivePath: archivedGoalPath(cwd, raw.goalId),
+      terminalGoal: goal,
+      phase: raw.phase,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Write or refresh the one archive intent atomically. A different goal's
+ * intent is never overwritten; that is a corruption/ownership signal and the
+ * caller must leave the live goal untouched. */
+export function writeArchiveIntent(
+  cwd: string,
+  intent: Pick<ArchiveIntent, "goalId" | "status" | "stopReason" | "terminalGoal" | "phase">,
+): boolean {
+  if (stateRootPending() || !isSafePersistedId(intent.goalId)) return false;
+  const file = archiveIntentPath(cwd);
+  const prior = readArchiveIntent(cwd);
+  if (prior && prior.goalId !== intent.goalId) return false;
+  const archivePath = archivedGoalPath(cwd, intent.goalId);
+  const payload: ArchiveIntent = {
+    schema: 1,
+    at: new Date().toISOString(),
+    goalId: intent.goalId,
+    status: intent.status,
+    ...(intent.stopReason !== undefined ? { stopReason: intent.stopReason } : {}),
+    archivePath,
+    terminalGoal: intent.terminalGoal,
+    phase: intent.phase,
+  };
+  const temp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  const landed = runPersistStep("writeArchiveIntent", () => {
+    ensureDirs(cwd);
+    try {
+      fs.writeFileSync(temp, JSON.stringify(payload), { encoding: "utf8", flag: "wx" });
+      fs.renameSync(temp, file);
+      return true;
+    } finally {
+      try { if (fs.existsSync(temp)) fs.unlinkSync(temp); } catch { /* best effort */ }
+    }
+  });
+  return landed === true;
+}
+
+export function updateArchiveIntentPhase(cwd: string, phase: ArchiveIntentPhase): boolean {
+  const prior = readArchiveIntent(cwd);
+  if (!prior) return false;
+  return writeArchiveIntent(cwd, { ...prior, phase });
+}
+
+/** Remove the old active markdown and then the intent. Missing markdown is a
+ * successful cleanup; any other unlink or journal failure keeps the intent so
+ * a later lifecycle boundary can retry it. */
+export function finalizeArchiveIntent(cwd: string, goalId: string): boolean {
+  const intent = readArchiveIntent(cwd);
+  if (!intent || intent.goalId !== goalId) return false;
+  const active = goalMdPath(cwd, goalId);
+  try {
+    fs.unlinkSync(active);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") return false;
+  }
+  return clearArchiveIntent(cwd);
+}
+
+export function clearArchiveIntent(cwd: string): boolean {
+  if (stateRootPending()) return false;
+  const file = archiveIntentPath(cwd);
+  if (!fs.existsSync(file)) return true;
+  try { fs.unlinkSync(file); return true; } catch { return false; }
+}
+
 /**
  * v0.34.60: disk-first queue sidecar. Each list item gets a sidecar JSON
  * file in `.pi-glla/goals/<id>.queue.json` BEFORE any in-memory state is
@@ -1188,12 +1345,48 @@ export function writeQueueItemFile(cwd: string, item: ListItem, options: { repla
   return result ?? { path: file, wrote: false, failed: true };
 }
 
-export function deleteQueueItemFile(cwd: string, id: string): boolean {
-  if (stateRootPending()) return false;
-  if (!isSafePersistedId(id)) return false;
+export interface QueueItemDeleteResult {
+  path: string;
+  /** No sidecar existed at the time of the check. This is a successful
+   * no-op for destructive queue callers: the state has no durable twin to
+   * resurrect. */
+  present: boolean;
+  removed: boolean;
+  /** The caller must keep RAM/ledger state unchanged when this is true. */
+  failed: boolean;
+}
+
+/** Inspect and remove one queue sidecar without collapsing "absent" and
+ * "unlink failed" into the same boolean. The distinction is essential for
+ * destructive commands: an EACCES/EISDIR sidecar must remain represented in
+ * RAM until a later retry, otherwise a reload resurrects the user's item. */
+export function deleteQueueItemFileResult(cwd: string, id: string): QueueItemDeleteResult {
   const file = queueItemPath(cwd, id);
-  if (!fs.existsSync(file)) return false;
-  try { fs.unlinkSync(file); return true; } catch { return false; }
+  if (stateRootPending() || !isSafePersistedId(id)) {
+    return { path: file, present: false, removed: false, failed: true };
+  }
+  let present = false;
+  try {
+    fs.lstatSync(file);
+    present = true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { path: file, present: false, removed: false, failed: false };
+    }
+    return { path: file, present: false, removed: false, failed: true };
+  }
+  try {
+    fs.unlinkSync(file);
+    return { path: file, present: true, removed: true, failed: false };
+  } catch {
+    return { path: file, present, removed: false, failed: true };
+  }
+}
+
+/** Compatibility wrapper for activation and older callers. New destructive
+ * paths should use deleteQueueItemFileResult so they can fail closed. */
+export function deleteQueueItemFile(cwd: string, id: string): boolean {
+  return deleteQueueItemFileResult(cwd, id).removed;
 }
 
 /** v0.35.0: clear every queue sidecar, including orphaned files that are
@@ -1204,20 +1397,22 @@ export function queueItemSidecarCount(cwd: string): number {
 }
 
 export function clearQueueItemFiles(cwd: string): { removed: number; failed: string[] } {
-  if (stateRootPending()) return { removed: 0, failed: [] };
+  if (stateRootPending()) return { removed: 0, failed: ["<state-root-pending>"] };
   const dir = path.join(piGlaDir(cwd), "goals");
   let names: string[];
-  try { names = fs.readdirSync(dir); } catch { return { removed: 0, failed: [] }; }
+  try { names = fs.readdirSync(dir); } catch (err) {
+    // A missing goals directory means there are no sidecars. Any other
+    // failure is an unreadable durable queue and must block state clearing.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { removed: 0, failed: [] };
+    return { removed: 0, failed: ["<queue-directory>"] };
+  }
   let removed = 0;
   const failed: string[] = [];
   for (const name of names) {
     if (!name.endsWith(".queue.json")) continue;
-    try {
-      fs.unlinkSync(path.join(dir, name));
-      removed++;
-    } catch {
-      failed.push(name);
-    }
+    const result = deleteQueueItemFileResult(cwd, name.slice(0, -".queue.json".length));
+    if (result.removed) removed++;
+    else if (result.failed) failed.push(name);
   }
   return { removed, failed };
 }
@@ -1348,7 +1543,7 @@ export function runPersistStep<T>(what: string, fn: () => T): T | undefined {
  * must not briefly hold both a multi-megabyte string and a split-line array in
  * the main pi process. The callback runs synchronously to preserve the
  * existing persistence ordering/error contract. */
-function scanLedgerLines(file: string, onLine: (line: string) => void): void {
+export function scanLedgerLines(file: string, onLine: (line: string) => void): void {
   const fd = fs.openSync(file, "r");
   const chunk = Buffer.alloc(64 * 1024);
   let carry = Buffer.alloc(0);
@@ -1377,7 +1572,7 @@ function scanLedgerLines(file: string, onLine: (line: string) => void): void {
 /** Find one matching ledger line from the end using bounded chunks. This is
  * the hot path for goal-state transactions: looking up the last durable state
  * must remain proportional to the recent tail, not the complete ledger. */
-function scanLedgerLinesReverse(file: string, matches: (line: string) => boolean): string | undefined {
+export function scanLedgerLinesReverse(file: string, matches: (line: string) => boolean): string | undefined {
   const fd = fs.openSync(file, "r");
   const chunkSize = 64 * 1024;
   let position = fs.fstatSync(fd).size;
@@ -1410,6 +1605,160 @@ function scanLedgerLinesReverse(file: string, matches: (line: string) => boolean
   }
 }
 
+/** Parsed transport shape shared by command/stat/reviewer readers. Keeping
+ * this scanner in the persistence core prevents each consumer from
+ * independently reintroducing `readFileSync(...).split(...)` on the active
+ * ledger. The value remains intentionally open because ledger events are an
+ * extensible public forensic format. */
+export interface LedgerRecord {
+  type: string;
+  at?: string;
+  value?: any;
+}
+
+export function parseLedgerRecord(line: string): LedgerRecord | undefined {
+  const trimmed = line.trim();
+  if (!trimmed) return undefined;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" && typeof parsed.type === "string"
+      ? parsed as LedgerRecord
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stream all historical records in chronological file/line order. Older
+ * rotated segments are included before the live tail. Callers should reduce
+ * into bounded maps/counters rather than retaining the records. */
+export function scanLedgerRecords(cwd: string, onRecord: (entry: LedgerRecord) => void): void {
+  for (const file of ledgerFiles(cwd)) {
+    scanLedgerLines(file, (line) => {
+      const entry = parseLedgerRecord(line);
+      if (entry) onRecord(entry);
+    });
+  }
+}
+
+/** Read at most `limit` matching records from the newest end of all ledger
+ * segments. The returned records are chronological (oldest selected first),
+ * which preserves the old `slice(-N)` command semantics while stopping as
+ * soon as the requested tail is collected. */
+export function readLedgerTail(
+  cwd: string,
+  limit: number,
+  matches: (entry: LedgerRecord) => boolean = () => true,
+): LedgerRecord[] {
+  if (!Number.isInteger(limit) || limit <= 0) return [];
+  const out: LedgerRecord[] = [];
+  const files = ledgerFiles(cwd);
+  for (let i = files.length - 1; i >= 0 && out.length < limit; i--) {
+    scanLedgerLinesReverse(files[i]!, (line) => {
+      const entry = parseLedgerRecord(line);
+      if (entry && matches(entry)) out.push(entry);
+      return out.length >= limit;
+    });
+  }
+  return out.reverse();
+}
+
+function rotationProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Rotation is a maintenance operation for the owning host only. The owner
+ * record is advisory for ordinary writes, but an active foreign owner is
+ * enough reason to leave the ledger untouched; a stale/dead record may be
+ * replaced by the normal session-start owner claim. */
+function ledgerRotationOwned(cwd: string): boolean {
+  try {
+    const owner = JSON.parse(fs.readFileSync(path.join(piGlaDir(cwd), "owner.json"), "utf8")) as { pid?: unknown; shutdownAt?: unknown };
+    const pid = typeof owner.pid === "number" ? owner.pid : Number(owner.pid);
+    if (Number.isInteger(pid) && pid > 1 && pid !== process.pid && owner.shutdownAt === undefined && rotationProcessAlive(pid)) return false;
+  } catch {
+    // No owner record is normal in pure/core tests and on the first write.
+  }
+  return true;
+}
+
+function acquireLedgerRotationLock(cwd: string): number | undefined {
+  const lock = path.join(piGlaDir(cwd), LEDGER_ROTATION_LOCK);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = fs.openSync(lock, "wx");
+      fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
+      return fd;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") return undefined;
+      // A host can die after creating the lock and before the rename. Only
+      // reclaim an old lock whose recorded PID is proven dead; malformed or
+      // young locks stay in place to avoid deleting an ambiguous operator
+      // artifact.
+      let reclaim = false;
+      try {
+        const stat = fs.statSync(lock);
+        const record = JSON.parse(fs.readFileSync(lock, "utf8")) as { pid?: unknown };
+        const pid = typeof record.pid === "number" ? record.pid : Number(record.pid);
+        reclaim = Date.now() - stat.mtimeMs >= LEDGER_ROTATION_STALE_LOCK_MS
+          && Number.isInteger(pid)
+          && pid > 1
+          && !rotationProcessAlive(pid);
+      } catch {
+        reclaim = false;
+      }
+      if (!reclaim) return undefined;
+      try { fs.unlinkSync(lock); } catch { return undefined; }
+    }
+  }
+  return undefined;
+}
+
+/** Rotate the live ledger after a state append. The append happens first, so
+ * if the process dies after the segment rename but before the new active
+ * snapshot lands, the segment still contains the newest complete state and
+ * `readState` can recover it. The fresh active file contains only that full
+ * projection, keeping future cold loads bounded. */
+export function rotateLedgerIfNeeded(cwd: string, latestStateLine: string, thresholdBytes = LEDGER_ROTATION_BYTES): boolean {
+  if (stateRootPending() || !ledgerRotationOwned(cwd)) return false;
+  const active = ledgerPath(cwd);
+  let size: number;
+  try { size = fs.statSync(active).size; } catch { return false; }
+  if (size <= thresholdBytes) return false;
+  const lockFd = acquireLedgerRotationLock(cwd);
+  if (lockFd === undefined) return false;
+  try {
+    // Another owner may have rotated while this process was acquiring the
+    // lock. Recheck before moving anything.
+    if (fs.statSync(active).size <= thresholdBytes) return false;
+    const segmentDir = ledgerSegmentDir(cwd);
+    fs.mkdirSync(segmentDir, { recursive: true });
+    const segment = path.join(segmentDir, `segment-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 10)}.jsonl`);
+    fs.renameSync(active, segment);
+    const temp = `${active}.${process.pid}.${Date.now()}.rotation.tmp`;
+    try {
+      fs.writeFileSync(temp, latestStateLine + "\n", { encoding: "utf8", flag: "wx" });
+      fs.renameSync(temp, active);
+    } finally {
+      try { if (fs.existsSync(temp)) fs.unlinkSync(temp); } catch { /* recovery scans the segment */ }
+    }
+    return true;
+  } catch {
+    // A successful rename with a later write failure is recoverable: the
+    // segment is immutable and contains the state line. Keep the lock cleanup
+    // best-effort and let the next append recreate active.jsonl.
+    return false;
+  } finally {
+    try { fs.closeSync(lockFd); } catch {}
+    try { fs.unlinkSync(path.join(piGlaDir(cwd), LEDGER_ROTATION_LOCK)); } catch {}
+  }
+}
+
 export function readState(cwd: string): State {
   const file = ledgerPath(cwd);
   // v0.28.6 (E1): an unreadable ledger (EACCES, EIO) degrades loudly
@@ -1418,21 +1767,38 @@ export function readState(cwd: string): State {
     const parsed: Partial<State> = {};
     let lastStateAt: string | undefined;
     let lastStateLine: string | undefined;
-    if (fs.existsSync(file)) {
-      scanLedgerLines(file, (line) => {
-        if (!line) return;
-        try {
-          const evt = JSON.parse(line);
-          if (evt.type === "state") {
+    const files = ledgerFiles(cwd);
+    const hasSegments = files.some((candidate) => candidate !== file);
+    if (hasSegments) {
+      // After rotation the active file begins with a complete state snapshot.
+      // Find the newest snapshot from the end instead of replaying every
+      // historical state record on every session start. If a process died
+      // between the segment rename and the fresh active snapshot, the newest
+      // segment still contains the state line and is the next search target.
+      for (let i = files.length - 1; i >= 0 && !lastStateLine; i--) {
+        const found = scanLedgerLinesReverse(files[i]!, (line) => {
+          const evt = parseLedgerRecord(line);
+          return evt?.type === "state" && typeof evt.at === "string";
+        });
+        if (found) {
+          const evt = parseLedgerRecord(found);
+          if (evt?.type === "state") {
             Object.assign(parsed, evt.value ?? {});
-            if (typeof evt.at === "string") {
-              lastStateAt = evt.at;
-              lastStateLine = line;
-            }
+            lastStateAt = evt.at;
+            lastStateLine = found;
           }
-        } catch {
-          // skip malformed lines — a truncated trailing line (mid-write kill)
-          // must not lose the rest of the state
+        }
+      }
+    } else if (fs.existsSync(file)) {
+      // Preserve legacy merge semantics until a project has a rotated
+      // snapshot: older hand-written state lines may contain partial fields.
+      scanLedgerLines(file, (line) => {
+        const evt = parseLedgerRecord(line);
+        if (evt?.type !== "state") return;
+        Object.assign(parsed, evt.value ?? {});
+        if (typeof evt.at === "string") {
+          lastStateAt = evt.at;
+          lastStateLine = line;
         }
       });
     }
@@ -1472,6 +1838,20 @@ export function readState(cwd: string): State {
   );
   if (transactionIsNewer) {
     parsed = { ...parsed, ...transaction.state };
+  }
+  // Archive intent is the recovery half of terminal archival. If the archive
+  // was published before a crash, prefer its complete terminal projection so
+  // a reload can never resurrect the pre-archive ACTIVE goal. The lifecycle
+  // boundary finalizes the journal and removes the old markdown after the
+  // terminal state has been persisted.
+  const archiveIntent = readArchiveIntent(cwd);
+  if (archiveIntent && fs.existsSync(archivedGoalPath(cwd, archiveIntent.goalId))) {
+    const currentGoalId = parsed.goal && typeof parsed.goal === "object"
+      ? (parsed.goal as { id?: unknown }).id
+      : undefined;
+    if (currentGoalId === undefined || currentGoalId === archiveIntent.goalId) {
+      parsed = { ...parsed, goal: archiveIntent.terminalGoal };
+    }
   }
   const goal = parsed.goal && typeof parsed.goal === "object" && isSafePersistedId((parsed.goal as { id?: unknown }).id)
     ? {
@@ -1648,9 +2028,31 @@ export function appendLedger(cwd: string, type: string, value: unknown): boolean
     ensureDirs(cwd);
     const line = JSON.stringify({ type, value, at: new Date().toISOString() });
     fs.appendFileSync(ledgerPath(cwd), line + "\n");
+    if (type === "state") rotateLedgerIfNeeded(cwd, line);
     return true;
   });
   return landed === true;
+}
+
+/** Canonical state projection used by the normal writer and archive recovery.
+ * Every field is written on every snapshot so a rotated active file is a
+ * complete replacement, not a partial delta. */
+export function stateLedgerValue(s: State): Record<string, unknown> {
+  return {
+    goal: s.goal,
+    list: s.list ?? [],
+    loop: s.loop ?? null,
+    mainModelRecovery: s.mainModelRecovery ?? null,
+    lastModelRef: s.lastModelRef,
+    ...(typeof s.lastCompactionAt === "number" ? { lastCompactionAt: s.lastCompactionAt } : { lastCompactionAt: null }),
+    ...(typeof s.supervisorPausedAt === "number" ? { supervisorPausedAt: s.supervisorPausedAt } : { supervisorPausedAt: null }),
+    ...(typeof s.loadHoldAt === "number" ? { loadHoldAt: s.loadHoldAt } : { loadHoldAt: null }),
+    ...(s.lastOutcome ? { lastOutcome: s.lastOutcome } : { lastOutcome: null }),
+  };
+}
+
+export function appendStateSnapshot(cwd: string, s: State): boolean {
+  return appendLedger(cwd, "state", stateLedgerValue(s));
 }
 
 // =================================================================
@@ -1756,15 +2158,14 @@ function stateLineFingerprint(line: string): string {
 function lastDurableStateLine(cwd: string): string | undefined {
   if (stateRootPending()) return undefined;
   try {
-    return scanLedgerLinesReverse(ledgerPath(cwd), (line) => {
-      try {
-        const evt = JSON.parse(line);
-        return evt.type === "state" && typeof evt.at === "string";
-      } catch {
-        // Ignore malformed/truncated ledger lines when locating the base.
-        return false;
-      }
-    });
+    const files = ledgerFiles(cwd);
+    for (let i = files.length - 1; i >= 0; i--) {
+      const found = scanLedgerLinesReverse(files[i]!, (line) => {
+        const evt = parseLedgerRecord(line);
+        return evt?.type === "state" && typeof evt.at === "string";
+      });
+      if (found) return found;
+    }
   } catch {
     // An absent/unreadable base ledger is represented by no hash.
   }
@@ -2867,6 +3268,28 @@ export function computeListDepth(
     avgDurationMs,
     durationSamples: recent.length,
   };
+}
+
+/** Streaming counterpart for the command surface. Only the last state
+ * projection for each goal is retained (bounded by the number of goals), not
+ * every event and not a second copy of the ledger text. */
+export function computeListDepthFromLedger(
+  queue: Array<{ id: string; addedAt: string }>,
+  cwd: string,
+  nowMs: number,
+): ListDepthStats {
+  const finalStates = new Map<string, { type: string; value?: any }>();
+  try {
+    scanLedgerRecords(cwd, (entry) => {
+      if (entry.type === "state" && entry.value?.goal?.id) {
+        finalStates.set(String(entry.value.goal.id), entry);
+      }
+    });
+  } catch {
+    // Match the old command's no-ledger behavior: queue age remains useful
+    // even when historical duration data cannot be read.
+  }
+  return computeListDepth(queue, [...finalStates.values()], nowMs);
 }
 
 function fmtAge(ms: number): string {

@@ -55,14 +55,13 @@ import {
   isFullAuditObjective,
   resolveEffectiveAggressiveSettings,
   appendAuditLog,
-  computeListDepth,
   formatAuditLog,
   formatGoalAuditHistory,
   readAuditLog,
+  scanLedgerRecords,
   bumpGoalRevision,
   stripThinkBlocks,
   type AuditLogEntry,
-  ledgerPath,
   crossRecommendMode,
   formatListDepth,
   parseListItemDeclaration,
@@ -209,7 +208,6 @@ import {
 } from "../reviewer.js";
 import {
   discoverGllaProjects,
-  parseLedgerEntries,
   filterPremature,
   formatRollupJson,
   formatRollupTable,
@@ -1796,9 +1794,15 @@ function fireReviewer(
     // explicit /review may still inspect the archive; automatic review uses
     // only curated auditor reports.
     const sources = buildReviewerSources(archiveText, auditTexts, !!opts.manual);
-    let ledgerEntries: Array<{ type: string; at?: string; value?: any }> = [];
+    const ledgerEntries: Array<{ type: string; at?: string; value?: any }> = [];
     try {
-      ledgerEntries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
+      // Reviewer cadence only needs reviewer_fired timestamps. Stream the
+      // ledger (including rotated segments) and retain that small predicate
+      // set instead of materialising every lifecycle event in the main pi
+      // process.
+      scanLedgerRecords(ctx.cwd, (entry) => {
+        if (entry.type === "reviewer_fired") ledgerEntries.push(entry);
+      });
     } catch {
       /* no ledger yet */
     }

@@ -14,8 +14,8 @@ import { renderAgentsPanel, tailChildTranscript, TRANSCRIPT_HEADER_SCAN_MAX_BYTE
 import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
-  computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, formatMainModelRecoveryStatus, queueItemSidecarCount,
-  formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
+  computeListDepthFromLedger, clearQueueItemFiles, deleteQueueItemFile, deleteQueueItemFileResult, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, formatMainModelRecoveryStatus, queueItemSidecarCount,
+  formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration, readLedgerTail,
   assignQueueOrder, compareQueueItems, readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, sanitizeProviderAuditReport, statusLabel,
   visibleListPosition, visibleListPositions,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
@@ -26,7 +26,7 @@ import type { AuditDisplayProgress } from "./goal-loop-display.js";
 import { fmtElapsed } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
 import { buildLoopCompletionSummary, compactCompletionSummary, compactTerminalCompletionSummary } from "./completion-summary.js";
-import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
+import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, rollupProject } from "./goal-loop-stats.js";
 import { OVERRIDABLE_AGENT_TYPES, resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
 import { resolveGllaStateDir } from "./glla-state-root.js";
@@ -36,7 +36,7 @@ import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
-import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
+import { cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
 import { inferStartFromSession, type StartContextInference } from "./start-context.js";
 
@@ -1233,13 +1233,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   if (sub === "depth") {
     // v0.25.3: long-running state at a glance — queue depth, oldest item
     // age, average item duration from archived list-policy goals.
-    let entries: Array<{ type: string; value?: any }> = [];
-    try {
-      entries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
-    } catch {
-      /* no ledger yet */
-    }
-    const stats = computeListDepth(listQueue(), entries, Date.now());
+    const stats = computeListDepthFromLedger(listQueue(), ctx.cwd, Date.now());
     ctx.ui.notify(`/list depth: ${formatListDepth(stats)}`, "info");
     return;
   }
@@ -1416,6 +1410,11 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // stale-handle reload would resurrect the cleared items.
     const dropped = listQueue();
     const clearedSidecars = clearQueueItemFiles(ctx.cwd);
+    if (clearedSidecars.failed.length > 0) {
+      appendLedger(ctx.cwd, "list_clear_sidecar_cleanup_failed", { count: clearedSidecars.failed.length, sidecars: clearedSidecars.failed });
+      ctx.ui.notify(`List clear refused — ${clearedSidecars.failed.length} queue sidecar(s) could not be removed. The in-memory list is unchanged; fix disk access and retry.`, "warning");
+      return;
+    }
     replaceState({ ...state, list: [] });
     persistState(ctx);
     appendLedger(ctx.cwd, "list_cleared", { count: dropped.length, sidecars: clearedSidecars.removed });
@@ -1453,6 +1452,12 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // v0.35.0: clear the union of RAM and disk queue state. Orphaned
     // sidecars otherwise resurrected after a stale reload.
     const clearedSidecars = clearQueueItemFiles(ctx.cwd);
+    if (clearedSidecars.failed.length > 0) {
+      appendLedger(ctx.cwd, "list_cancel_sidecar_cleanup_failed", { count: clearedSidecars.failed.length, sidecars: clearedSidecars.failed });
+      ctx.ui.notify(`List cancellation is incomplete — ${clearedSidecars.failed.length} queue sidecar(s) could not be removed. Waiting items remain recoverable; fix disk access and retry.`, "warning");
+      if (activeIsListItem) ctx.abort();
+      return;
+    }
     replaceState({ ...state, list: [] });
     persistState(ctx);
     appendLedger(ctx.cwd, "list_cancelled", { abortedActive: activeIsListItem, dropped, sidecars: clearedSidecars.removed });
@@ -1536,7 +1541,12 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // cannot resurrect the removed item. Without this, the new fallback
     // (cmdList → readQueueFromDisk) would show the removed item after
     // a stale-handle /list, contradicting the user's explicit remove.
-    deleteQueueItemFile(ctx.cwd, removed.id);
+    const deleted = deleteQueueItemFileResult(ctx.cwd, removed.id);
+    if (deleted.failed) {
+      appendLedger(ctx.cwd, "list_remove_sidecar_delete_failed", { id: removed.id, path: deleted.path });
+      ctx.ui.notify(`Remove refused — the durable sidecar for ${displaySlice(removed.objective, 80)} could not be removed. The item remains queued; fix disk access and retry.`, "warning");
+      return;
+    }
     replaceState({ ...state, list: queue.filter((_, i) => i !== n) });
     persistState(ctx);
     appendLedger(ctx.cwd, "list_removed", { id: removed.id, objective: removed.objective });
@@ -1894,13 +1904,12 @@ function cmdLog(args: string, ctx: ExtensionContext): void {
   const n = Math.min(Math.max(parseInt(nMatch?.[1] ?? "15", 10) || 15, 1), 100);
   let entries: Array<{ type: string; at?: string; value?: any }> = [];
   try {
-    entries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
+    entries = readLedgerTail(ctx.cwd, n, (entry) => all || !LOG_NOISE.has(entry.type));
   } catch {
     ctx.ui.notify("No ledger yet — .pi-glla/active.jsonl doesn't exist.", "info");
     return;
   }
-  const visible = all ? entries : entries.filter((e) => !LOG_NOISE.has(e.type));
-  const tail = visible.slice(-n);
+  const tail = entries;
   if (tail.length === 0) {
     ctx.ui.notify("Ledger is empty (no non-noise events yet).", "info");
     return;
@@ -1925,13 +1934,12 @@ function cmdSwitchlog(args: string, ctx: ExtensionContext): void {
   const n = Math.min(Math.max(parseInt(nMatch?.[1] ?? "15", 10) || 15, 1), 100);
   let entries: Array<{ type: string; at?: string; value?: any }> = [];
   try {
-    entries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
+    entries = readLedgerTail(ctx.cwd, n, (entry) => entry.type === "model_switch" || entry.type === "forbidden_model_switch");
   } catch {
     ctx.ui.notify("No ledger yet — .pi-glla/active.jsonl doesn't exist.", "info");
     return;
   }
-  const switches = entries.filter((e) => e.type === "model_switch" || e.type === "forbidden_model_switch");
-  const tail = switches.slice(-n);
+  const tail = entries;
   if (tail.length === 0) {
     ctx.ui.notify("No model switches recorded yet — /glla switchlog shows the model_switch / forbidden_model_switch trail.", "info");
     return;
@@ -2049,8 +2057,12 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     // sidecars otherwise resurrected after a stale reload.
     const clearedSidecars = clearQueueItemFiles(ctx.cwd);
     failedSidecars = clearedSidecars.failed;
-    replaceState({ ...state, list: [] });
-    appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe", count: n, sidecars: clearedSidecars.removed });
+    if (failedSidecars.length === 0) {
+      replaceState({ ...state, list: [] });
+      appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe", count: n, sidecars: clearedSidecars.removed });
+    } else {
+      appendLedger(ctx.cwd, "glla_wipe_queue_cleanup_failed", { count: failedSidecars.length, sidecars: failedSidecars });
+    }
   }
   if (loop) {
     clearLoopTimer();
@@ -2291,6 +2303,18 @@ async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
 }
 
 function cmdAudits(args: string, ctx: ExtensionContext): void {
+  if (/\bhealth\b/.test(args)) {
+    const report = /\bcleanup\b/.test(args)
+      ? cleanupDeadAuditJobs(ctx.cwd)
+      : inspectAuditJobHealth(ctx.cwd);
+    const action = /\bcleanup\b/.test(args) ? "cleanup" : "health";
+    ctx.ui.notify(
+      `glla audit-job ${action}: ${report.total} director${report.total === 1 ? "y" : "ies"} · ${report.live} live · ${report.dead} proven dead · ${report.ambiguous} ambiguous · ${report.bytes} bytes${report.cleanupCandidates > 0 ? ` · ${report.cleanupCandidates} old dead candidate(s)` : ""}.` +
+      (report.ambiguous > 0 ? " Ambiguous locks were preserved." : ""),
+      report.ambiguous > 0 ? "warning" : "info",
+    );
+    return;
+  }
   const full = /\bfull\b/.test(args);
   const all = /\b(?:all|global|log)\b/.test(args);
   const nMatch = args.match(/\b(\d+)\b/);
@@ -2366,9 +2390,10 @@ export function cmdGllaBug(message: string, ctx: ExtensionContext): string {
   lines.push(`Captured at ${now.toISOString()} without mutating active.jsonl or goal md.`);
   lines.push("");
   try {
-    const ledgerPath = path.join(gllaDir, "active.jsonl");
-    const raw = fs.readFileSync(ledgerPath, "utf8").split("\n").filter(Boolean);
-    const tail = raw.slice(-20).join("\n").slice(0, 6000);
+    const tail = readLedgerTail(ctx.cwd, 20)
+      .map((entry) => JSON.stringify(entry))
+      .join("\n")
+      .slice(0, 6000);
     lines.push("### Recent active.jsonl tail (last 20 lines, read-only snapshot)");
     lines.push("```jsonl");
     lines.push(tail || "(empty)");

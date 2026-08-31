@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { piGlaDir } from "./goal-loop-core.js";
+import { ledgerFiles, piGlaDir, scanLedgerRecords } from "./goal-loop-core.js";
 
 export interface LedgerEntry {
   type: string;
@@ -92,19 +92,25 @@ export function detectPrematureSuccess(goal: GoalRollupSource): boolean {
   );
 }
 
-/** Roll up one project's ledger. Pure over the parsed entries — the file
- * read happens in rollupProject. */
-export function rollupEntries(project: string, entries: LedgerEntry[]): ProjectRollup {
-  let goalsCreated = 0;
-  let lastActive = "";
-  const finalGoal = new Map<string, GoalRollupSource>();
-  for (const e of entries) {
-    if (e.at && e.at > lastActive) lastActive = e.at;
-    if (e.type === "goal_created") goalsCreated++;
-    if (e.type === "state" && e.value?.goal?.id) {
-      finalGoal.set(String(e.value.goal.id), e.value.goal as GoalRollupSource);
-    }
+interface RollupAccumulator {
+  goalsCreated: number;
+  lastActive: string;
+  finalGoal: Map<string, GoalRollupSource>;
+}
+
+function newRollupAccumulator(): RollupAccumulator {
+  return { goalsCreated: 0, lastActive: "", finalGoal: new Map() };
+}
+
+function addRollupEntry(acc: RollupAccumulator, e: LedgerEntry): void {
+  if (e.at && e.at > acc.lastActive) acc.lastActive = e.at;
+  if (e.type === "goal_created") acc.goalsCreated++;
+  if (e.type === "state" && e.value?.goal?.id) {
+    acc.finalGoal.set(String(e.value.goal.id), e.value.goal as GoalRollupSource);
   }
+}
+
+function finishRollup(project: string, acc: RollupAccumulator): ProjectRollup {
   let auditsApproved = 0;
   let auditsDisapproved = 0;
   let auditsError = 0;
@@ -114,7 +120,7 @@ export function rollupEntries(project: string, entries: LedgerEntry[]): ProjectR
   let turnsN = 0;
   let writesSum = 0;
   let writesN = 0;
-  for (const goal of finalGoal.values()) {
+  for (const goal of acc.finalGoal.values()) {
     for (const a of goal.auditHistory ?? []) {
       if (a.approved) auditsApproved++;
       else if (a.disapproved) auditsDisapproved++;
@@ -131,7 +137,7 @@ export function rollupEntries(project: string, entries: LedgerEntry[]): ProjectR
   }
   return {
     project,
-    goalsCreated,
+    goalsCreated: acc.goalsCreated,
     auditsApproved,
     auditsDisapproved,
     auditsError,
@@ -139,19 +145,28 @@ export function rollupEntries(project: string, entries: LedgerEntry[]): ProjectR
     avgWrites: writesN > 0 ? Math.round((writesSum / writesN) * 10) / 10 : 0,
     prematureCount,
     totalCost,
-    lastActive,
+    lastActive: acc.lastActive,
   };
 }
 
+/** Roll up one project's ledger. Pure over the parsed entries — the file
+ * read happens in rollupProject. */
+export function rollupEntries(project: string, entries: LedgerEntry[]): ProjectRollup {
+  const acc = newRollupAccumulator();
+  for (const entry of entries) addRollupEntry(acc, entry);
+  return finishRollup(project, acc);
+}
+
 export function rollupProject(projectPath: string): ProjectRollup | undefined {
-  const ledger = path.join(piGlaDir(projectPath), "active.jsonl");
-  let raw: string;
+  const files = ledgerFiles(projectPath);
+  if (files.length === 0) return undefined;
+  const acc = newRollupAccumulator();
   try {
-    raw = fs.readFileSync(ledger, "utf-8");
+    scanLedgerRecords(projectPath, (entry) => addRollupEntry(acc, entry));
   } catch {
     return undefined;
   }
-  return rollupEntries(projectPath, parseLedgerEntries(raw));
+  return finishRollup(projectPath, acc);
 }
 
 /** Project discovery (contract item 6). Sources:

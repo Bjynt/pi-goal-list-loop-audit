@@ -65,7 +65,6 @@ import {
   bumpGoalRevision,
   stripThinkBlocks,
   type AuditLogEntry,
-  ledgerPath,
   crossRecommendMode,
   formatListDepth,
   parseListItemDeclaration,
@@ -109,6 +108,9 @@ import {
   writeGoalMd,
   writeQueueItemFile,
   readQueueFromDisk,
+  readArchiveIntent,
+  finalizeArchiveIntent,
+  clearArchiveIntent,
   deleteQueueItemFile,
   missingGllaTools,
   runPersistStep,
@@ -214,7 +216,6 @@ import {
 } from "../reviewer.js";
 import {
   discoverGllaProjects,
-  parseLedgerEntries,
   filterPremature,
   formatRollupJson,
   formatRollupTable,
@@ -1220,6 +1221,27 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }
     }
     replaceState(readState(ctx.cwd));
+    // v0.36.1: finish a terminal archive whose owner died between archive
+    // publication, state persistence, and active-md cleanup. readState has
+    // already overlaid the journal's terminal projection, so this boundary
+    // only needs to land it and then remove the old projection. If the archive
+    // was never published, the prepared intent is safe to discard and the
+    // normal archive command can retry from the still-live goal.
+    const archiveRecovery = readArchiveIntent(ctx.cwd);
+    if (archiveRecovery) {
+      if (fs.existsSync(archiveRecovery.archivePath)) {
+        if (state.goal?.id === archiveRecovery.goalId && (state.goal.status === "complete" || state.goal.status === "aborted")) {
+          if (persistState(ctx) && finalizeArchiveIntent(ctx.cwd, archiveRecovery.goalId)) {
+            appendLedger(ctx.cwd, "archive_recovered", { goalId: archiveRecovery.goalId, phase: archiveRecovery.phase, via: "session-start" });
+            ctx.ui.notify(`glla: recovered terminal archive for ${archiveRecovery.goalId} after an interrupted cleanup.`, "info");
+          } else {
+            ctx.ui.notify(`glla: terminal archive ${archiveRecovery.goalId} is durable but cleanup is still pending; persistence will retry at the next lifecycle boundary.`, "warning");
+          }
+        }
+      } else {
+        clearArchiveIntent(ctx.cwd);
+      }
+    }
     // v0.35.21 (list-invisible-until-restart): the durable queue is the
     // UNION of the persisted state and the per-item .queue.json sidecars
     // (v0.34.60 disk-first writes). readState replays only the state
@@ -2053,14 +2075,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "loop_turn_exempt_error", { stopReason: sr, consecutive: loop.consecutiveErrors, iteration: loop.iteration });
         const cap = sr === "aborted" ? LOOP_MAX_CONSECUTIVE_ABORTS : LOOP_MAX_CONSECUTIVE_ERRORS;
         if (loop.consecutiveErrors >= cap) {
-          const durableProviderFailure = lastMainModelFailure
-            && (requiresMainModelRecovery(lastMainModelFailure)
-              || isMainModelFallbackFailure(lastMainModelFailure));
+          const providerFailure = lastMainModelFailure;
+          const durableProviderFailure = providerFailure
+            && (requiresMainModelRecovery(providerFailure)
+              || isMainModelFallbackFailure(providerFailure));
           if (sr === "error" && durableProviderFailure) {
             // Recoverable provider failures may rotate through backups; the
             // bounded recovery envelope owns the loop instead of stopping on
             // a dead turn.
-            parkMainModelAfterFailure(ctx, lastMainModelFailure);
+            parkMainModelAfterFailure(ctx, providerFailure);
             if (state.mainModelRecovery) return;
           }
           loop.active = false;

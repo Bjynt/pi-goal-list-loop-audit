@@ -8,7 +8,7 @@
  */
 
 import * as fs from "node:fs/promises";
-import { constants as fsConstants, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { constants as fsConstants, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
@@ -675,8 +675,8 @@ function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 
@@ -705,6 +705,112 @@ function durableWorkerPids(cwd: string, logicalAttemptId: string): Array<{ pid: 
     }
   }
   return out;
+}
+
+export type AuditJobHealthStatus = "live" | "dead" | "ambiguous";
+
+export interface AuditJobHealthEntry {
+  attemptId: string;
+  dir: string;
+  ageMs: number;
+  bytes: number;
+  status: AuditJobHealthStatus;
+  pid?: number;
+  reason?: string;
+}
+
+export interface AuditJobHealthReport {
+  root: string;
+  scannedAt: string;
+  total: number;
+  live: number;
+  dead: number;
+  ambiguous: number;
+  bytes: number;
+  cleanupCandidates: number;
+  entries: AuditJobHealthEntry[];
+}
+
+/** A deliberately conservative threshold: an auditor that is merely slow is
+ * not a stale directory. Explicit cleanup only considers older directories
+ * whose worker PID is proven dead and whose lock advertises role=worker. */
+export const AUDIT_JOB_CLEANUP_MIN_AGE_MS = 15 * 60_000;
+
+function auditJobDirectoryBytes(dir: string): number {
+  let bytes = 0;
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      try { bytes += statSync(path.join(dir, entry.name)).size; } catch { /* health is best effort per file */ }
+    }
+  } catch {
+    /* unreadable contents remain represented by the ambiguous lock status */
+  }
+  return bytes;
+}
+
+/** Read-only project-wide audit-job inventory. It never signals a process and
+ * never removes an ambiguous or unreadable directory. */
+export function inspectAuditJobHealth(cwd: string, nowMs = Date.now()): AuditJobHealthReport {
+  const root = path.join(piGlaDir(cwd), "audit-jobs");
+  const entries: AuditJobHealthEntry[] = [];
+  let dirs: Array<{ name: string; isDirectory: () => boolean }> = [];
+  try {
+    dirs = readdirSync(root, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { root, scannedAt: new Date(nowMs).toISOString(), total: 0, live: 0, dead: 0, ambiguous: 0, bytes: 0, cleanupCandidates: 0, entries };
+    }
+    return { root, scannedAt: new Date(nowMs).toISOString(), total: 0, live: 0, dead: 0, ambiguous: 1, bytes: 0, cleanupCandidates: 0, entries: [{ attemptId: "<audit-jobs-root>", dir: root, ageMs: 0, bytes: 0, status: "ambiguous", reason: "root unreadable" }] };
+  }
+  for (const entry of dirs) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(root, entry.name);
+    let ageMs = 0;
+    try { ageMs = Math.max(0, nowMs - statSync(dir).mtimeMs); } catch { ageMs = 0; }
+    const bytes = auditJobDirectoryBytes(dir);
+    let status: AuditJobHealthStatus = "ambiguous";
+    let pid: number | undefined;
+    let reason: string | undefined = "missing or unreadable worker lock";
+    try {
+      const lock = JSON.parse(readFileSync(path.join(dir, "lock"), "utf8")) as Record<string, unknown>;
+      pid = typeof lock.pid === "number" ? lock.pid : Number(lock.pid);
+      if (lock.role === "worker" && Number.isInteger(pid) && pid > 1) {
+        if (workerProcessMatches(cwd, pid, dir)) {
+          status = "live";
+          reason = undefined;
+        } else if (!processAlive(pid)) {
+          status = "dead";
+          reason = "worker PID is not alive";
+        } else {
+          reason = "PID is alive but worker identity does not match this job";
+        }
+      } else {
+        reason = "lock is not a worker-owned identity";
+      }
+    } catch {
+      /* preserve ambiguous */
+    }
+    entries.push({ attemptId: entry.name, dir, ageMs, bytes, status, ...(pid !== undefined ? { pid } : {}), ...(reason ? { reason } : {}) });
+  }
+  const live = entries.filter((entry) => entry.status === "live").length;
+  const dead = entries.filter((entry) => entry.status === "dead").length;
+  const ambiguous = entries.filter((entry) => entry.status === "ambiguous").length;
+  const bytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+  const cleanupCandidates = entries.filter((entry) => entry.status === "dead" && entry.ageMs >= AUDIT_JOB_CLEANUP_MIN_AGE_MS).length;
+  return { root, scannedAt: new Date(nowMs).toISOString(), total: entries.length, live, dead, ambiguous, bytes, cleanupCandidates, entries };
+}
+
+/** Explicit, age-bounded cleanup for only proven-dead worker identities.
+ * Ambiguous locks are intentionally left for operator inspection. */
+export function cleanupDeadAuditJobs(cwd: string, maxAgeMs = AUDIT_JOB_CLEANUP_MIN_AGE_MS, nowMs = Date.now()): AuditJobHealthReport {
+  const report = inspectAuditJobHealth(cwd, nowMs);
+  for (const entry of report.entries) {
+    if (entry.status !== "dead" || entry.ageMs < maxAgeMs || entry.pid === undefined) continue;
+    if (processAlive(entry.pid) || workerProcessMatches(cwd, entry.pid, entry.dir)) continue;
+    try { rmSync(entry.dir, { recursive: true, force: true }); } catch { /* preserve the next health report */ }
+  }
+  return inspectAuditJobHealth(cwd, nowMs);
 }
 
 /** Reap workers left behind when their owning pi host died. This is the

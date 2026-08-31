@@ -88,7 +88,7 @@ import {
   ensureDirs,
   findNextPendingTask,
   goalMdPath,
-  queueItemPath,
+  deleteQueueItemFileResult,
   newGoalId,
   nowIso,
   compactDisplayText,
@@ -107,7 +107,6 @@ import {
   writeGoalMd,
   writeQueueItemFile,
   readQueueFromDisk,
-  deleteQueueItemFile,
   missingGllaTools,
   runPersistStep,
   isPersistenceDegraded,
@@ -738,8 +737,8 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // Otherwise a failed unlink makes the just-activated item reappear after
   // reload as pending work. Missing sidecars are fine; failed deletion is a
   // durable-cleanup refusal and leaves the queue untouched.
-  const sidecarPresent = !stateRootPending() && fs.existsSync(queueItemPath(ctx.cwd, next.id));
-  if (sidecarPresent && !deleteQueueItemFile(ctx.cwd, next.id)) {
+  const sidecar = deleteQueueItemFileResult(ctx.cwd, next.id);
+  if (sidecar.failed) {
     appendLedger(ctx.cwd, "list_activation_sidecar_delete_failed", { queueItemId: next.id });
     ctx.ui.notify("List activation paused — its durable queue sidecar could not be removed, so the item remains queued. Fix disk access and retry.", "warning");
     return false;

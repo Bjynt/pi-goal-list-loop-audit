@@ -19,7 +19,7 @@ import {
   clearLoadHold,
   formatMainModelRecoveryStatus,
   isStaleApiError,
-  ledgerPath,
+  scanLedgerRecords,
   nowIso,
   resolveEffectiveAggressiveSettings,
   sumNewAssistantTokens,
@@ -575,15 +575,9 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
   let specItemProgress = 0;
   if (iterStartAt) {
     try {
-      const p = ledgerPath(ctx.cwd);
-      const lines = fs.readFileSync(p, "utf-8").split("\n");
-      for (const line of lines) {
-        if (!line.includes("spec_item_progress")) continue;
-        try {
-          const entry = JSON.parse(line) as { at?: string };
-          if (entry.at && entry.at >= iterStartAt) specItemProgress++;
-        } catch { /* malformed line */ }
-      }
+      scanLedgerRecords(ctx.cwd, (entry) => {
+        if (entry.type === "spec_item_progress" && entry.at && entry.at >= iterStartAt) specItemProgress++;
+      });
     } catch { /* no ledger yet */ }
   }
   // v0.33.2: respec spec drift + checkbox progress — hash compared per

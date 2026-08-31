@@ -52,7 +52,6 @@ import {
   isFullAuditObjective,
   resolveEffectiveAggressiveSettings,
   appendAuditLog,
-  computeListDepth,
   formatAuditLog,
   formatGoalAuditHistory,
   runWithInfraRetry,
@@ -61,7 +60,6 @@ import {
   bumpGoalRevision,
   stripThinkBlocks,
   type AuditLogEntry,
-  ledgerPath,
   crossRecommendMode,
   formatListDepth,
   extractAgentRole,
@@ -107,9 +105,13 @@ import {
   writeGoalMd,
   writeGoalStateTransaction,
   clearGoalStateTransaction,
+  writeArchiveIntent,
+  updateArchiveIntentPhase,
+  finalizeArchiveIntent,
+  clearArchiveIntent,
   writeQueueItemFile,
   readQueueFromDisk,
-  deleteQueueItemFile,
+  deleteQueueItemFileResult,
   missingGllaTools,
   runPersistStep,
   isSafePersistedId,
@@ -215,7 +217,6 @@ import {
 } from "../reviewer.js";
 import {
   discoverGllaProjects,
-  parseLedgerEntries,
   filterPremature,
   formatRollupJson,
   formatRollupTable,
@@ -1075,6 +1076,7 @@ function archiveCurrentGoal(
   patch: Partial<Pick<Goal, "auditHistory" | "completionSummary" | "pendingTasks">> = {},
 ): boolean {
   if (!state.goal) return false;
+  if (status !== "complete" && status !== "aborted") return false;
   if (stateRootPending()) {
     ctx.ui.notify("Could not archive the goal — the selected sessionDir is not resolved yet, so no live state was changed. Reload the host session and retry.", "warning");
     return false;
@@ -1116,19 +1118,38 @@ function archiveCurrentGoal(
     completionSummary: summaryResolution.summary,
   };
   const md = renderGoalMarkdown(terminalGoal);
-  // v0.28.6 (E1): guarded — and the active md is only removed when the
-  // archive actually LANDED (degraded mode must not destroy the only copy).
-  // v0.35.x: create the destination without replacing an archive that may
-  // have won a race or survived a previous process. A temp file plus a hard
-  // link gives us an exclusive final name without renameSync's replacement
-  // semantics; a crash before the link leaves the live goal untouched.
+  // An existing same-id archive is an immutable fence. Check it before
+  // publishing an intent so an unrelated/sentinel winner can never make the
+  // startup reconciler terminalize this live goal.
   let archiveFence = false;
+  if (fs.existsSync(target)) {
+    archiveFence = true;
+    appendLedger(ctx.cwd, "faulty_objective_archive_fence", {
+      goalId: goal.id,
+      where: "archiveCurrentGoal",
+      archive: target,
+    });
+    ctx.ui.notify(`Could not archive ${goal.policy === "list" ? "the list item" : "the goal"} — an existing archive was preserved and the live objective was kept open; no terminal state was recorded. Fix the project disk and retry.`, "warning");
+    return false;
+  }
+  // v0.36.1: journal the terminal projection BEFORE either file can be
+  // published. A fresh lifecycle boundary can now finish the operation after
+  // a kill at archive publication, state persistence, or active-md cleanup.
+  if (!writeArchiveIntent(ctx.cwd, {
+    goalId: goal.id,
+    status,
+    stopReason,
+    terminalGoal,
+    phase: "prepared",
+  })) {
+    ctx.ui.notify(`Could not archive ${goal.policy === "list" ? "the list item" : "the goal"} — the durable archive intent could not be written, so the live objective was kept open.`, "warning");
+    return false;
+  }
+  // Create the destination without replacing an archive that may win a race.
+  // A temp file plus a hard link gives us an exclusive final name without
+  // renameSync's replacement semantics.
   const archived = runPersistStep("archiveCurrentGoal", () => {
     ensureDirs(ctx.cwd);
-    if (fs.existsSync(target)) {
-      archiveFence = true;
-      return false;
-    }
     const temp = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 10)}.tmp`;
     try {
       fs.writeFileSync(temp, md, { encoding: "utf-8", flag: "wx" });
@@ -1147,16 +1168,11 @@ function archiveCurrentGoal(
       try { fs.unlinkSync(temp); } catch {}
     }
   }) === true;
-  if (archived) {
-    try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
-    // Destructive lifecycle cleanup belongs after the archive is durable. A
-    // failed archive must leave the old objective's recovery/dispatch state
-    // available for an explicit retry rather than looking silently stopped.
-    releaseContinuationDispatchStandDown();
-    clearDispatchRecord(ctx.cwd);
-    postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
-    postCompactResyncPending = false;
-  } else {
+  if (!archived) {
+    // If a race created a winner after the preflight check, discard only this
+    // operation's intent. The winner remains byte-for-byte untouched and the
+    // live goal remains retryable.
+    clearArchiveIntent(ctx.cwd);
     if (archiveFence) {
       appendLedger(ctx.cwd, "faulty_objective_archive_fence", {
         goalId: goal.id,
@@ -1167,6 +1183,11 @@ function archiveCurrentGoal(
     ctx.ui.notify(`Could not archive ${goal.policy === "list" ? "the list item" : "the goal"} — ${archiveFence ? "an existing archive was preserved and" : "the"} live objective was kept open; no terminal state was recorded. Fix the project disk and retry.`, "warning");
     return false;
   }
+  updateArchiveIntentPhase(ctx.cwd, "published");
+  // Destructive lifecycle cleanup belongs after the archive is durable AND
+  // the terminal state snapshot below lands. A failed state append leaves the
+  // intent + archive as the recoverable pair and keeps the active projection.
+  const stateBeforeArchive: State = { ...state, goal };
   replaceState({
     ...state,
     goal: terminalGoal,
@@ -1196,7 +1217,20 @@ function archiveCurrentGoal(
     });
   }
   appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason, objective: goal.objective.slice(0, 300) });
-  persistState(ctx);
+  const terminalStateLanded = persistState(ctx);
+  if (!terminalStateLanded) {
+    replaceState(stateBeforeArchive);
+    ctx.ui.notify(`Archive published for ${goal.policy === "list" ? "the list item" : "the goal"}, but the terminal state could not be persisted. The live objective remains open and startup recovery will retry safely.`, "warning");
+    return false;
+  }
+  updateArchiveIntentPhase(ctx.cwd, "state-persisted");
+  if (!finalizeArchiveIntent(ctx.cwd, goal.id)) {
+    ctx.ui.notify(`Archive committed for ${goal.policy === "list" ? "the list item" : "the goal"}, but active-file cleanup is pending. The durable intent remains for the next recovery boundary.`, "warning");
+  }
+  releaseContinuationDispatchStandDown();
+  clearDispatchRecord(ctx.cwd);
+  postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
+  postCompactResyncPending = false;
   // v0.34.120: archive is the durable history; a terminal goal must not
   // remain in the live slot and make the user cancel a finished card. Keep
   // the archive markdown (including completionSummary) as the final record,
@@ -1239,14 +1273,19 @@ function archiveCurrentGoal(
         const queue = listQueue();
         const parent = queue.find((c: any) => c.id === pid);
         if (parent) {
+          const sidecar = deleteQueueItemFileResult(ctx.cwd, pid);
+          if (sidecar.failed) {
+            appendLedger(ctx.cwd, "list_group_close_sidecar_delete_failed", { parentId: pid, path: sidecar.path });
+            ctx.ui.notify(`Group remains queued — its durable sidecar could not be removed. Fix disk access and retry the group close.`, "warning");
+          } else {
           appendLedger(ctx.cwd, "list_group_closed", {
             parentId: pid,
             parentObjective: parent.objective,
             closedVia: goal.objective,
           });
           replaceState({ ...state, list: queue.filter((c: any) => c.id !== pid) });
-          deleteQueueItemFile(ctx.cwd, pid);
           ctx.ui.notify(`Group closed: "${displaySlice(parent.objective, 80)}" — all subtasks complete.`, "info");
+          }
         }
       }
     }

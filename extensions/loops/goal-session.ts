@@ -1357,12 +1357,14 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
       // Carryover clear must remove the durable union, not only RAM. The
       // stale-handle /list reader intentionally resurrects queue sidecars.
       const clearedSidecars = clearQueueItemFiles(ctx.cwd);
+      if (clearedSidecars.failed.length > 0) {
+        appendLedger(ctx.cwd, "carryover_clear_sidecar_cleanup_failed", { count: clearedSidecars.failed.length, sidecars: clearedSidecars.failed });
+        ctx.ui.notify(`Carryover clear is blocked — ${clearedSidecars.failed.length} queue sidecar(s) could not be removed. The queue remains recoverable; fix disk access and retry.`, "warning");
+        return false;
+      }
       replaceState({ ...state, list: [] });
       if (snap.listCount > 0) done.push(`dropped ${snap.listCount} waiting list item(s)`);
       if (clearedSidecars.removed > 0) done.push(`removed ${clearedSidecars.removed} durable queue sidecar(s)`);
-      if (clearedSidecars.failed.length > 0) {
-        waiting.push(`${clearedSidecars.failed.length} queue sidecar(s) could not be removed — clear is incomplete`);
-      }
     } else {
       waiting.push(`${snap.listCount} waiting list item(s) (/list next)`);
     }
