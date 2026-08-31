@@ -24,14 +24,14 @@ test("attemptFreshSessionRecovery: helper checks the actual context capability, 
   assert.match(GOAL_RECOVERY_SRC, /export function attemptFreshSessionRecovery\(ctx: ExtensionContext, where: string\): boolean/);
   assert.match(GOAL_RECOVERY_SRC, /const freshCtx = ctx as FreshSessionContext/);
   assert.doesNotMatch(GOAL_RECOVERY_SRC, /api\.newSession\(\)/, "ExtensionAPI has no public newSession method");
-  assert.match(GOAL_RECOVERY_SRC, /freshCtx\.newSession\(\{/, "forward-compatible call only when the host supplies a command-capable context");
+  assert.match(GOAL_RECOVERY_SRC, /startNewSession\.call\(freshCtx, \{/, "forward-compatible call only when the host supplies a command-capable context");
   assert.match(GOAL_RECOVERY_SRC, /withSession:/, "replacement work must use the fresh context supplied by the host");
   assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_triggered/, "ledger event when a host actually exposes the recovery capability");
   assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_skipped/, "ledger event when the event context cannot replace the session");
 });
 
 test("attemptFreshSessionRecovery: returns false when the event context lacks newSession", () => {
-  assert.match(GOAL_RECOVERY_SRC, /typeof freshCtx\.newSession !== "function"/);
+  assert.match(GOAL_RECOVERY_SRC, /typeof startNewSession !== "function"/);
   assert.match(GOAL_RECOVERY_SRC, /event context has no newSession; pi exposes it only on ExtensionCommandContext/);
   assert.match(GOAL_RECOVERY_SRC, /return false;/);
 });
