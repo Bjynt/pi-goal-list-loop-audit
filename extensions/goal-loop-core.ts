@@ -1140,15 +1140,29 @@ export function ledgerFiles(cwd: string): string[] {
   const segmentDir = ledgerSegmentDir(cwd);
   let names: string[] = [];
   try {
-    names = fs.readdirSync(segmentDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.startsWith("segment-") && entry.name.endsWith(".jsonl"))
-      .map((entry) => entry.name)
-      .sort();
+    const segmentStat = fs.lstatSync(segmentDir);
+    if (!segmentStat.isSymbolicLink()) {
+      if (!segmentStat.isDirectory()) throw new Error("ledger segment root is not a directory");
+      names = fs.readdirSync(segmentDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.startsWith("segment-") && entry.name.endsWith(".jsonl"))
+        .map((entry) => entry.name)
+        .sort();
+    }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
   const files = names.map((name) => path.join(segmentDir, name));
-  if (fs.existsSync(ledgerPath(cwd))) files.push(ledgerPath(cwd));
+  const active = ledgerPath(cwd);
+  try {
+    const activeStat = fs.lstatSync(active);
+    if (activeStat.isFile()) files.push(active);
+    // An active-ledger symlink is ignored rather than followed outside the
+    // selected state root. A directory/other node is an I/O failure that the
+    // caller's persistence boundary should surface.
+    else if (!activeStat.isSymbolicLink()) throw new Error("active ledger is not a regular file");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
   return files;
 }
 
@@ -1220,7 +1234,17 @@ export function writeArchiveIntent(
 ): boolean {
   if (stateRootPending() || !isSafePersistedId(intent.goalId)) return false;
   const file = archiveIntentPath(cwd);
+  let fileExists = false;
+  try {
+    fs.lstatSync(file);
+    fileExists = true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") return false;
+  }
   const prior = readArchiveIntent(cwd);
+  // An unreadable or malformed existing journal is ambiguous ownership, not
+  // permission to overwrite it with a new goal's intent.
+  if (fileExists && !prior) return false;
   if (prior && prior.goalId !== intent.goalId) return false;
   const archivePath = archivedGoalPath(cwd, intent.goalId);
   const payload: ArchiveIntent = {
@@ -1271,8 +1295,12 @@ export function finalizeArchiveIntent(cwd: string, goalId: string): boolean {
 export function clearArchiveIntent(cwd: string): boolean {
   if (stateRootPending()) return false;
   const file = archiveIntentPath(cwd);
-  if (!fs.existsSync(file)) return true;
-  try { fs.unlinkSync(file); return true; } catch { return false; }
+  try {
+    fs.unlinkSync(file);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT";
+  }
 }
 
 /**

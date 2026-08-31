@@ -1237,6 +1237,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           } else {
             ctx.ui.notify(`glla: terminal archive ${archiveRecovery.goalId} is durable but cleanup is still pending; persistence will retry at the next lifecycle boundary.`, "warning");
           }
+        } else if (archiveRecovery.phase !== "prepared" && state.goal?.id !== archiveRecovery.goalId) {
+          // A successor state proves the terminal snapshot was followed by a
+          // different live objective. Finish only the old archive's cleanup;
+          // never let a stale one-record journal block every later archive.
+          if (finalizeArchiveIntent(ctx.cwd, archiveRecovery.goalId)) {
+            appendLedger(ctx.cwd, "archive_recovered", { goalId: archiveRecovery.goalId, phase: archiveRecovery.phase, via: "successor-state" });
+          } else {
+            ctx.ui.notify(`glla: prior terminal archive ${archiveRecovery.goalId} is durable but its old active projection is still present; cleanup will retry safely.`, "warning");
+          }
         }
       } else {
         clearArchiveIntent(ctx.cwd);
