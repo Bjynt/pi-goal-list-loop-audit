@@ -894,6 +894,7 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
 
 function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): boolean {
   if (!state.goal) return false;
+  const statusChanged = patch.status !== undefined && patch.status !== state.goal.status;
   const next: Goal = { ...state.goal, ...patch, updatedAt: nowIso() };
   const file = goalMdPath(ctx.cwd, next.id);
   const nextGoal: Goal = { ...next, activePath: path.relative(ctx.cwd, file) || file };
@@ -906,6 +907,7 @@ function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): boolean {
   }
   writeGoalMd(ctx.cwd, nextGoal);
   state.goal = nextGoal;
+  if (statusChanged) clearToolActivityState();
   const stateLanded = persistState(ctx);
   if (stateLanded && goalMarkdownLanded(ctx.cwd, nextGoal)) clearGoalStateTransaction(ctx.cwd);
   return true;
