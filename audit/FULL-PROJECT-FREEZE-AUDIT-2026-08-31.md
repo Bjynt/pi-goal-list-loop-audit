@@ -45,26 +45,24 @@ implementation or a non-recursive entry point).
 The final read-only process check after verification found no live
 `guard-append-only.py` processes and no live GLLA auditor workers.
 
-## Deferred, not silently closed
+## Remaining scoped follow-ups
 
-These remain known architectural follow-ups rather than freeze fixes:
+These remain intentionally outside this GLLA implementation pass:
 
-- ledger rotation/retention for indefinite append-only growth;
-- transactional archive and queue-sidecar tombstones;
 - an OS-level cross-process ownership lock/lease epoch;
 - a generic durable wait scheduler;
 - a true OS/container sandbox for the intentionally powerful detached auditor;
-- replacing remaining SDK/private-shape `any` boundaries and adding more
-  multi-process coverage.
+- replacing remaining SDK/private-shape `any` boundaries outside the runtime
+  bridge and adding more multi-process coverage.
 
 They are already tracked in `audit/EXTENSION-AUDIT-2026-08-21.md` and the
-follow-up comparison/parked-ideas audits. Rotation in particular should be a
-separate migration design, not an opportunistic rewrite during an incident.
+follow-up comparison/parked-ideas audits. They do not block the GLLA release.
 
-## Promoted operational tasklist
+## Promoted operational tasklist — completed
 
 A follow-up verification pass promoted seven evidence-backed items into the
-canonical local tasklist at `.pi-glla/audit-loop/findings.md` (lines 290–296):
+canonical local tasklist at `.pi-glla/audit-loop/findings.md` (lines 290–296).
+All seven are now implemented and checked off in that tasklist:
 
 1. transactional terminal archival and crash reconciliation (high);
 2. fail-closed queue deletion or durable tombstones on every destructive path
@@ -75,18 +73,19 @@ canonical local tasklist at `.pi-glla/audit-loop/findings.md` (lines 290–296):
 6. a typed replacement for the ambient `any` runtime bridge (low); and
 7. an import smoke test against the actual packed npm artifact (low).
 
-The tasklist parser reports seven open FIX items and zero unresolved DECIDE
+The tasklist parser reports zero open FIX items and zero unresolved DECIDE
 items. The external `dracon-platform` recursive helper is deliberately absent
 from this GLLA tasklist.
 
 ## Verification
 
-- `npm run release:check`: **1,763 passed, 1 skipped, 0 failed** across 166
-  test files.
+- `npm run test:all`: **1,771 passed, 1 skipped, 0 failed** across 168 test
+  files.
 - `npm run check` / TypeScript: passed.
 - Jiti state-split regression: passed.
 - Offline allow-listed auditor-extension check: passed.
 - `npm pack --dry-run`: passed; package contents and release contract passed.
+- Packed-artifact install/import smoke: passed in a temporary directory.
 - Focused persistence, auditor, process-ceiling, and shield regressions: all
   passed.
 - `git diff --check`: passed.
