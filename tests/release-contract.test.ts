@@ -29,13 +29,20 @@ function dryRunFiles(): Set<string> {
 
 test("release contract: published documentation links are covered by the npm tarball", () => {
   const files = dryRunFiles();
-  for (const required of ["README.md", "INSTALL.md", "PLAN.md", "LIST-PHILOSOPHY.md", "CHANGELOG.md", "docs/INDEX.md", "examples/example-objective.md"]) {
+  for (const required of ["README.md", "INSTALL.md", "PLAN.md", "LIST-PHILOSOPHY.md", "CHANGELOG.md", "docs/INDEX.md", "examples/example-objective.md", "scripts/release-pack-smoke.mjs"]) {
     assert.ok(files.has(required), `${required} must be shipped`);
   }
   const index = fs.readFileSync("docs/INDEX.md", "utf-8");
   for (const omitted of ["../PLAN.md", "../LIST-PHILOSOPHY.md", "../audit/INDEX.md"]) {
     assert.doesNotMatch(index, new RegExp(omitted.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")), `${omitted} must not be a broken package link`);
   }
+});
+
+test("release contract: the release gate exercises the packed artifact", () => {
+  const packageJson = fs.readFileSync("package.json", "utf-8");
+  assert.match(packageJson, /release:check[\s\S]*release-pack-smoke\.mjs/);
+  assert.match(fs.readFileSync("scripts/release-pack-smoke.mjs", "utf-8"), /npm pack/);
+  assert.match(fs.readFileSync("scripts/release-pack-smoke.mjs", "utf-8"), /goal\.ts/);
 });
 
 test("release contract: docs index tracks the package version", () => {

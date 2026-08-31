@@ -52,7 +52,7 @@
     "test": "bun test --parallel=1 --max-concurrency=1 --timeout=60000",
     "test:auditor-extensions": "node scripts/verify-auditor-extensions-offline.mjs",
     "test:all": "bun test --parallel=1 --max-concurrency=1 --timeout=60000 && tsc --noEmit && node tests/repro-jiti-state-split.test.mjs && npm run test:auditor-extensions",
-    "release:check": "npm run test:all && npm pack --dry-run",
+    "release:check": "npm run test:all && npm pack --dry-run && node scripts/release-pack-smoke.mjs",
     "test:jiti": "node tests/repro-jiti-state-split.test.mjs"
   },
   "peerDependencies": {
