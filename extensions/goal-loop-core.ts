@@ -3386,24 +3386,45 @@ export function readAuditLog(cwd: string, limit?: number): AuditLogEntry[] {
     return newest.reverse();
   }
 
-  let raw: string;
+  const out: AuditLogEntry[] = [];
   try {
-    raw = fs.readFileSync(auditLogPath(cwd), "utf-8");
+    scanLedgerLines(auditLogPath(cwd), (line) => {
+      const t = line.trim();
+      if (!t) return;
+      try {
+        const e = JSON.parse(t);
+        if (e && typeof e.goalId === "string" && typeof e.verdict === "string") out.push(e as AuditLogEntry);
+      } catch {
+        /* skip malformed */
+      }
+    });
   } catch {
     return [];
   }
-  const out: AuditLogEntry[] = [];
-  for (const line of raw.split("\n")) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const e = JSON.parse(t);
-      if (e && typeof e.goalId === "string" && typeof e.verdict === "string") out.push(e as AuditLogEntry);
-    } catch {
-      /* skip malformed */
-    }
-  }
   return limit !== undefined ? out.slice(-limit) : out;
+}
+
+/** Stream the audit log while retaining only one goal's history. Automatic
+ * postaudit review needs the complete verdict order for its target, but it
+ * must not first materialise every historical goal's report in the main
+ * process. The unfiltered readAuditLog API remains for compatibility. */
+export function readAuditLogForGoal(cwd: string, goalId: string): AuditLogEntry[] {
+  const out: AuditLogEntry[] = [];
+  try {
+    scanLedgerLines(auditLogPath(cwd), (line) => {
+      const t = line.trim();
+      if (!t) return;
+      try {
+        const e = JSON.parse(t);
+        if (e && e.goalId === goalId && typeof e.verdict === "string") out.push(e as AuditLogEntry);
+      } catch {
+        /* skip malformed */
+      }
+    });
+  } catch {
+    return [];
+  }
+  return out;
 }
 
 const VERDICT_GLYPH: Record<AuditLogEntry["verdict"], string> = {

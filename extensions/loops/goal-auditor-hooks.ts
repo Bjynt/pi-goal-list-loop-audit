@@ -57,7 +57,7 @@ import {
   appendAuditLog,
   formatAuditLog,
   formatGoalAuditHistory,
-  readAuditLog,
+  readAuditLogForGoal,
   scanLedgerRecords,
   bumpGoalRevision,
   stripThinkBlocks,
@@ -1786,7 +1786,7 @@ function fireReviewer(
     // required fixes are already shipped; re-mining re-queues them verbatim
     // — field-observed 2026-08-06: round-1 report sliced into 3 junk /list
     // items after the round-2 approval, auto-activated by autoResume).
-    const auditTexts = curateAuditReviewSources(readAuditLog(ctx.cwd), source.goalId).map((e) => e.report);
+    const auditTexts = curateAuditReviewSources(readAuditLogForGoal(ctx.cwd, source.goalId), source.goalId).map((e) => e.report);
     // v0.35.x: automatic postaudit must not mine the archive's Objective or
     // verification contract as if either were an independent finding. That
     // metadata contains reviewer trigger words and can create truncated,
