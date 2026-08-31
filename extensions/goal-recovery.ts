@@ -349,31 +349,56 @@ export function observeCompactFailure(ctx: ExtensionContext, error: string | und
  * The signature is `where: string` so every attempt/skip is observable. */
 export function attemptFreshSessionRecovery(ctx: ExtensionContext, where: string): boolean {
   type FreshSessionContext = ExtensionContext & {
-    newSession?: () => unknown | Promise<unknown>;
+    newSession?: (options?: {
+      withSession?: (ctx: ExtensionContext) => void | Promise<void>;
+    }) => unknown | Promise<unknown>;
   };
+
+  // Capture only the primitive needed for pre-replacement evidence. Once
+  // newSession() starts, the original context is no longer safe to touch.
+  let recoveryCwd: string;
+  try {
+    recoveryCwd = ctx.cwd;
+  } catch {
+    return false;
+  }
+
   const freshCtx = ctx as FreshSessionContext;
-  if (typeof freshCtx.newSession !== "function") {
-    appendLedger(ctx.cwd, "fresh_session_recovery_skipped", {
+  let startNewSession: FreshSessionContext["newSession"];
+  try {
+    startNewSession = freshCtx.newSession;
+  } catch {
+    return false;
+  }
+  if (typeof startNewSession !== "function") {
+    appendLedger(recoveryCwd, "fresh_session_recovery_skipped", {
       from: where,
       reason: "event context has no newSession; pi exposes it only on ExtensionCommandContext",
     });
     return false;
   }
   try {
-    const result = freshCtx.newSession();
+    const result = startNewSession.call(freshCtx, {
+      withSession: async (replacementCtx) => {
+        appendLedger(replacementCtx.cwd, "fresh_session_recovery_rebound", { where });
+        replacementCtx.ui.notify(
+          "glla: stale ctx detected — host supplied a fresh-session capability; rehydrating the goal now.",
+          "info",
+        );
+      },
+    });
     if (result && typeof (result as Promise<unknown>).then === "function") {
       // The new session_start rehydrates the goal from disk. Do not await
       // here: this send already failed on the stale context, and waiting on
       // the replacement would touch the invalidated context again.
       (result as Promise<unknown>).catch((err) => {
-        appendLedger(ctx.cwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
+        appendLedger(recoveryCwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
       });
     }
-    appendLedger(ctx.cwd, "fresh_session_recovery_triggered", { from: where });
-    ctx.ui.notify("glla: stale ctx detected — host supplied a fresh-session capability; rehydrating the goal now.", "info");
+    appendLedger(recoveryCwd, "fresh_session_recovery_triggered", { from: where });
     return true;
   } catch (err) {
-    appendLedger(ctx.cwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
+    appendLedger(recoveryCwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }

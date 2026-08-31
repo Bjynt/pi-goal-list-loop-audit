@@ -24,7 +24,8 @@ test("attemptFreshSessionRecovery: helper checks the actual context capability, 
   assert.match(GOAL_RECOVERY_SRC, /export function attemptFreshSessionRecovery\(ctx: ExtensionContext, where: string\): boolean/);
   assert.match(GOAL_RECOVERY_SRC, /const freshCtx = ctx as FreshSessionContext/);
   assert.doesNotMatch(GOAL_RECOVERY_SRC, /api\.newSession\(\)/, "ExtensionAPI has no public newSession method");
-  assert.match(GOAL_RECOVERY_SRC, /freshCtx\.newSession\(\)/, "forward-compatible call only when the host supplies a command-capable context");
+  assert.match(GOAL_RECOVERY_SRC, /freshCtx\.newSession\(\{/, "forward-compatible call only when the host supplies a command-capable context");
+  assert.match(GOAL_RECOVERY_SRC, /withSession:/, "replacement work must use the fresh context supplied by the host");
   assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_triggered/, "ledger event when a host actually exposes the recovery capability");
   assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_skipped/, "ledger event when the event context cannot replace the session");
 });
@@ -52,7 +53,13 @@ test("runtime: a future command-capable host context is actually invoked and led
   const ctx = {
     cwd,
     ui: { notify: (message: string) => notices.push(message) },
-    newSession: () => { called++; return undefined; },
+    newSession: (options?: { withSession?: (ctx: any) => void | Promise<void> }) => {
+      called += 1;
+      return options?.withSession?.({
+        cwd,
+        ui: { notify: (message: string) => notices.push(message) },
+      });
+    },
   } as any;
   assert.equal(attemptFreshSessionRecovery(ctx, "test-command-context"), true);
   assert.equal(called, 1);
