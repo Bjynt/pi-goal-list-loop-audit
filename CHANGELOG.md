@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+  Durable state transitions and deferred settle repaints now bypass the
+  periodic UI throttle, while unchanged activity/ticker updates remain
+  cadence-limited. A replacement host therefore gets its first paint and
+  meaningful durable status changes cannot remain visually stale.
+
+  Detached-auditor payload blocks now escape XML-like delimiters in goal,
+  completion, verification, and shield data so untrusted text cannot close a
+  prompt boundary or impersonate prompt structure.
+
 ## 0.36.1 — crash-safe persistence and packed-release verification (2026-08-31)
 
 ### Fixed

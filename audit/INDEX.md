@@ -13,7 +13,8 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-08-29):**
+**Most recent (2026-08-31):**
+- `UI-REPAINT-AND-AUDITOR-PROMPT-2026-08-31.md` — durable UI repaint bypass and escaped detached-auditor payload boundaries; Codex-informed follow-up
 - `EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md` — MMX-corroborated loadable Explore-session triage; fixed GLLA's exact child-transcript correlation while leaving Pi/pi-subagents session-picker ownership unchanged
 - `LIST-STALL-REPRODUCTION-2026-08-29.md` — MockPi reproduction of the screenshot-shaped waiting queue and list-completion cascade; no confirmed GLLA-owned stall
 - `AUDITOR-PARKED-NO-VERDICT-DISPOSITION-2026-08-29.md` — durable parked/no-verdict recovery validation and explicit provider-boundary disposition
