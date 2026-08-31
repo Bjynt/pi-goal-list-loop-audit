@@ -830,6 +830,7 @@ export function classifyHungSubagents(
     lastProgressAt: number;
     lastToolUses: number;
     lastOutputTokens: number;
+    lastObservedActivityAt?: number;
     hangAlertedAt?: number;
     hangAction?: "abort-requested" | "unavailable" | "failed";
     hangActionAt?: number;
