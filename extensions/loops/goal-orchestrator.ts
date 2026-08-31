@@ -760,7 +760,7 @@ function persistState(ctx: ExtensionContext): boolean {
     });
   }
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
-  refreshUI(ctx); // every state transition flows through here → the TUI is always current
+  refreshUI(ctx, true); // every durable state transition flows through here → the TUI is always current
   // The synchronous repaint can be overwritten by pi's transcript/editor
   // render that completes after this persistence callback. Re-apply the
   // durable projection after the current event yields so status transitions

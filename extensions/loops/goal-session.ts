@@ -699,7 +699,7 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   // The stale process loses its ticker immediately, so paint the durable
   // interrupted state synchronously while the old UI handle can still accept
   // updates. The next session_start paints it again from disk.
-  try { refreshUI(ctx); } catch { /* stale UI handle is best effort */ }
+  try { refreshUI(ctx, true); } catch { /* stale UI handle is best effort */ }
   try { ctx.ui.notify(`glla: ${guidance}`, "warning"); } catch { /* stale UI handle is best effort */ }
   try { notifyExternal(ctx, `glla: extension api stale — waiting for a fresh session_start; restart pi normally only if no replacement arrives. (${where})`); } catch { /* stale notifier is best effort */ }
 }
@@ -1600,7 +1600,7 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
       scheduleContinuation(ctx, true);
     }
   }
-  refreshUI(ctx);
+  refreshUI(ctx, true);
   return true;
 }
 
@@ -1683,7 +1683,7 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   } else {
     ctx.ui.notify("glla: recovered from the stale-handle park — the handle is healthy again; the goal plane is live.", "info");
   }
-  refreshUI(ctx);
+  refreshUI(ctx, true);
   return true;
 }
 

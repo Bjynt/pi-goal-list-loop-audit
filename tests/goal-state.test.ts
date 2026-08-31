@@ -50,7 +50,7 @@ test("the persistence core lives in goal-state.ts (persistStateLine)", () => {
   // goal.ts's persistState wraps the core with the UI side effects.
   assert.match(GOAL_SRC, /persistStateLine\(ctx\.cwd, state\);/);
   assert.match(GOAL_SRC, /notifyPersistenceState\(ctx\);/);
-  assert.match(GOAL_SRC, /refreshUI\(ctx\);/);
+  assert.match(GOAL_SRC, /refreshUI\(ctx, true\);/);
 });
 
 test("replaceState is used at the moved wholesale sites", () => {

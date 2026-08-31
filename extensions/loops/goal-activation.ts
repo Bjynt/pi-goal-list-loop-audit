@@ -1439,7 +1439,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // status surface. Paint the state we just rehydrated before returning so
       // a freshly restarted session does not look nonexistent while pi loads
       // its transcript; the later loaded session_start will repaint it.
-      refreshUI(ctx);
+      refreshUI(ctx, true);
       ctx.ui.notify(`glla: pi has not loaded a conversation yet — waiting before auto-resume. Load/resume the session, or explicitly run ${activeGoalSurfaceCommand("resume")} or /loop start.`, "info");
       return;
     }
@@ -1807,7 +1807,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       persistState(ctx);
       appendLedger(ctx.cwd, "load_hold_released", { via: "consenting-reload" });
     }
-    refreshUI(ctx);
+    refreshUI(ctx, true);
   });
 
   pi.on("agent_end", async (event: any, ctx: ExtensionContext) => {

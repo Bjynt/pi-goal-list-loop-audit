@@ -2033,7 +2033,8 @@ test("v0.36.2: live UI repaint has a bounded cadence and diff guard", () => {
   const ui = readGoalRuntimeSource();
   assert.match(ui, /const UI_TICK_INTERVAL_MS = 5_000/);
   assert.match(ui, /const UI_RENDER_MIN_INTERVAL_MS = 2_000/);
-  assert.match(ui, /now - lastUIRenderAt < UI_RENDER_MIN_INTERVAL_MS/);
+  assert.match(ui, /function refreshUI\(ctx: ExtensionContext, force = false\)/);
+  assert.match(ui, /!force && !contextChanged && now - lastUIRenderAt < UI_RENDER_MIN_INTERVAL_MS/);
   assert.match(ui, /const widgetKey = widgetLines\?\.join\("\\n"\)/);
   assert.match(ui, /if \(statusChanged\) ctx\.ui\.setStatus/);
   assert.match(ui, /if \(widgetChanged\) ctx\.ui\.setWidget/);

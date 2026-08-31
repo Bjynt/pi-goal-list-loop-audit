@@ -782,7 +782,7 @@ function registerAgentTools(pi: any): void {
         via: via ?? "unset",
         lastEventAt: Date.now(),
       };
-      refreshUI(ctx);
+      refreshUI(ctx, true);
       void (async () => {
       const runAudit = (candidate: AuditorModelCandidate) => {
         latestAuditProgress = {
@@ -900,7 +900,7 @@ function registerAgentTools(pi: any): void {
                 label: `${failureCopy.display} — retrying once`,
                 lastEventAt: Date.now(),
               };
-              refreshUI(current);
+              refreshUI(current, true);
               appendLedger(current.cwd, "audit_infra_retry", {
                 goalId: auditGoalId,
                 model: auditorCandidateLabel(candidate),
@@ -1820,7 +1820,7 @@ function registerAgentTools(pi: any): void {
       // The same production refresh path used by lifecycle events must repaint
       // the card immediately; the next session also recovers the projection
       // from the state ledger through Goal.durableDeferRecommendation.
-      refreshUI(ctx);
+      refreshUI(ctx, true);
       return {
         content: [{ type: "text", text: `Recorded durable-vs-defer judgment: ${record.choice}.` }],
         details: {},
