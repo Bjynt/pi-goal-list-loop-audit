@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import {
@@ -19,9 +20,15 @@ import {
   ModelRuntime,
   createEventBus,
 } from "@earendil-works/pi-coding-agent";
-import { AgentManager } from "../node_modules/@tintinweb/pi-subagents/src/agent-manager.js";
-import { registerRpcHandlers } from "../node_modules/@tintinweb/pi-subagents/src/cross-extension-rpc.js";
 import { MockPi } from "./harness/mock-pi.js";
+
+// The legacy RPC fixture is retained for installations that still provide the
+// old @tintinweb fork. The package dependency now targets pi-subagents, whose
+// public API has no equivalent AgentManager import; do not reach into or patch
+// that external package just to keep this compatibility check runnable.
+const legacyAgentManagerPath = path.resolve("node_modules/@tintinweb/pi-subagents/src/agent-manager.js");
+const legacyRpcPath = path.resolve("node_modules/@tintinweb/pi-subagents/src/cross-extension-rpc.js");
+const legacyRpcFixtureAvailable = fs.existsSync(legacyAgentManagerPath) && fs.existsSync(legacyRpcPath);
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,7 +42,9 @@ async function waitFor(predicate, timeoutMs = 5_000) {
   }
 }
 
-test("real AgentManager child is stopped through the root subagents RPC", async () => {
+test("real AgentManager child is stopped through the root subagents RPC", { skip: !legacyRpcFixtureAvailable ? "legacy @tintinweb RPC fixture is not installed" : false }, async () => {
+  const { AgentManager } = await import(pathToFileURL(legacyAgentManagerPath).href);
+  const { registerRpcHandlers } = await import(pathToFileURL(legacyRpcPath).href);
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-real-subagent-stop-"));
   const faux = fauxProvider({
     api: "glla-faux-api",

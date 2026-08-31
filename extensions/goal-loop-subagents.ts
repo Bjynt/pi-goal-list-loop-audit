@@ -223,6 +223,7 @@ export function syncSubagentModelOverrides(opts: {
   const names = new Set<string>([
     ...KNOWN_MANAGED_AGENT_NAMES,
     ...LEGACY_MANAGED_AGENT_NAMES,
+    ...prevWritten,
     ...Object.keys(overrides),
   ]);
 

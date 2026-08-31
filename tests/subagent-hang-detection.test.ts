@@ -31,6 +31,7 @@ import {
   __testOnlySetSubagentHangEscalationMs,
   __testOnlyHeartbeatTick,
   __testOnlySubagentHangProbes,
+  releaseSubagentRpcHost,
 } from "../extensions/goal-heartbeat.js";
 import {
   MockPi, makeMockCtx, tmpCwd, tick,
@@ -107,6 +108,7 @@ function uninstallManager(): void {
 }
 
 afterEach(() => {
+  releaseSubagentRpcHost();
   __testOnlyResetOwnerSession();
   __testOnlyClearSubagentHangProbes();
   uninstallManager();

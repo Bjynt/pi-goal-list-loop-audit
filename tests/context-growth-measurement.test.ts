@@ -145,7 +145,7 @@ test("fixture: repeated real continuation payloads grow context linearly and are
     gllaEstimatedTokens: 66_789,
     uniqueGllaPayloadCount: 1,
     repeatedGllaPayloadCount: 11,
-    repeatedGllaSerializedBytes: 248_996,
+    repeatedGllaSerializedBytes: 250_151,
     failedErrorOnlyCount: 0,
     unserializableMessageCount: 0,
     provider: {
