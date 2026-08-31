@@ -208,7 +208,7 @@ test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", 
 
 test("v0.35.0: remove/clear/cancel/glla_wipe clear queue sidecars", () => {
   const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
-  assert.match(SRC, /deleteQueueItemFile\(ctx\.cwd, removed\.id\);\n\s*replaceState\(\{ \.\.\.state, list: queue\.filter/); // /list remove
+  assert.match(SRC, /const deleted = deleteQueueItemFileResult\(ctx\.cwd, removed\.id\);[\s\S]*?replaceState\(\{ \.\.\.state, list: queue\.filter/); // /list remove; fail-closed
   assert.match(SRC, /clearQueueItemFiles\(ctx\.cwd\)/, "bulk removal paths clear orphaned disk state");
 });
 

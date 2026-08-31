@@ -135,7 +135,7 @@ test("pending sessionDir defers every core write and does not migrate the old cw
     const oldQueue = path.join(fx.cwd, ".pi-glla", "goals", "old.queue.json");
     fs.writeFileSync(oldQueue, "old", "utf8");
     assert.equal(deleteQueueItemFile(fx.cwd, "old"), false);
-    assert.deepEqual(clearQueueItemFiles(fx.cwd), { removed: 0, failed: [] });
+    assert.deepEqual(clearQueueItemFiles(fx.cwd), { removed: 0, failed: ["<state-root-pending>"] });
     assert.ok(fs.existsSync(oldQueue), "pending mode does not delete fallback queue state");
     const sentinel = path.join(fx.cwd, ".pi-glla", ".pause-auto-commit");
     fs.writeFileSync(sentinel, "old", "utf8");
