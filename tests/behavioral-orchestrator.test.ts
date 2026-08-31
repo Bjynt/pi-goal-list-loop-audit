@@ -1679,6 +1679,39 @@ test("v0.36.3: live activity is scoped across lost results, host replacement, ti
   await pi.fire("session_shutdown", { reason: "quit" }, idleCtx);
 });
 
+test("v0.36.4: /glla resume behaviorally re-kicks an ACTIVE-but-idle goal", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  clearContinuationTimer();
+  setPendingContinuationDispatchRef(null);
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  const createdAt = new Date(Date.now() - 5_000).toISOString();
+  const goal = seedGoal({
+    id: "active-idle-resume-goal",
+    objective: "behavioral active idle resume — done when pinned",
+    createdAt,
+    updatedAt: createdAt,
+  });
+  seedState(cwd, { goal });
+  __testOnlyLoadState(cwd);
+  __testOnlyRememberCtx(ctx);
+  pi.sent.length = 0;
+
+  await pi.command("glla", "resume", ctx);
+  await tick();
+
+  assert.ok(ctx.ui.matching("ACTIVE but idle — re-firing its continuation").length >= 1, "the command explains the active-idle recovery");
+  assert.equal(pi.sent.length, 1, "the real command schedules one continuation");
+  assert.match(pi.sent[0]!.message.content ?? "", /GOAL CHECKPOINT goalId=active-idle-resume-goal/);
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /"resume_rekick"/, "the re-kick is durable and observable");
+
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  setPendingContinuationDispatchRef(null);
+  clearContinuationTimer();
+});
+
 // ────────────────────────────────────────────────────────────────────
 // T2 — stale send → goStaleTerminal (goal stays ACTIVE + interrupt marker)
 // LATCHES the process-wide stale flag — everything below runs stale.
