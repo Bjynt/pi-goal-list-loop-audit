@@ -765,7 +765,7 @@ function refreshUI(ctx: ExtensionContext): void {
     };
     const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras);
     const widgetLines = buildWidgetLines(state, latestAuditProgress, now, theme, width, extras);
-    const widgetKey = widgetLines.join("\n");
+    const widgetKey = widgetLines?.join("\n") ?? "";
     const contextChanged = lastUIRenderContext !== ctx;
     const statusChanged = contextChanged || statusText !== lastUIStatusText;
     const widgetChanged = contextChanged || widgetKey !== lastUIWidgetKey;
