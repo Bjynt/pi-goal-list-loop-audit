@@ -53,5 +53,5 @@ startup-resume behavior.
 - `bun test --parallel=1 --max-concurrency=1 --timeout=60000 tests/durable-defer-production-ui.test.ts`: 1 passed.
 - `bun test --parallel=1 --max-concurrency=1 --timeout=60000 tests/display.test.ts tests/goal-state.test.ts`: 109 passed.
 - Full `npm run test:all`: 1,772 passed, 1 skipped, 0 failed across 168 files; Jiti and offline auditor-extension checks passed.
-- The auditor payload regression test is included in the next full release-gate run.
+- The auditor payload regression test passed in the full release-gate run: 1,773 passed, 1 skipped, and 0 failed across 169 files.
 - No Pi core, operating-system, provider, `pi-subagents`, or other-plugin files were changed.

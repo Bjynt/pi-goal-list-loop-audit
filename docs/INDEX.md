@@ -10,8 +10,8 @@ shipped in the npm tarball (see "Repository-only material" below).
 
 For shipped docs, the relevant entry points are:
 
-- `../CHANGELOG.md` — user-facing changelog; the top of the file is the
-  current package version. v0.35.5 adopted the six-label completion
+- `../CHANGELOG.md` — user-facing changelog; an `Unreleased` section may lead
+  the file, followed by the current released version. v0.35.5 adopted the six-label completion
   recap; v0.35.6 added typed-boundary regression pins; v0.35.7 added
   deterministic fast-fail pre-audits, zero-pause autonomous execution, and
   task milestone gating; v0.35.8 added main-model preferred-primary
@@ -36,9 +36,9 @@ For shipped docs, the relevant entry points are:
 ## Entry points
 - `../README.md` — what the plugin is, install, quickstart
 - `../INSTALL.md` — manual install / symlink setup
-- `../CHANGELOG.md` — user-facing changelog; current package version is
-  at the top of the file (use `/glla version` to compare with the
-  registry).
+- `../CHANGELOG.md` — user-facing changelog; the first versioned heading is
+  the current released package version (use `/glla version` to compare with
+  the registry); post-release work may appear in `Unreleased` above it.
 
 ## Architecture
 - `DESIGN.md` — plugin design (types, state, extension lifecycle)
