@@ -710,7 +710,12 @@ function displayLoopActivityFor(ctx: ExtensionContext, loop: LoopState): {
 function refreshUI(ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
   const now = Date.now();
-  if (lastUIRenderAt > 0 && now - lastUIRenderAt < UI_RENDER_MIN_INTERVAL_MS) return;
+  // A render timestamp is process-global, but the UI surface belongs to the
+  // admitted host context. Never let a render in an old/replaced context
+  // suppress the successor's first paint; otherwise a fresh session can
+  // inherit durable state while its own status/widget remains blank.
+  const contextChanged = lastUIRenderContext !== ctx;
+  if (!contextChanged && lastUIRenderAt > 0 && now - lastUIRenderAt < UI_RENDER_MIN_INTERVAL_MS) return;
   try {
     const theme = ctx.ui.theme as unknown as import("../goal-loop-display.js").DisplayTheme | undefined;
     // Terminal width for truncation budgets: on wide terminals the widget
@@ -766,7 +771,6 @@ function refreshUI(ctx: ExtensionContext): void {
     const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras);
     const widgetLines = buildWidgetLines(state, latestAuditProgress, now, theme, width, extras);
     const widgetKey = widgetLines?.join("\n") ?? "";
-    const contextChanged = lastUIRenderContext !== ctx;
     const statusChanged = contextChanged || statusText !== lastUIStatusText;
     const widgetChanged = contextChanged || widgetKey !== lastUIWidgetKey;
     if (!statusChanged && !widgetChanged) return;
