@@ -1941,8 +1941,10 @@ test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag li
   assert.match(SRC, /postCompactResumeOwed = false; \/\/ v0\.33\.1: a compact from a previous session/);
   // compact-F3: builder throws are contained.
   assert.match(CONT, /try \{ resync = buildPostCompactResync\(\); \} catch/); // decomposition step 5 (v0.34.113): sendContinuation moved
-  // sweep-F6: per-goal module state resets at activation.
-  assert.match(SRC, /countedTokenMessages\.clear\(\);\n  recentActions\.length = 0;/);
+  // sweep-F6: per-goal module state resets at activation, including lost
+  // tool starts that could otherwise keep the live card spinning.
+  assert.match(SRC, /countedTokenMessages\.clear\(\);\n  clearToolActivityState\(\);/);
+  assert.match(SRC, /function clearToolActivityState\(\): void[\s\S]{0,300}inFlightToolCalls\.clear\(\)/);
   // B1: the head fits the terminal — wide width yields a longer objective than narrow.
   const longObjective = "y".repeat(200);
   const g = goalOf({ objective: longObjective });

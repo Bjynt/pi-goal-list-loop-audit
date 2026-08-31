@@ -1621,6 +1621,62 @@ test("T5: guard coverage pin — every mutating tool routes through foreignToolG
   assert.ok(!byName.get("list_status")!.includes("foreignToolGuard"), "list_status is read-only — guard would be noise");
 });
 
+test("v0.36.3: live activity is scoped across lost results, host replacement, timestamps, timers, and pending dispatch", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetToolActivity();
+  clearContinuationTimer();
+  setPendingContinuationDispatchRef(null);
+  const cwd = tmpCwd();
+  const first = await freshSession(cwd, "startup");
+  const createdAt = new Date(Date.now() - 5_000).toISOString();
+  const goal = seedGoal({ id: "activity-boundary-goal", createdAt, updatedAt: createdAt });
+  seedState(cwd, { goal });
+  __testOnlyLoadState(cwd);
+  __testOnlyRememberCtx(first);
+
+  // A real tool start is enough to produce WORKING while its result is lost.
+  await pi.fire("tool_call", { toolName: "bash", toolCallId: "lost-activity", input: { command: "echo stale" } }, first);
+  assert.equal(__testOnlyDisplayActivityFor(first).activity, "working");
+  assert.equal((globalThis as any).inFlightToolCalls.size, 1);
+
+  // The shutdown/rebind boundary drops both the unmatched start and any late
+  // result. A replacement that is still busy must say BUSY, never WORKING.
+  await pi.fire("session_shutdown", { reason: "reload" }, first);
+  const replacement = makeMockCtx(cwd, { sessionManager: MAIN_SM, idle: false });
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  seedState(cwd, { goal });
+  __testOnlyLoadState(cwd);
+  __testOnlyRememberCtx(replacement);
+  assert.equal((globalThis as any).inFlightToolCalls.size, 0, "session replacement clears lost tool starts");
+  await pi.fire("tool_result", { toolName: "bash", toolCallId: "lost-activity", output: "late" }, replacement);
+  assert.equal((globalThis as any).recentActions.length, 0, "an unmatched late result cannot repaint the successor");
+  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "busy");
+
+  // Keep the same scope but move its durable creation boundary after the
+  // observed event. The timestamp fence must reject that old live record.
+  await pi.fire("tool_call", { toolName: "read", toolCallId: "old-timestamp", input: { path: "old.md" } }, replacement);
+  const future = new Date(Date.now() + 60_000).toISOString();
+  seedState(cwd, { goal: { ...goal, createdAt: future, updatedAt: future } });
+  __testOnlyLoadState(cwd);
+  __testOnlyRememberCtx(replacement);
+  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "awaiting-first-turn", "pre-goal timestamps do not produce WORKING");
+
+  // Timer-backed queued work and a latched pending dispatch are both honest
+  // QUEUED states, distinct from the evidence-backed WORKING state above.
+  seedState(cwd, { goal });
+  __testOnlyLoadState(cwd);
+  __testOnlyRememberCtx(replacement);
+  releaseInitialSessionLoadBarrier();
+  scheduleContinuation(replacement, true, 60_000);
+  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "queued", "a live continuation timer is queued work");
+  clearContinuationTimer();
+  setPendingContinuationDispatch({ id: "pending-activity", sentAt: Date.now(), generation: 0, kind: "goal", goalId: goal.id, marker: "test", ownerSessionId: "main" } as any);
+  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "queued", "a pending dispatch is queued work");
+  setPendingContinuationDispatch(null);
+  __testOnlyResetToolActivity();
+  await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+});
+
 // ────────────────────────────────────────────────────────────────────
 // T2 — stale send → goStaleTerminal (goal stays ACTIVE + interrupt marker)
 // LATCHES the process-wide stale flag — everything below runs stale.
