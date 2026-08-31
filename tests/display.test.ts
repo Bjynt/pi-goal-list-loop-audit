@@ -2023,10 +2023,21 @@ test("v0.34.100: auditorSilent default is on in settings (every session model)",
 test("v0.34.100: auditorSilent plumbing threads the loaded setting through extras", () => {
   const loops = readGoalRuntimeSource();
   // extras includes auditorSilent from loadSettings
-  assert.match(loops, /auditorSilent: loadSettings\(ctx\.cwd\)\.auditorSilent !== false/);
+  assert.match(loops, /auditorSilent: (?:settings|loadSettings\(ctx\.cwd\))\.auditorSilent !== false/);
   // display.ts consumes extras.auditorSilent
   const display = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
   assert.match(display, /const silent = extras\?\.auditorSilent !== false/);
+});
+
+test("v0.36.2: live UI repaint has a bounded cadence and diff guard", () => {
+  const ui = readGoalRuntimeSource();
+  assert.match(ui, /const UI_TICK_INTERVAL_MS = 5_000/);
+  assert.match(ui, /const UI_RENDER_MIN_INTERVAL_MS = 2_000/);
+  assert.match(ui, /now - lastUIRenderAt < UI_RENDER_MIN_INTERVAL_MS/);
+  assert.match(ui, /const widgetKey = widgetLines\.join\("\\n"\)/);
+  assert.match(ui, /if \(statusChanged\) ctx\.ui\.setStatus/);
+  assert.match(ui, /if \(widgetChanged\) ctx\.ui\.setWidget/);
+  assert.match(ui, /\}, UI_TICK_INTERVAL_MS\);/);
 });
 
 test("v0.34.100: silent-default widget renders muted for ANY session model", () => {

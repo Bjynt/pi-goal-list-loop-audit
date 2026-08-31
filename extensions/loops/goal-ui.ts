@@ -484,7 +484,17 @@ let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
 let deferredUIRefresh: NodeJS.Timeout | null = null;
 const UI_REFRESH_SETTLE_MS = 50;
+// v0.36.2: the live card is a display aid, not a heartbeat. A one-second
+// repaint in every active pi session can become a cross-terminal redraw storm
+// when several sessions share one WezTerm. Keep the ticker useful for elapsed
+// time/countdown changes, but put a hard ceiling on UI work per session.
+const UI_TICK_INTERVAL_MS = 5_000;
+const UI_RENDER_MIN_INTERVAL_MS = 2_000;
 const LIVE_STREAM_PROOF_MS = 15_000;
+let lastUIRenderAt = 0;
+let lastUIRenderContext: ExtensionContext | null = null;
+let lastUIStatusText: string | undefined;
+let lastUIWidgetKey: string | undefined;
 
 /**
  * Completion-auditor progress is ephemeral, but it still has an owner. A
@@ -699,6 +709,8 @@ function displayLoopActivityFor(ctx: ExtensionContext, loop: LoopState): {
 
 function refreshUI(ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
+  const now = Date.now();
+  if (lastUIRenderAt > 0 && now - lastUIRenderAt < UI_RENDER_MIN_INTERVAL_MS) return;
   try {
     const theme = ctx.ui.theme as unknown as import("../goal-loop-display.js").DisplayTheme | undefined;
     // Terminal width for truncation budgets: on wide terminals the widget
@@ -744,17 +756,26 @@ function refreshUI(ctx: ExtensionContext): void {
       })(),
       ...activity,
       turnPending: pendingContinuationDispatchRef() !== null,
-      auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false,
+      auditorSilent: settings.auditorSilent !== false,
       auditorProgressSignals: settings.auditorProgressSignals !== false,
       mainModelFallbacks: fallbackRefs,
       modelProvenance,
       ...(durableDeferRecommendation ? { durableDeferRecommendation } : {}),
       ...(lastAuditorQuietStretch ? { auditorQuietStretch: lastAuditorQuietStretch } : {}),
     };
-    // Settings are loaded once for the remaining projections; the explicit
-    // auditorSilent expression preserves the source-level contract.
-    ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, extras));
-    ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, extras));
+    const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras);
+    const widgetLines = buildWidgetLines(state, latestAuditProgress, now, theme, width, extras);
+    const widgetKey = widgetLines.join("\n");
+    const contextChanged = lastUIRenderContext !== ctx;
+    const statusChanged = contextChanged || statusText !== lastUIStatusText;
+    const widgetChanged = contextChanged || widgetKey !== lastUIWidgetKey;
+    if (!statusChanged && !widgetChanged) return;
+    if (statusChanged) ctx.ui.setStatus("pi-glla", statusText);
+    if (widgetChanged) ctx.ui.setWidget("pi-glla", widgetLines);
+    lastUIRenderAt = now;
+    lastUIRenderContext = ctx;
+    lastUIStatusText = statusText;
+    lastUIWidgetKey = widgetKey;
   } catch {
     // stale ctx — next event refreshes
   }
@@ -849,7 +870,7 @@ function startUITicker(): void {
       }
     }
     refreshUI(ctx);
-  }, 1_000);
+  }, UI_TICK_INTERVAL_MS);
   uiTicker.unref?.();
 }
 
