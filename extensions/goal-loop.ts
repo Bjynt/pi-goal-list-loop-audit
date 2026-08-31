@@ -711,6 +711,7 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
   const maxStuckInterventions = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).stuckMaxInterventions;
   if (outcome.kind !== "stop" && (loop.consecutiveStuck ?? 0) >= maxStuckInterventions) {
     loop.active = false;
+    clearToolActivityState();
     loop.stopReason = `stuck — ${loop.lastStuckReason} (${loop.consecutiveStuck} consecutive interventions)`;
     persistState(ctx);
     await commitPendingTerminalWork();
@@ -726,6 +727,7 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     return;
   }
   if (outcome.kind === "stop") {
+    clearToolActivityState();
     // v0.29.19: an audit loop's plateau is only honest when the well is
     // ACTUALLY dry. Plateauing with open findings means the agent fumbled
     // (or the provider ate) N turns — not "nothing left" (field: hegemon
@@ -913,6 +915,9 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     await restoreOriginalBranch();
     return false;
   } // v0.28.14: surface/clear stale leftovers
+  // Starting a loop is an objective boundary. Do this only after all refusal
+  // gates pass so a failed start leaves the current activity evidence intact.
+  clearToolActivityState();
   releaseContinuationDispatchStandDown();
   replaceState({
     ...state,
@@ -1050,6 +1055,9 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         ctx.ui.notify(`A goal is active — the held loop stays held. ${activeGoalSurfaceCommand("pause")} or ${activeGoalSurfaceCommand("cancel")} it first, then /loop resume.`, "warning");
         return;
       }
+      // An explicit resume starts a fresh activity era as well as a fresh
+      // continuation window; tool callbacks from the held run are not live.
+      clearToolActivityState();
       // An explicit resume re-arms the counters: fresh stall window,
       // cleared dead-turn/stuck streaks, reprieves restored — the user
       // saying "push again" wins over the ladder's memory (v0.29.19).

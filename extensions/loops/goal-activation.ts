@@ -1184,6 +1184,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     deadOwnerSession = null; // v0.34.25: a real session_start supersedes the silent-swap record
     deadOwnerCwd = null;
     sessionGeneration++;
+    // A fresh host owns a fresh activity era even when pi skipped
+    // session_shutdown. Old tool starts are not evidence for this session.
+    clearToolActivityState();
     bindSubagentRpcHost(pi.events, sessionGeneration);
     clearDraftingState();
     // An auditor belonging to the disposed generation cannot block the fresh
