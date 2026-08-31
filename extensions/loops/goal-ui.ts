@@ -558,9 +558,41 @@ function clearDetachedAuditProgress(generation: number, goalId: string, attemptI
 
 // v0.33.0: slim widget "last action" feed — a tiny ring of finished tool
 // calls {name, arg, ms, ok} captured from the tool_call/tool_result stream.
-// Display-only, never persisted; cleared implicitly as new actions land.
+// Display-only, never persisted; cleared at every session/objective
+// boundary. The scope/epoch fields are defensive: a late result from a
+// disposed goal must not become the newest action on its replacement.
 const recentActions: import("../goal-loop-display.js").RecentActionDisplay[] = [];
-const inFlightToolCalls = new Map<string, { name: string; arg?: string; at: number }>();
+const inFlightToolCalls = new Map<string, { name: string; arg?: string; at: number; scope?: string; epoch: number }>();
+let toolActivityEpoch = 0;
+
+function currentToolActivityScope(): string | undefined {
+  const loop = state.loop?.active ? state.loop : undefined;
+  if (loop) return `loop:${loop.startedAt}`;
+  const goal = state.goal?.status === "active" ? state.goal : undefined;
+  if (goal) return `goal:${goal.id}`;
+  return undefined;
+}
+
+/** Clear ephemeral host activity whenever ownership changes. The persisted
+ * goal/loop is deliberately untouched; only evidence tied to the old
+ * session/objective is discarded. */
+function clearToolActivityState(): void {
+  toolActivityEpoch++;
+  inFlightToolCalls.clear();
+  recentActions.length = 0;
+}
+
+function hasCurrentToolActivity(scope: string | undefined, startedAt: string | undefined): boolean {
+  if (!scope) return false;
+  const boundary = Date.parse(startedAt ?? "");
+  for (const call of inFlightToolCalls.values()) {
+    if (call.epoch !== toolActivityEpoch || call.scope !== scope) continue;
+    // An invalid boundary is not proof that an old call belongs to this
+    // objective. Fail closed rather than painting WORKING from stale state.
+    if (Number.isFinite(boundary) && call.at >= boundary) return true;
+  }
+  return false;
+}
 function summarizeToolArg(name: string, input: any): string | undefined {
   if (!input || typeof input !== "object") return undefined;
   const v = input.file_path ?? input.path ?? input.command ?? input.pattern ?? input.query ?? input.url ?? input.title;

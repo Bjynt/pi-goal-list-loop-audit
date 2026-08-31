@@ -137,6 +137,7 @@ export const GOAL_RUNTIME_GLOBAL_NAMES = [
   "summarizeToolArg",
   "noteToolCall",
   "noteToolResult",
+  "clearToolActivityState",
   "displayActivityFor",
   "refreshUI",
   "scheduleUIRefresh",
@@ -473,6 +474,7 @@ declare global {
   var summarizeToolArg: GoalRuntimeGlobals["summarizeToolArg"];
   var noteToolCall: GoalRuntimeGlobals["noteToolCall"];
   var noteToolResult: GoalRuntimeGlobals["noteToolResult"];
+  var clearToolActivityState: GoalRuntimeGlobals["clearToolActivityState"];
   var displayActivityFor: GoalRuntimeGlobals["displayActivityFor"];
   var refreshUI: GoalRuntimeGlobals["refreshUI"];
   var scheduleUIRefresh: GoalRuntimeGlobals["scheduleUIRefresh"];
