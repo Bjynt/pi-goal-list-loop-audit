@@ -20,6 +20,8 @@
 // ============================================================================
 
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
 import {
@@ -409,11 +411,18 @@ const subagentHangProbes = new Map<string, SubagentHangProbe>();
  * loaded or the record shape changes (falls back to event-only evidence). */
 const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
 type SubagentRecordPoll = {
+  agentType?: string;
+  summary?: string;
   toolUses?: number;
   lifetimeUsage?: { output?: number };
   status?: string;
   /** Manager execution start; queued records initially expose spawn time. */
   startedAt?: number;
+  /** Current pi-subagents async status artifact liveness fields. */
+  lastActivityAt?: number;
+  currentTool?: string;
+  asyncDir?: string;
+  sessionId?: string;
   /** Present on pi-subagents records; required before automatic control. */
   parentAgentId?: string;
 };
@@ -422,11 +431,189 @@ type SubagentManagerPoll = {
   /** Optional future registry capability; never fall back to a parent abort. */
   abort?: (id: string) => boolean;
 };
+
+/** Current pi-subagents does not publish the old global manager registry. Its
+ * public async lifecycle event includes an asyncDir whose status.json is the
+ * durable, read-only source for live counters and ownership. Keep only the
+ * minimal observed metadata here; never import the provider's internals. */
+type CurrentSubagentObservation = SubagentRecordPoll & {
+  ownerGeneration: number;
+  terminal?: boolean;
+};
+const currentSubagentObservations = new Map<string, CurrentSubagentObservation>();
+
+function eventRecordId(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const e = data as { id?: unknown; runId?: unknown };
+  const id = typeof e.id === "string" && e.id.trim() ? e.id.trim() : e.runId;
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
+}
+
+function eventString(data: unknown, key: string): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function eventNumber(data: unknown, key: string): number | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function currentSummary(data: unknown): string | undefined {
+  const task = eventString(data, "task");
+  if (task && !/^\[prompt redacted\]$/i.test(task)) return task;
+  const goal = eventString(data, "goal");
+  if (goal && !/^\[prompt redacted\]$/i.test(goal)) return goal;
+  return eventString(data, "mode") ?? "async run";
+}
+
+function normalizeCurrentStatus(value: unknown): string {
+  switch (value) {
+    case "queued":
+    case "pending":
+      return "queued";
+    case "running":
+      return "running";
+    case "paused":
+      return "queued";
+    case "complete":
+    case "completed":
+      return "completed";
+    case "failed":
+    case "partial":
+      return "failed";
+    case "stopped":
+    case "rejected":
+      return "stopped";
+    default:
+      return "running";
+  }
+}
+
+function currentOutputTokens(raw: Record<string, unknown>): number | undefined {
+  const tokens = raw.tokens;
+  if (tokens && typeof tokens === "object") {
+    const output = (tokens as Record<string, unknown>).output;
+    if (typeof output === "number" && Number.isFinite(output) && output >= 0) return output;
+  }
+  const steps = raw.steps;
+  if (!Array.isArray(steps)) return undefined;
+  let total = 0;
+  let found = false;
+  for (const step of steps) {
+    if (!step || typeof step !== "object") continue;
+    const stepTokens = (step as Record<string, unknown>).tokens;
+    if (!stepTokens || typeof stepTokens !== "object") continue;
+    const output = (stepTokens as Record<string, unknown>).output;
+    if (typeof output === "number" && Number.isFinite(output) && output >= 0) {
+      total += output;
+      found = true;
+    }
+  }
+  return found ? total : undefined;
+}
+
+function readCurrentSubagentRecord(id: string, observed: CurrentSubagentObservation): SubagentRecordPoll {
+  let raw: Record<string, unknown> | undefined;
+  if (observed.asyncDir && path.isAbsolute(observed.asyncDir)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(observed.asyncDir, "status.json"), "utf-8"));
+      if (parsed && typeof parsed === "object") raw = parsed as Record<string, unknown>;
+    } catch {
+      // The provider may publish the lifecycle event before status.json is
+      // flushed, or remove it immediately after terminal delivery. The event
+      // observation remains a valid bounded fallback.
+    }
+  }
+  if (raw && typeof raw.runId === "string" && raw.runId !== id) raw = undefined;
+  const status = raw ? normalizeCurrentStatus(raw.state ?? raw.status) : observed.status ?? "running";
+  const output = raw ? currentOutputTokens(raw) : undefined;
+  const parentWorkflowRunId = raw?.parentWorkflowRunId ?? observed.parentAgentId;
+  return {
+    ...observed,
+    ...(raw?.toolCount !== undefined ? { toolUses: raw.toolCount as number } : {}),
+    ...(output !== undefined ? { lifetimeUsage: { output } } : {}),
+    status,
+    ...(raw?.startedAt !== undefined ? { startedAt: raw.startedAt as number } : {}),
+    ...(raw?.lastActivityAt !== undefined ? { lastActivityAt: raw.lastActivityAt as number } : {}),
+    ...(raw?.currentTool !== undefined ? { currentTool: raw.currentTool as string } : {}),
+    ...(typeof parentWorkflowRunId === "string" && parentWorkflowRunId.trim()
+      ? { parentAgentId: parentWorkflowRunId }
+      : { parentAgentId: undefined }),
+  };
+}
+
+function observeCurrentSubagent(data: unknown, terminalStatus?: string): void {
+  const id = eventRecordId(data);
+  if (!id) return;
+  const prior = currentSubagentObservations.get(id);
+  const parentWorkflowRunId = eventString(data, "parentWorkflowRunId");
+  const next: CurrentSubagentObservation = {
+    ...(prior ?? {}),
+    ownerGeneration: ownerGeneration(),
+    ...(eventString(data, "asyncDir") ? { asyncDir: eventString(data, "asyncDir") } : {}),
+    ...(eventString(data, "sessionId") ? { sessionId: eventString(data, "sessionId") } : {}),
+    ...(eventString(data, "agent") ? { agentType: eventString(data, "agent") } : {}),
+    ...(parentWorkflowRunId !== undefined ? { parentAgentId: parentWorkflowRunId } : {}),
+    ...(eventNumber(data, "startedAt") !== undefined ? { startedAt: eventNumber(data, "startedAt") } : {}),
+    ...(eventNumber(data, "lastActivityAt") !== undefined ? { lastActivityAt: eventNumber(data, "lastActivityAt") } : {}),
+    ...(terminalStatus ? { status: terminalStatus, terminal: true } : { status: prior?.status ?? "running", terminal: false }),
+  };
+  currentSubagentObservations.set(id, next);
+}
+
+/** Observe a current pi-subagents async start event and seed the watchdog. */
+export function observeCurrentSubagentStart(data: unknown): void {
+  const id = eventRecordId(data);
+  if (!id) return;
+  observeCurrentSubagent(data, undefined);
+  upsertSubagentHangProbe(id, eventString(data, "agent"), currentSummary(data), eventNumber(data, "startedAt") ?? Date.now());
+}
+
+/** Observe current-package progress evidence. */
+export function observeCurrentSubagentProgress(data: unknown): void {
+  if (!eventRecordId(data)) return;
+  observeCurrentSubagent(data, undefined);
+  const id = eventRecordId(data)!;
+  markSubagentHangProgress(id);
+}
+
+/** Observe current-package async completion. */
+export function observeCurrentSubagentComplete(data: unknown): void {
+  if (!eventRecordId(data)) return;
+  observeCurrentSubagent(data, "completed");
+  endSubagentHangProbe(eventRecordId(data)!);
+}
+
+/** Observe current-package process termination. */
+export function observeCurrentSubagentTerminal(data: unknown): void {
+  const id = eventRecordId(data);
+  if (!id) return;
+  const failed = data && typeof data === "object" && ((data as any).hasError === true || (data as any).exitCode !== undefined && (data as any).exitCode !== 0);
+  observeCurrentSubagent(data, failed ? "failed" : "stopped");
+  endSubagentHangProbe(id);
+}
+
 function subagentManagerPoller(): SubagentManagerPoll {
+  const legacy = (() => {
+    try { return ((globalThis as any)[SUBAGENT_MANAGER_KEY] ?? {}) as SubagentManagerPoll; }
+    catch { return {}; }
+  })();
+  const hasCurrent = currentSubagentObservations.size > 0;
+  if (!hasCurrent) return legacy;
   try {
-    return ((globalThis as any)[SUBAGENT_MANAGER_KEY] ?? {}) as SubagentManagerPoll;
+    return {
+      getRecord: (id: string) => {
+        const current = currentSubagentObservations.get(id);
+        if (current) return readCurrentSubagentRecord(id, current);
+        return legacy.getRecord?.(id);
+      },
+      abort: legacy.abort,
+    };
   } catch {
-    return {};
+    return legacy;
   }
 }
 
