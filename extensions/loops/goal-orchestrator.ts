@@ -446,6 +446,9 @@ function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.T
 }
 
 function clearSessionOwnedTimers(preserveStaleRecovery = false): void {
+  // Tool starts/results are display-only session evidence. Clear them with
+  // the timers so a lost result cannot make the successor look WORKING.
+  clearToolActivityState();
   sessionHandoffPending = true;
   sessionGeneration++;
   initialSessionLoadPending = false;
@@ -869,7 +872,7 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
   lastMainModelFailure = null;
   releaseContinuationDispatchStandDown();
   countedTokenMessages.clear();
-  recentActions.length = 0;
+  clearToolActivityState();
   goal.createdVia = via; // v0.28.28: provenance — answerable from the ledger + /glla log
   // v0.35.72: journal the complete next state before either projection is
   // changed. If the process dies between the markdown and JSONL writes,
@@ -1223,6 +1226,9 @@ function archiveCurrentGoal(
     ctx.ui.notify(`Archive published for ${goal.policy === "list" ? "the list item" : "the goal"}, but the terminal state could not be persisted. The live objective remains open and startup recovery will retry safely.`, "warning");
     return false;
   }
+  // The terminal archive is a lifecycle boundary even when the next item is
+  // not activated. Drop a lost tool call before any successor can inherit it.
+  clearToolActivityState();
   updateArchiveIntentPhase(ctx.cwd, "state-persisted");
   if (!finalizeArchiveIntent(ctx.cwd, goal.id)) {
     ctx.ui.notify(`Archive committed for ${goal.policy === "list" ? "the list item" : "the goal"}, but active-file cleanup is pending. The durable intent remains for the next recovery boundary.`, "warning");

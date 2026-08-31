@@ -608,19 +608,30 @@ function noteToolCall(event: any): void {
   const name = String(event?.toolName ?? "?");
   const id = String(event?.toolCallId ?? event?.id ?? `anon-${Date.now()}`);
   if (inFlightToolCalls.size >= 20) inFlightToolCalls.delete(inFlightToolCalls.keys().next().value!); // v0.33.1: evict BEFORE the 21st
-  inFlightToolCalls.set(id, { name, arg: summarizeToolArg(name, event?.input ?? event?.args), at: Date.now() });
+  inFlightToolCalls.set(id, {
+    name,
+    arg: summarizeToolArg(name, event?.input ?? event?.args),
+    at: Date.now(),
+    scope: currentToolActivityScope(),
+    epoch: toolActivityEpoch,
+  });
 }
 function noteToolResult(event: any): void {
   const id = String(event?.toolCallId ?? event?.id ?? "");
   const f = id ? inFlightToolCalls.get(id) : undefined;
   if (id) inFlightToolCalls.delete(id);
+  // A result without a matching start is not a completed action: it may be a
+  // late callback from the previous session/objective (or a host event that
+  // arrived while the handoff gate was closed). Do not let it repaint a new
+  // goal's card. The operational tool-result handler still processes the
+  // event below this display-only hook.
+  if (!f || f.epoch !== toolActivityEpoch || f.scope !== currentToolActivityScope()) return;
   const ok = !Boolean(event?.isError ?? event?.error);
-  const name = f?.name ?? String(event?.toolName ?? "?");
   // v0.34.124: stamp the result epoch so the widget can drop actions that
   // predate the CURRENT goal (the ring outlived a goal change and showed
   // the previous goal's ✓ complete_goal on the new goal's card — note.md
   // 221249 "time ticking but nothing else").
-  recentActions.push({ name, arg: f?.arg ?? summarizeToolArg(name, event?.input ?? event?.args), ms: f ? Date.now() - f.at : 0, ok, at: Date.now() });
+  recentActions.push({ name: f.name, arg: f.arg, ms: Date.now() - f.at, ok, at: Date.now() });
   if (recentActions.length > 3) recentActions.shift();
 }
 
@@ -673,7 +684,7 @@ function displayActivityFor(ctx: ExtensionContext): {
   }
   const scheduled = continuationTimerRef() !== null || pendingContinuationDispatchRef() !== null || continuationDispatchStoodDownRef();
   const streamFresh = streamAt !== undefined && Date.now() - streamAt <= LIVE_STREAM_PROOF_MS;
-  const toolActive = inFlightToolCalls.size > 0;
+  const toolActive = hasCurrentToolActivity(`goal:${goal.id}`, goal.createdAt);
   // A spinner means pi is busy AND we have recent stream/tool evidence. A
   // busy host with no fresh evidence gets a static BUSY label instead, so a
   // hung provider cannot masquerade as progress.
@@ -727,7 +738,7 @@ function displayLoopActivityFor(ctx: ExtensionContext, loop: LoopState): {
     || continuationDispatchStoodDownRef()
     || loopTimer;
   const streamFresh = streamAt !== undefined && Date.now() - streamAt <= LIVE_STREAM_PROOF_MS;
-  const toolActive = inFlightToolCalls.size > 0;
+  const toolActive = hasCurrentToolActivity(`loop:${loop.startedAt}`, loop.startedAt);
   if (toolActive || (!idle && streamFresh)) {
     return { activity: "working", lastActivityAt, lastStreamActivityAt: streamAt };
   }
@@ -979,6 +990,17 @@ export function __testOnlySetLastCompactionAt(at: number | null): void {
   lastCompactionAt = at ?? 0;
 }
 
+/** Test-only: expose the live activity projection without requiring a TUI
+ * renderer. This drives the same scope/timestamp checks used by refreshUI. */
+export function __testOnlyDisplayActivityFor(ctx: ExtensionContext): ReturnType<typeof displayActivityFor> {
+  return displayActivityFor(ctx);
+}
+
+/** Test-only: reset ephemeral activity after a fixture's synthetic boundary. */
+export function __testOnlyResetToolActivity(): void {
+  clearToolActivityState();
+}
+
 /** Load the module state singleton from a cwd's disk state — the exact
  * assignment session_start performs (goal.ts:8827) — WITHOUT firing
  * session_start (co-residency rule: a second session_start claim in a
@@ -1091,6 +1113,7 @@ defineGoalRuntimeGlobal("inFlightToolCalls", { get: () => inFlightToolCalls });
 defineGoalRuntimeGlobal("summarizeToolArg", { get: () => summarizeToolArg });
 defineGoalRuntimeGlobal("noteToolCall", { get: () => noteToolCall });
 defineGoalRuntimeGlobal("noteToolResult", { get: () => noteToolResult });
+defineGoalRuntimeGlobal("clearToolActivityState", { get: () => clearToolActivityState });
 defineGoalRuntimeGlobal("displayActivityFor", { get: () => displayActivityFor });
 defineGoalRuntimeGlobal("refreshUI", { get: () => refreshUI });
 defineGoalRuntimeGlobal("scheduleUIRefresh", { get: () => scheduleUIRefresh });
