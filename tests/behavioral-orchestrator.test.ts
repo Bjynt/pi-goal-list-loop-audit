@@ -1665,16 +1665,17 @@ test("v0.36.3: live activity is scoped across lost results, host replacement, ti
   // QUEUED states, distinct from the evidence-backed WORKING state above.
   seedState(cwd, { goal });
   __testOnlyLoadState(cwd);
-  __testOnlyRememberCtx(replacement);
+  const idleCtx = makeMockCtx(cwd, { sessionManager: MAIN_SM, idle: true });
+  __testOnlyRememberCtx(idleCtx);
   releaseInitialSessionLoadBarrier();
-  scheduleContinuation(replacement as any, true, 60_000);
-  assert.equal(__testOnlyDisplayActivityFor(replacement as any).activity, "queued", "a live continuation timer is queued work");
+  scheduleContinuation(idleCtx as any, true, 60_000);
+  assert.equal(__testOnlyDisplayActivityFor(idleCtx as any).activity, "queued", "a live continuation timer is queued work");
   clearContinuationTimer();
   setPendingContinuationDispatchRef({ id: "pending-activity", sentAt: Date.now(), generation: 0, kind: "goal", goalId: goal.id, marker: "test", ownerSessionId: "main" } as any);
-  assert.equal(__testOnlyDisplayActivityFor(replacement as any).activity, "queued", "a pending dispatch is queued work");
+  assert.equal(__testOnlyDisplayActivityFor(idleCtx as any).activity, "queued", "a pending dispatch is queued work");
   setPendingContinuationDispatchRef(null);
   __testOnlyResetToolActivity();
-  await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+  await pi.fire("session_shutdown", { reason: "quit" }, idleCtx);
 });
 
 // ────────────────────────────────────────────────────────────────────
