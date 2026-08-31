@@ -6,6 +6,10 @@
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260831_131506.png 
 
+## cant resume idle with /glla resume, i had to reload 
+
+yea /glla resume not starting is a common one
+
 # Later
 
 ## Cross-harness and extension review
