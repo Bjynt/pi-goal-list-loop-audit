@@ -1636,7 +1636,7 @@ test("v0.36.3: live activity is scoped across lost results, host replacement, ti
 
   // A real tool start is enough to produce WORKING while its result is lost.
   await pi.fire("tool_call", { toolName: "bash", toolCallId: "lost-activity", input: { command: "echo stale" } }, first);
-  assert.equal(__testOnlyDisplayActivityFor(first).activity, "working");
+  assert.equal(__testOnlyDisplayActivityFor(first as any).activity, "working");
   assert.equal((globalThis as any).inFlightToolCalls.size, 1);
 
   // The shutdown/rebind boundary drops both the unmatched start and any late
@@ -1650,7 +1650,7 @@ test("v0.36.3: live activity is scoped across lost results, host replacement, ti
   assert.equal((globalThis as any).inFlightToolCalls.size, 0, "session replacement clears lost tool starts");
   await pi.fire("tool_result", { toolName: "bash", toolCallId: "lost-activity", output: "late" }, replacement);
   assert.equal((globalThis as any).recentActions.length, 0, "an unmatched late result cannot repaint the successor");
-  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "busy");
+  assert.equal(__testOnlyDisplayActivityFor(replacement as any).activity, "busy");
 
   // Keep the same scope but move its durable creation boundary after the
   // observed event. The timestamp fence must reject that old live record.
@@ -1659,7 +1659,7 @@ test("v0.36.3: live activity is scoped across lost results, host replacement, ti
   seedState(cwd, { goal: { ...goal, createdAt: future, updatedAt: future } });
   __testOnlyLoadState(cwd);
   __testOnlyRememberCtx(replacement);
-  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "awaiting-first-turn", "pre-goal timestamps do not produce WORKING");
+  assert.equal(__testOnlyDisplayActivityFor(replacement as any).activity, "awaiting-first-turn", "pre-goal timestamps do not produce WORKING");
 
   // Timer-backed queued work and a latched pending dispatch are both honest
   // QUEUED states, distinct from the evidence-backed WORKING state above.
@@ -1667,12 +1667,12 @@ test("v0.36.3: live activity is scoped across lost results, host replacement, ti
   __testOnlyLoadState(cwd);
   __testOnlyRememberCtx(replacement);
   releaseInitialSessionLoadBarrier();
-  scheduleContinuation(replacement, true, 60_000);
-  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "queued", "a live continuation timer is queued work");
+  scheduleContinuation(replacement as any, true, 60_000);
+  assert.equal(__testOnlyDisplayActivityFor(replacement as any).activity, "queued", "a live continuation timer is queued work");
   clearContinuationTimer();
-  setPendingContinuationDispatch({ id: "pending-activity", sentAt: Date.now(), generation: 0, kind: "goal", goalId: goal.id, marker: "test", ownerSessionId: "main" } as any);
-  assert.equal(__testOnlyDisplayActivityFor(replacement).activity, "queued", "a pending dispatch is queued work");
-  setPendingContinuationDispatch(null);
+  setPendingContinuationDispatchRef({ id: "pending-activity", sentAt: Date.now(), generation: 0, kind: "goal", goalId: goal.id, marker: "test", ownerSessionId: "main" } as any);
+  assert.equal(__testOnlyDisplayActivityFor(replacement as any).activity, "queued", "a pending dispatch is queued work");
+  setPendingContinuationDispatchRef(null);
   __testOnlyResetToolActivity();
   await pi.fire("session_shutdown", { reason: "quit" }, replacement);
 });
