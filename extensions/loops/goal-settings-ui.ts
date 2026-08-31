@@ -266,6 +266,7 @@ import {
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import {
   defaultAgentDir,
+  OVERRIDABLE_AGENT_TYPES,
   resolveEffectiveSubagentModel,
   syncSubagentModelOverrides,
   type SubagentModelStrategy,
@@ -901,6 +902,38 @@ function parseToolOverrideValueLocal(s: string): unknown {
 
 export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
   settingsEditContext = ctx;
+  // Current pi-subagents roles are data-driven. Keep this dispatch in front
+  // of the switch so adding a built-in role does not require another hard-coded
+  // case label here.
+  if (id.startsWith("subagentModelOverrides.")) {
+    const agentType = id.slice("subagentModelOverrides.".length);
+    if (OVERRIDABLE_AGENT_TYPES.includes(agentType)) {
+      const pick = await promptModelRef(ctx, `Model pin for ${agentType} subagents`, "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
+      if (pick === undefined) return;
+      const current = loadSettings(ctx.cwd).subagentModelOverrides ?? {};
+      const next = { ...current };
+      if (pick.kind === "ref") next[agentType] = pick.ref;
+      else delete next[agentType];
+      saveSettings("global", ctx.cwd, { subagentModelOverrides: Object.keys(next).length > 0 ? next : undefined });
+      ctx.ui.notify(`${agentType} model pin saved — applies to NEW pi sessions.`, "info");
+      return;
+    }
+  }
+  if (id.startsWith("subagentFallbacks:")) {
+    const agentType = id.slice("subagentFallbacks:".length);
+    if (OVERRIDABLE_AGENT_TYPES.includes(agentType)) {
+      const settings = loadSettings(ctx.cwd);
+      const current = settings.subagentFallbacks?.[agentType] ?? [];
+      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS} (space to toggle, tab = order mode with ↑/↓, enter to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(settings.forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS });
+      if (refs === undefined) return;
+      const next = { ...(settings.subagentFallbacks ?? {}) };
+      if (refs.length > 0) next[agentType] = refs;
+      else delete next[agentType];
+      saveSettings("global", ctx.cwd, { subagentFallbacks: Object.keys(next).length > 0 ? next : undefined });
+      ctx.ui.notify(refs.length ? `${agentType} fallback chain saved: ${refs.join(" → ")} — applies to NEW pi sessions.` : `${agentType} fallback chain cleared — falls through to the legacy pin / strategy.`, "info");
+      return;
+    }
+  }
   switch (id) {
     case "stateRoot": {
       const v = await ctx.ui.select("State root — where durable glla state lives", [
@@ -1478,37 +1511,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         saveSettings("global", ctx.cwd, { subagentModelStrategy: strategy });
         ctx.ui.notify("Subagent model strategy saved — applies to NEW pi sessions (pi-subagents registers agents at session start).", "info");
       }
-      return;
-    }
-    case "subagentModelOverrides.Explore":
-    case "subagentModelOverrides.Plan":
-    case "subagentModelOverrides.general-purpose":
-    case "subagentModelOverrides.Designer": {
-      const agentType = id.slice("subagentModelOverrides.".length);
-      const pick = await promptModelRef(ctx, `Model pin for ${agentType} subagents`, "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
-      if (pick === undefined) return;
-      const current = loadSettings(ctx.cwd).subagentModelOverrides ?? {};
-      const next = { ...current };
-      if (pick.kind === "ref") next[agentType] = pick.ref;
-      else delete next[agentType];
-      saveSettings("global", ctx.cwd, { subagentModelOverrides: Object.keys(next).length > 0 ? next : undefined });
-      ctx.ui.notify(`${agentType} model pin saved — applies to NEW pi sessions.`, "info");
-      return;
-    }
-    case "subagentFallbacks:Explore":
-    case "subagentFallbacks:Plan":
-    case "subagentFallbacks:general-purpose":
-    case "subagentFallbacks:Designer": {
-      const agentType = id.slice("subagentFallbacks:".length);
-      const settings = loadSettings(ctx.cwd);
-      const current = settings.subagentFallbacks?.[agentType] ?? [];
-      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS} (space to toggle, tab = order mode with ↑/↓, enter to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(settings.forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS });
-      if (refs === undefined) return;
-      const next = { ...(settings.subagentFallbacks ?? {}) };
-      if (refs.length > 0) next[agentType] = refs;
-      else delete next[agentType];
-      saveSettings("global", ctx.cwd, { subagentFallbacks: Object.keys(next).length > 0 ? next : undefined });
-      ctx.ui.notify(refs.length ? `${agentType} fallback chain saved: ${refs.join(" → ")} — applies to NEW pi sessions.` : `${agentType} fallback chain cleared — falls through to the legacy pin / strategy.`, "info");
       return;
     }
     case "subagentResolved":
