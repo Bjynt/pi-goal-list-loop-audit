@@ -1663,6 +1663,7 @@ test("v0.36.3: live activity is scoped across lost results, host replacement, ti
 
   // Timer-backed queued work and a latched pending dispatch are both honest
   // QUEUED states, distinct from the evidence-backed WORKING state above.
+  __testOnlyResetToolActivity();
   seedState(cwd, { goal });
   __testOnlyLoadState(cwd);
   const idleCtx = makeMockCtx(cwd, { sessionManager: MAIN_SM, idle: true });
