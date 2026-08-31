@@ -79,7 +79,10 @@ try {
       "@earendil-works/pi-coding-agent": path.join(nodeModules, "@earendil-works/pi-coding-agent"),
       "@earendil-works/pi-tui": path.join(nodeModules, "@earendil-works/pi-tui"),
       "@tintinweb/pi-subagents": path.join(nodeModules, "@tintinweb/pi-subagents"),
-      typebox: path.join(nodeModules, "typebox"),
+      // TypeBox exposes only an ESM `exports` entry; point Jiti at that
+      // concrete module because the disposable install intentionally omits
+      // peer dependencies.
+      typebox: path.join(nodeModules, "typebox", "build", "index.mjs"),
     },
   });
 
