@@ -1227,6 +1227,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     clearLoopTimer();
+    clearToolActivityState();
     if (state.mainModelRecovery?.kind === "loop") {
       clearMainModelRecoveryTimer();
       state.mainModelRecovery = undefined;
@@ -1262,6 +1263,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     clearLoopTimer();
+    clearToolActivityState();
     if (state.mainModelRecovery?.kind === "loop") {
       clearMainModelRecoveryTimer();
       state.mainModelRecovery = undefined;
