@@ -20,6 +20,12 @@ yea /glla resume not starting is a common one
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260831_223758.png 
 
+## lists are bugged, they dont keep going say nothing to resume
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260831_233920.png 
+
+
+
 # Later
 
 ## Cross-harness and extension review
