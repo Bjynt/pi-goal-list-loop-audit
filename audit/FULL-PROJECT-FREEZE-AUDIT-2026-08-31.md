@@ -42,8 +42,13 @@ paths; the canonical helper itself still needs an upstream repair in
 `dracon-platform` (replace the self-forwarding call with the real guard
 implementation or a non-recursive entry point).
 
-The final read-only process check after verification found no live
-`guard-append-only.py` processes and no live GLLA auditor workers.
+The GLLA-specific process check found no live `goal-auditor-worker.mjs`
+processes. A later host census did find a live recursive chain rooted at
+`python3 .pi-glla/audit-loop/guard-append-only.py`, with 1,535 descendants
+using the external `/home/dracon/Dev/dracon-platform/scripts/lib/guard-append-only.py`
+helper at the time of inspection. That chain belongs to the unrelated
+`dracon-platform` project and is not spawned or imported by GLLA; it remains an
+external incident for that project's operator to stop and repair.
 
 ## Remaining scoped follow-ups
 
