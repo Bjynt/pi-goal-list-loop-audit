@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.36.1 — crash-safe persistence and packed-release verification (2026-08-31)
+
+### Fixed
+  Terminal archival now records a durable intent before publication and
+  reconciles interrupted archive/state commits on startup, preventing a
+  published archive from resurrecting an active goal or permanently fencing
+  the next archive attempt.
+
+  Destructive queue operations now fail closed when sidecar cleanup cannot be
+  proven successful. List clear/cancel/remove, group close, carryover, wipe,
+  and repair-source consumption preserve recoverable durable work instead of
+  mutating memory and allowing a failed deletion to reappear after restart.
+
+  The active ledger now rotates into immutable, ownership-fenced segments and
+  keeps a complete current-state snapshot in the active file. Startup recovery
+  handles the rename-before-rewrite interruption window while forensic history
+  remains available.
+
+  Bounded scanners and streaming reducers now back list depth, log tails,
+  switch logs, postaudit cadence, and multi-project statistics. Detached
+  auditor scratch now has a read-only health report plus age-bounded cleanup
+  limited to worker identities proven dead; ambiguous directories remain
+  untouched.
+
+  The runtime-global bridge now has one compile-checked registration registry
+  and typed high-risk lifecycle fields, reducing silent name and shape drift.
+
+### Changed
+  `release:check` now packs, installs, and imports the actual npm tarball in a
+  temporary directory, including the shipped goal entry point and auditor
+  launcher/worker paths. No registry publish is performed by the smoke.
+
 ## 0.36.0 — event-driven long-running supervision (2026-08-28)
 
 ### Added
