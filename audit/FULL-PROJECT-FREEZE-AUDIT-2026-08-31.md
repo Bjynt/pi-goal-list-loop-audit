@@ -91,6 +91,9 @@ from this GLLA tasklist.
 - Offline allow-listed auditor-extension check: passed.
 - `npm pack --dry-run`: passed; package contents and release contract passed.
 - Packed-artifact install/import smoke: passed in a temporary directory.
+- GitHub Release workflow `33345349305`: passed; tag `v0.36.1` was published
+  through npm trusted publishing and `npm view` reports `0.36.1` as the latest
+  dist-tag.
 - Focused persistence, auditor, process-ceiling, and shield regressions: all
   passed.
 - `git diff --check`: passed.
