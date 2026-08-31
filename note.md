@@ -10,6 +10,8 @@
 
 yea /glla resume not starting is a common one
 
+## we are changing the recommend subagents extension to the one we are using right now and adjusting our compatibility if needed
+
 # Later
 
 ## Cross-harness and extension review
