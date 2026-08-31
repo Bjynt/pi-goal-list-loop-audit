@@ -188,8 +188,8 @@ test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable a
   assert.match(caseBody, /promptModelRef\(ctx, "Auditor model override"/);
   assert.ok(!caseBody.includes("ctx.ui.input(\"Auditor model override\""), "typed input replaced by the picker");
   // Subagent model pins use the picker too:
-  const pinIdx = SRC.indexOf('case "subagentModelOverrides.Explore":');
-  const pinBody = SRC.slice(pinIdx, pinIdx + 900);
+  const pinIdx = SRC.indexOf('id.startsWith("subagentModelOverrides.")');
+  const pinBody = SRC.slice(pinIdx, pinIdx + 1_200);
   assert.match(pinBody, /promptModelRef\(ctx, `Model pin for \$\{agentType\} subagents`/);
   // Fallback: unavailable configured model → session model, notified + ledgered:
   assert.match(SRC, /auditor_model_fallback/);

@@ -1,12 +1,4 @@
-// pi-goal-list-loop-audit — v0.24.6
-// tests/subagent-model-override.test.ts
-//
-// Section I of the eager-continuation contract (goal-file items 33-36):
-// pi-subagents' default Explore agent pins anthropic/claude-haiku-4-5, which
-// silently routes subagents to a different provider/quota pool than the
-// session. glla manages ~/.pi/agent/agents/Explore.md (the only pinned
-// default) so subagents inherit the session model by default, with a
-// settings escape hatch.
+// pi-goal-list-loop-audit — current pi-subagents role override contract
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -17,10 +9,11 @@ import * as path from "node:path";
 import {
   buildAgentOverrideMd,
   defaultAgentDir,
-  EXPLORE_DEFAULT_DESCRIPTION,
-  EXPLORE_DEFAULT_SYSTEM_PROMPT,
-  EXPLORE_DEFAULT_TOOLS,
+  CURRENT_SUBAGENT_AGENT_NAMES,
   KNOWN_PINNED_DEFAULT_AGENTS,
+  OVERRIDABLE_AGENT_TYPES,
+  SCOUT_DEFAULT_DESCRIPTION,
+  SCOUT_DEFAULT_TOOLS,
   SUBAGENT_MANAGED_MARKER,
   syncSubagentModelOverrides,
 } from "../extensions/goal-loop-subagents.ts";
@@ -34,21 +27,36 @@ function readOverride(agentDir: string, name: string): string | undefined {
   return fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : undefined;
 }
 
-// ---- buildAgentOverrideMd ----
+function installedAgent(name: string): string {
+  const local = path.resolve("node_modules", "pi-subagents", "agents", `${name}.md`);
+  assert.ok(fs.existsSync(local), `current pi-subagents definition is installed: ${name}`);
+  return fs.readFileSync(local, "utf-8");
+}
 
-test("build: no model → no model: line, marker present, tools CSV, full prompt", () => {
-  const md = buildAgentOverrideMd("Explore");
-  assert.equal(/^model:/m.test(md), false, "must NOT contain a model: pin");
-  assert.ok(md.includes(`x-managed-by: ${SUBAGENT_MANAGED_MARKER}`));
-  assert.ok(md.includes(`tools: ${EXPLORE_DEFAULT_TOOLS}`));
-  assert.ok(md.includes("prompt_mode: replace"));
-  assert.ok(md.includes(EXPLORE_DEFAULT_SYSTEM_PROMPT));
-  assert.ok(md.includes(EXPLORE_DEFAULT_DESCRIPTION));
+test("current package roles are the model override surface", () => {
+  assert.deepEqual([...CURRENT_SUBAGENT_AGENT_NAMES], ["delegate", "oracle", "researcher", "reviewer", "scout", "worker"]);
+  assert.deepEqual([...OVERRIDABLE_AGENT_TYPES], [...CURRENT_SUBAGENT_AGENT_NAMES, "Designer"]);
+  assert.deepEqual([...KNOWN_PINNED_DEFAULT_AGENTS], []);
 });
 
-test("build: with model → model pin written", () => {
-  const md = buildAgentOverrideMd("Explore", "minimax/MiniMax-M3");
-  assert.ok(/^model: minimax\/MiniMax-M3$/m.test(md));
+test("build: current scout definition is preserved and uses current frontmatter names", () => {
+  const source = installedAgent("scout");
+  const md = buildAgentOverrideMd("scout");
+  assert.equal(/^model:/m.test(md), false, "no model pin is needed for inherit-parent");
+  assert.ok(md.includes(`x-managed-by: ${SUBAGENT_MANAGED_MARKER}`));
+  assert.ok(md.includes(`description: ${SCOUT_DEFAULT_DESCRIPTION}`));
+  assert.ok(md.includes(`tools: ${SCOUT_DEFAULT_TOOLS}`));
+  assert.match(md, /^systemPromptMode: replace$/m);
+  assert.doesNotMatch(md, /^prompt_mode:/m);
+  assert.ok(md.includes(source.split("---\n").slice(2).join("---\n").trim()), "the upstream scout prompt is not lost");
+});
+
+test("build: an explicit worker pin preserves its complete upstream definition", () => {
+  const md = buildAgentOverrideMd("worker", "minimax/MiniMax-M3");
+  assert.match(md, /^name: worker$/m);
+  assert.match(md, /^model: minimax\/MiniMax-M3$/m);
+  assert.match(md, /^defaultContext: fork$/m);
+  assert.match(md, /^tools: read, grep, find, ls, bash, edit, write, contact_supervisor$/m);
   assert.ok(md.includes(`x-managed-by: ${SUBAGENT_MANAGED_MARKER}`));
 });
 
@@ -56,186 +64,86 @@ test("build: unknown agent name throws", () => {
   assert.throws(() => buildAgentOverrideMd("Custom"), /no embedded default config/);
 });
 
-// ---- syncSubagentModelOverrides: writer safety contract ----
-
-test("sync: file absent + inherit-parent → managed file created without pin", () => {
+test("sync: no upstream model pin means only the GLLA Designer role is created", () => {
   const dir = tmpAgentDir();
-  const r = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  assert.deepEqual(r.written, ["Explore", "Designer"]);
-  assert.deepEqual(r.removed, []);
-  assert.deepEqual(r.skipped, []);
-  const md = readOverride(dir, "Explore")!;
-  assert.equal(/^model:/m.test(md), false);
-  assert.ok(md.includes(SUBAGENT_MANAGED_MARKER));
+  const result = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
+  assert.deepEqual(result.written, ["Designer"]);
+  assert.equal(readOverride(dir, "scout"), undefined);
+  assert.match(readOverride(dir, "Designer")!, /^systemPromptMode: replace$/m);
 });
 
-test("sync: idempotent — second run writes nothing", () => {
+test("sync: explicit current-role pin wins over strategy and is idempotent", () => {
   const dir = tmpAgentDir();
-  syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  const r = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  assert.deepEqual(r.written, []);
-  assert.deepEqual(r.removed, []);
-  assert.deepEqual(r.skipped, []);
+  const first = syncSubagentModelOverrides({ agentDir: dir, strategy: "agent-default", overrides: { scout: "minimax/MiniMax-M3" } });
+  assert.deepEqual(first.written, ["Designer", "scout"]);
+  assert.match(readOverride(dir, "scout")!, /^model: minimax\/MiniMax-M3$/m);
+  const second = syncSubagentModelOverrides({ agentDir: dir, strategy: "agent-default", overrides: { scout: "minimax/MiniMax-M3" } });
+  assert.deepEqual(second.written, []);
+  assert.deepEqual(second.removed, []);
 });
 
-test("sync: managed file with stale content → updated in place", () => {
+test("sync: clearing a current-role pin removes only GLLA-owned content", () => {
   const dir = tmpAgentDir();
-  syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: { Explore: "minimax/MiniMax-M3" } });
-  assert.ok(/^model: minimax\/MiniMax-M3$/m.test(readOverride(dir, "Explore")!));
-  // flip back to plain inherit — pin must be removed
-  const r = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  assert.deepEqual(r.written, ["Explore"]);
-  assert.equal(/^model:/m.test(readOverride(dir, "Explore")!), false);
+  syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: { scout: "minimax/MiniMax-M3" } });
+  const result = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
+  assert.deepEqual(result.removed, ["scout"]);
+  assert.equal(readOverride(dir, "scout"), undefined);
+  assert.ok(readOverride(dir, "Designer"));
 });
 
-test("sync: user-owned file (no marker) → refused, untouched, noted", () => {
+test("sync: user-owned current role is never overwritten", () => {
   const dir = tmpAgentDir();
   fs.mkdirSync(path.join(dir, "agents"), { recursive: true });
-  const file = path.join(dir, "agents", "Explore.md");
-  const userContent = "---\ndescription: my own explore\n---\n\nuser prompt\n";
+  const file = path.join(dir, "agents", "scout.md");
+  const userContent = "---\nname: scout\ndescription: my own scout\n---\n\nuser prompt\n";
   fs.writeFileSync(file, userContent);
-  const r = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  assert.deepEqual(r.written, ["Designer"]);
-  assert.equal(r.skipped.length, 1);
-  assert.equal(r.skipped[0]!.name, "Explore");
-  assert.match(r.skipped[0]!.reason, /user-owned/);
-  assert.equal(fs.readFileSync(file, "utf-8"), userContent, "user file must be untouched");
-});
-
-test("sync: marker text inside a user prompt does not grant ownership", () => {
-  const dir = tmpAgentDir();
-  fs.mkdirSync(path.join(dir, "agents"), { recursive: true });
-  const file = path.join(dir, "agents", "Explore.md");
-  const userContent = `---\ndescription: my own explore\n---\n\nPrompt quotes x-managed-by: ${SUBAGENT_MANAGED_MARKER} as documentation.\n`;
-  fs.writeFileSync(file, userContent);
-  const result = syncSubagentModelOverrides({ agentDir: dir, strategy: "agent-default" });
-  assert.equal(result.removed.includes("Explore"), false);
-  assert.ok(result.skipped.some((entry) => entry.name === "Explore"));
+  const result = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: { scout: "minimax/MiniMax-M3" } });
+  assert.ok(result.skipped.some((entry) => entry.name === "scout"));
   assert.equal(fs.readFileSync(file, "utf-8"), userContent);
 });
 
-test("sync: strategy agent-default → managed file deleted, user file kept", () => {
+test("sync: legacy managed files are cleaned only when marked", () => {
   const dir = tmpAgentDir();
-  // managed file present
-  syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  assert.ok(readOverride(dir, "Explore"));
-  const r = syncSubagentModelOverrides({ agentDir: dir, strategy: "agent-default" });
-  assert.deepEqual(r.removed, ["Explore"]);
-  assert.equal(readOverride(dir, "Explore"), undefined);
-
-  // user-owned file present
   fs.mkdirSync(path.join(dir, "agents"), { recursive: true });
-  const file = path.join(dir, "agents", "Explore.md");
-  fs.writeFileSync(file, "---\ndescription: mine\n---\n\nmine\n");
-  const r2 = syncSubagentModelOverrides({ agentDir: dir, strategy: "agent-default" });
-  assert.deepEqual(r2.removed, []);
-  assert.equal(r2.skipped.length, 1);
-  assert.ok(fs.existsSync(file), "user file must survive agent-default");
+  const legacy = path.join(dir, "agents", "Explore.md");
+  fs.writeFileSync(legacy, "---\nx-managed-by: pi-goal-list-loop-audit\n---\n\nlegacy\n");
+  const user = path.join(dir, "agents", "Plan.md");
+  const userContent = "---\ndescription: mine\n---\n\nuser\n";
+  fs.writeFileSync(user, userContent);
+  const result = syncSubagentModelOverrides({ agentDir: dir, strategy: "agent-default" });
+  assert.deepEqual(result.removed, ["Explore"]);
+  assert.equal(fs.existsSync(legacy), false);
+  assert.equal(fs.readFileSync(user, "utf-8"), userContent);
 });
 
-test("sync: per-type override always wins over strategy", () => {
+test("sync: missing or altered Designer definitions are repaired and flagged", () => {
   const dir = tmpAgentDir();
-  const r = syncSubagentModelOverrides({
-    agentDir: dir,
-    strategy: "agent-default", // would normally delete — override must win
-    overrides: { Explore: "minimax/MiniMax-M3" },
-  });
-  assert.deepEqual(r.written, ["Explore", "Designer"]);
-  assert.deepEqual(r.removed, []);
-  assert.ok(/^model: minimax\/MiniMax-M3$/m.test(readOverride(dir, "Explore")!));
-});
-
-test("sync: override for a non-embedded agent type → skipped with note", () => {
-  const dir = tmpAgentDir();
-  const r = syncSubagentModelOverrides({
-    agentDir: dir,
-    strategy: "inherit-parent",
-    overrides: { Custom: "minimax/MiniMax-M3" },
-  });
-  // Explore still synced normally
-  assert.deepEqual(r.written, ["Explore", "Designer"]);
-  const customSkip = r.skipped.find(s => s.name === "Custom");
-  assert.ok(customSkip, "Custom override must be skipped");
-  assert.match(customSkip!.reason, /no embedded default config/);
-  assert.equal(readOverride(dir, "Custom"), undefined);
+  const first = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
+  assert.deepEqual(first.repaired, []);
+  fs.unlinkSync(path.join(dir, "agents", "Designer.md"));
+  const second = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
+  assert.deepEqual(second.repaired, ["Designer"]);
+  fs.appendFileSync(path.join(dir, "agents", "Designer.md"), "\n# external edit\n");
+  const third = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
+  assert.deepEqual(third.repaired, ["Designer"]);
 });
 
 test("defaultAgentDir follows PI_CODING_AGENT_DIR when the host overrides it", () => {
   const prior = process.env.PI_CODING_AGENT_DIR;
   const custom = path.join(os.tmpdir(), "glla-custom-agent-dir");
   process.env.PI_CODING_AGENT_DIR = custom;
-  try {
-    assert.equal(defaultAgentDir(), custom);
-  } finally {
+  try { assert.equal(defaultAgentDir(), custom); }
+  finally {
     if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prior;
   }
 });
 
-test("defaultAgentDir points at ~/.pi/agent by default", () => {
-  const prior = process.env.PI_CODING_AGENT_DIR;
-  delete process.env.PI_CODING_AGENT_DIR;
-  try {
-    assert.equal(defaultAgentDir(), path.join(os.homedir(), ".pi", "agent"));
-  } finally {
-    if (prior !== undefined) process.env.PI_CODING_AGENT_DIR = prior;
+test("drift: every current built-in ships without a hidden model pin", () => {
+  for (const name of CURRENT_SUBAGENT_AGENT_NAMES) {
+    const content = installedAgent(name);
+    assert.doesNotMatch(content, /^model:/m, `${name} unexpectedly pins a model`);
   }
-});
-
-// ---- Drift guard: embedded copies vs the installed pi-subagents ----
-// If tintinweb changes the default Explore config (or pins a model on another
-// default agent), this test fails and prompts re-syncing the embedded copies
-// in extensions/goal-loop-subagents.ts.
-
-const DRIFT_CANDIDATES = [
-  path.resolve("node_modules", "@tintinweb", "pi-subagents", "src", "default-agents.ts"),
-  path.join(os.homedir(), ".pi", "agent", "npm", "node_modules", "@tintinweb", "pi-subagents", "src", "default-agents.ts"),
-  process.env.PI_SUBAGENTS_DEFAULT_AGENTS ?? "",
-].filter(Boolean);
-const DRIFT_SOURCE = DRIFT_CANDIDATES.find(p => fs.existsSync(p));
-
-test("drift: embedded Explore copy matches installed pi-subagents default", () => {
-  // This is a required compatibility guard, not an optional live-rig probe:
-  // CI installs the provider before the release test. A missing source must
-  // fail loudly so EXPLORE_DEFAULT_DESCRIPTION cannot drift unchecked.
-  assert.ok(
-    DRIFT_SOURCE,
-    "drift guard source is required — install @tintinweb/pi-subagents or set PI_SUBAGENTS_DEFAULT_AGENTS",
-  );
-  const src = DRIFT_SOURCE!;
-  const content = fs.readFileSync(src, "utf-8");
-  const exploreBlock = content.slice(content.indexOf('"Explore",'), content.indexOf('"Plan",'));
-
-  // model pin: either absent (upstream fixed it) or still haiku — embedded
-  // copy is valid either way, but KNOWN_PINNED_DEFAULT_AGENTS must reflect
-  // which defaults pin a model.
-  const pinnedAgents = [...content.matchAll(/model:\s*"([^"]+)"/g)].map(m => m[1]);
-  if (pinnedAgents.length === 0) {
-    // Upstream removed all pins — our managed override is harmless but
-    // KNOWN_PINNED_DEFAULT_AGENTS should be emptied.
-    assert.deepEqual(
-      [...KNOWN_PINNED_DEFAULT_AGENTS], [],
-      "upstream no longer pins any default agent model — empty KNOWN_PINNED_DEFAULT_AGENTS",
-    );
-    // There is no pinned Explore body to compare in this valid upstream shape.
-    return;
-  }
-
-  const descMatch = exploreBlock.match(/description:\s*"((?:[^"\\]|\\.)*)"/);
-  assert.ok(descMatch, "could not extract Explore description from installed default-agents.ts");
-  const installedDesc = JSON.parse(`"${descMatch![1]}"`);
-  assert.equal(
-    EXPLORE_DEFAULT_DESCRIPTION, installedDesc,
-    "embedded Explore description drifted from installed pi-subagents — re-sync extensions/goal-loop-subagents.ts",
-  );
-
-  const spStart = exploreBlock.indexOf("systemPrompt: `") + "systemPrompt: `".length;
-  const spEnd = exploreBlock.indexOf("`,", spStart);
-  assert.ok(spStart > 15 && spEnd > spStart, "could not extract Explore systemPrompt");
-  const installedPrompt = exploreBlock.slice(spStart, spEnd)
-    .replace(/\\`/g, "`").replace(/\\\$/g, "$").replace(/\\\\/g, "\\");
-  assert.equal(
-    EXPLORE_DEFAULT_SYSTEM_PROMPT, installedPrompt,
-    "embedded Explore systemPrompt drifted from installed pi-subagents — re-sync extensions/goal-loop-subagents.ts",
-  );
+  assert.equal(SCOUT_DEFAULT_DESCRIPTION, "Fast codebase recon that returns compressed context for handoff");
+  assert.equal(SCOUT_DEFAULT_TOOLS, "read, grep, find, ls, bash, write");
 });

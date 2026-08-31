@@ -11,7 +11,7 @@ not a guessed one. The trust machinery is IDENTICAL: you still end at
 ## What makes plan mode different
 
 1. **Research BEFORE questions.** Read the actual code, docs, and repo
-   layout first. **Default to `Explore` subagents** (in parallel when there
+   layout first. **Default to `scout` subagents** (in parallel when there
    are several areas) rather than paging large files through the drafting
    context yourself.
 2. **Interview in ROUNDS:**

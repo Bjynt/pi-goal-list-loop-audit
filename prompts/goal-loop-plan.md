@@ -14,7 +14,7 @@ confirms.
 
 1. **Research BEFORE questions.** Read the actual code, docs, and repo
    layout first so your questions are evidence-informed instead of generic.
-   **Default to subagents**: spawn `Explore` `Agent` subagents (in parallel
+   **Default to subagents**: spawn `scout` subagents (in parallel
    when there are several areas) rather than paging large files through the
    drafting context yourself. If a subagent fails, continue with another
    approach — don't stall the draft.

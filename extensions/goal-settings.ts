@@ -9,7 +9,7 @@
 // v0.35.6: this module owns the typed boundary for the long-term
 // preferences policy (audit/LONG-TERM-PREFERENCES-POLICY-2026-08-19.md).
 // The Settings interface is the ONLY schema accepted by saveSettings;
-// natural-language conversation / completion / auditor / Explore
+// natural-language conversation / completion / auditor / scout
 // transcripts are NEVER written here. A regression in
 // tests/long-term-preferences-boundary.test.ts pins this boundary.
 
@@ -67,8 +67,8 @@ export interface Settings {
   drafterThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Global-only ordered drafting fallback agents; the current session model is the final fallback. */
   drafterModelFallbacks?: string[];
-  /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
-   * (Explore, Plan, general-purpose, …). When set, the subagent sync uses
+  /** v0.34.115: per-subagent fallback chains. Keyed by current pi-subagents
+   * role name (scout, researcher, worker, reviewer, oracle, delegate, …). When set, the subagent sync uses
    * the FIRST eligible ref in the chain via ModelSelector.selectNextValid;
    * when unset, behavior is byte-identical to v0.34.114 (inherit-parent or
    * per-type pin). */
@@ -188,13 +188,9 @@ export interface Settings {
    * interview floor is skipped — the seed carries the intent (unattended
    * rigs). Default off: nothing activates before the user confirms. */
   autoAcceptDrafts?: boolean;
-  /** v0.24.6: subagent model strategy for pi-subagents default agents that
-   * pin a model (Explore pins claude-haiku-4-5, which silently routes
-   * subagents to a different provider/model than the session).
-   * "inherit-parent" (default) writes a managed ~/.pi/agent/agents/Explore.md
-   * override without the model pin so subagents share the session model;
-   * "agent-default" restores upstream behavior. Applies to NEW
-   * sessions (pi-subagents registers agents at session start). */
+  /** Subagent model strategy. Current pi-subagents built-ins inherit the
+   * session model by default; explicit per-role pins still use managed agent
+   * files. Applies to NEW sessions (the companion registers agents at start). */
   /** v0.26.0: reviewer (post-completion follow-up enqueuer) config —
    * project-scoped; see extensions/reviewer.ts DEFAULT_REVIEWER_CONFIG.
    * v0.27.5: superseded by `postaudit` (same shape, terminology reflects
@@ -204,7 +200,7 @@ export interface Settings {
   /** v0.27.5: post-completion audit config. Same shape as `reviewer`. */
   postaudit?: Record<string, unknown>;
   subagentModelStrategy?: SubagentModelStrategy;
-  /** v0.24.6: per-agent-type model pin, e.g. { "Explore": "minimax/MiniMax-M3" }.
+  /** Per-agent-type model pin, e.g. { "scout": "minimax/MiniMax-M3" }.
    * Always wins over subagentModelStrategy — the managed override is written
    * WITH this pin regardless of strategy. */
   subagentModelOverrides?: Record<string, string>;

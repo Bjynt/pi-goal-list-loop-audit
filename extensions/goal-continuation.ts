@@ -1259,7 +1259,7 @@ export function continuationPrompt(goal: Goal): string {
   }
   if (effSettings.aggressiveMode && isFullAuditObjective(goal.objective)) {
     directives.push(
-      "## FULL-AUDIT MODE (aggressiveMode + survey objective)\n\nThis objective is a survey, not a single fix. Spawn 3+ `Explore` subagents NOW — one per subsystem, in a single message so they run in parallel — synthesize their findings, and call `propose_task_list` with the result. Do not start fixing before the task list exists.",
+      "## FULL-AUDIT MODE (aggressiveMode + survey objective)\n\nThis objective is a survey, not a single fix. Spawn 3+ `scout` subagents NOW — one per subsystem, in a single message so they run in parallel — synthesize their findings, and call `propose_task_list` with the result. Do not start fixing before the task list exists.",
     );
   }
   // v0.35.x: include the latest auditor report in the continuation prompt so

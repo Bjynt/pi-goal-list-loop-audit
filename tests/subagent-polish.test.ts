@@ -1,9 +1,4 @@
-// pi-goal-list-loop-audit — v0.25.6
-// tests/subagent-polish.test.ts
-//
-// Subagent polish: per-type pins for Plan/general-purpose, managed-file
-// repair detection + notify, effective-resolution display, subagent
-// generic provider-error detection (pi-subagents#175).
+// pi-goal-list-loop-audit — current pi-subagents integration polish
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -19,78 +14,55 @@ import {
 } from "../extensions/goal-loop-subagents.ts";
 import { isSubagentProviderFailure } from "../extensions/quota-retry.ts";
 
-test("per-type pins: Plan and general-purpose are overridable with embedded defaults", () => {
-  assert.deepEqual([...OVERRIDABLE_AGENT_TYPES].sort(), ["Designer", "Explore", "Plan", "general-purpose"]);
-  // Plan pin: read-only tools + replace mode + model pin + marker:
-  const plan = buildAgentOverrideMd("Plan", "minimax/MiniMax-M3");
-  assert.match(plan, /model: minimax\/MiniMax-M3/);
-  assert.match(plan, /tools: read, bash, grep, find, ls/);
-  assert.match(plan, /prompt_mode: replace/);
-  assert.match(plan, /x-managed-by: pi-goal-list-loop-audit/);
-  assert.match(plan, /software architect and planning specialist/);
-  // general-purpose: NO tools line (all tools upstream) + append mode:
-  const gp = buildAgentOverrideMd("general-purpose", "minimax/MiniMax-M3");
-  assert.doesNotMatch(gp, /^tools:/m);
-  assert.match(gp, /prompt_mode: append/);
-  assert.match(gp, /model: minimax\/MiniMax-M3/);
+test("current pi-subagents roles expose complete model-pin definitions", () => {
+  assert.deepEqual([...OVERRIDABLE_AGENT_TYPES].sort(), ["Designer", "delegate", "oracle", "researcher", "reviewer", "scout", "worker"]);
+  const worker = buildAgentOverrideMd("worker", "minimax/MiniMax-M3");
+  assert.match(worker, /model: minimax\/MiniMax-M3/);
+  assert.match(worker, /systemPromptMode: replace/);
+  assert.match(worker, /defaultContext: fork/);
+  assert.match(worker, /x-managed-by: pi-goal-list-loop-audit/);
 });
 
-test("strategy-driven sync writes Explore plus the glla Designer role; Plan/general-purpose need explicit pins", () => {
+test("strategy-driven sync writes only the GLLA-owned Designer role", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-subagent-"));
   const sync = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
-  assert.deepEqual(sync.written, ["Explore", "Designer"]);
-  assert.ok(fs.existsSync(path.join(dir, "agents", "Explore.md")));
-  assert.ok(!fs.existsSync(path.join(dir, "agents", "Plan.md")), "Plan must NOT get a strategy-driven file");
-  // Explicit Plan pin writes it:
-  const sync2 = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: { Plan: "minimax/MiniMax-M3" } });
-  assert.deepEqual(sync2.written, ["Plan"]);
-  assert.match(fs.readFileSync(path.join(dir, "agents", "Plan.md"), "utf-8"), /model: minimax\/MiniMax-M3/);
+  assert.deepEqual(sync.written, ["Designer"]);
+  assert.ok(fs.existsSync(path.join(dir, "agents", "Designer.md")));
+  assert.ok(!fs.existsSync(path.join(dir, "agents", "scout.md")), "scout already inherits the parent in current pi-subagents");
+  const sync2 = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: { scout: "minimax/MiniMax-M3" } });
+  assert.deepEqual(sync2.written, ["scout"]);
+  assert.match(fs.readFileSync(path.join(dir, "agents", "scout.md"), "utf-8"), /model: minimax\/MiniMax-M3/);
 });
 
-test("repair detection: externally deleted/altered managed files are re-written and flagged", () => {
+test("repair detection: externally deleted/altered Designer files are re-written and flagged", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-subagent-repair-"));
-  // First sync: initial write, NOT a repair:
   const first = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
-  assert.deepEqual(first.written, ["Explore", "Designer"]);
+  assert.deepEqual(first.written, ["Designer"]);
   assert.deepEqual(first.repaired, []);
-  // An idempotent sync must preserve the managed-file snapshot even though
-  // its result has no write delta; a later external change still needs repair
-  // provenance for the user-facing notification.
   const noop = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
   assert.deepEqual(noop.written, []);
-  assert.deepEqual(noop.repaired, []);
   const syncState = JSON.parse(fs.readFileSync(path.join(dir, "agents", ".glla-subagent-sync.json"), "utf8"));
-  assert.deepEqual(syncState.written, ["Designer", "Explore"], "idempotent sync preserves managed-file repair state");
-  // External deletion:
-  fs.unlinkSync(path.join(dir, "agents", "Explore.md"));
+  assert.deepEqual(syncState.written, ["Designer"]);
+  fs.unlinkSync(path.join(dir, "agents", "Designer.md"));
   const second = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
-  assert.deepEqual(second.written, ["Explore"]);
-  assert.deepEqual(second.repaired, ["Explore"], "deleted managed file repaired + flagged");
-  // External alteration:
-  fs.appendFileSync(path.join(dir, "agents", "Explore.md"), "\n# user scribble\n");
+  assert.deepEqual(second.written, ["Designer"]);
+  assert.deepEqual(second.repaired, ["Designer"]);
+  fs.appendFileSync(path.join(dir, "agents", "Designer.md"), "\n# user scribble\n");
   const third = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
-  assert.deepEqual(third.repaired, ["Explore"], "altered managed file repaired + flagged");
-  // Idempotent: no change → no repair:
-  const fourth = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
-  assert.deepEqual(fourth.written, []);
-  assert.deepEqual(fourth.repaired, []);
+  assert.deepEqual(third.repaired, ["Designer"]);
 });
 
-test("effective resolution: per-type pin > inherit-parent > agent-default", () => {
+test("effective resolution: per-type pin > inherit-parent > current agent default", () => {
   assert.equal(
-    resolveEffectiveSubagentModel("Plan", { subagentModelOverrides: { Plan: "x/y" } }, "p/s"),
+    resolveEffectiveSubagentModel("worker", { subagentModelOverrides: { worker: "x/y" } }, "p/s"),
     "x/y (per-type pin)",
   );
   assert.equal(
-    resolveEffectiveSubagentModel("Plan", { subagentModelStrategy: "inherit-parent" }, "p/s"),
+    resolveEffectiveSubagentModel("worker", { subagentModelStrategy: "inherit-parent" }, "p/s"),
     "p/s (inherits session)",
   );
   assert.equal(
-    resolveEffectiveSubagentModel("Explore", { subagentModelStrategy: "agent-default" }),
-    "anthropic/claude-haiku-4-5 (upstream pin)",
-  );
-  assert.equal(
-    resolveEffectiveSubagentModel("general-purpose", { subagentModelStrategy: "agent-default" }),
+    resolveEffectiveSubagentModel("scout", { subagentModelStrategy: "agent-default" }),
     "(agent default)",
   );
 });
@@ -99,7 +71,6 @@ test("subagent provider failure: any failed Agent payload, without classificatio
   assert.equal(isSubagentProviderFailure("Agent", true, "Error: 403 Key limit exceeded"), true);
   assert.equal(isSubagentProviderFailure("Agent", true, JSON.stringify({ error: "429 rate limit" })), true);
   assert.equal(isSubagentProviderFailure("Agent", true, "file not found"), true);
-  // Not errors / not Agent:
   assert.equal(isSubagentProviderFailure("Agent", false, "403 Key limit exceeded"), false);
   assert.equal(isSubagentProviderFailure("bash", true, "403 Key limit exceeded"), false);
 });

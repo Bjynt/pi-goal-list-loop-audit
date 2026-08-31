@@ -37,8 +37,8 @@ for (const name of PROMPTS) {
       /Eager continuation|just continue/i.test(p),
       `${name} says "Eager continuation" or "just continue"`,
     );
-    assert.match(p, /Explore/, `${name} names the Explore agent`);
-    assert.ok(/general-purpose|Plan/.test(p), `${name} names general-purpose or Plan`);
+    assert.match(p, /scout/, `${name} names the current scout agent`);
+    assert.match(p, /worker/, `${name} names the current worker agent`);
   });
 }
 
@@ -67,11 +67,11 @@ test("v0.34.0: forever prompts carry the ROI law + untrusted-output hygiene", ()
 });
 
 test("v0.34.0: audit templates demand the parallel fan-out shape (both)", () => {
-  assert.match(FOREVER_SRC, /spawn AT LEAST 3 Explore subagents in ONE message, one per subsystem, so the survey runs in parallel/);
+  assert.match(FOREVER_SRC, /spawn AT LEAST 3 scout subagents in ONE message, one per subsystem, so the survey runs in parallel/);
   const collect = listAuditCollectTarget("x");
   const oneshot = projectAuditTarget("x");
   for (const [name, t] of [["collect", collect], ["oneshot", oneshot]] as const) {
-    assert.match(t, /AT LEAST 3 Explore subagents in ONE message/, name);
+    assert.match(t, /AT LEAST 3 scout subagents in ONE message/, name);
   }
 });
 

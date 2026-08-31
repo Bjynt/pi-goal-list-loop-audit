@@ -275,9 +275,10 @@ GLLA is the supervisor. These companions add capabilities around it:
 
 ### Optional parallel workers
 
-- **`@tintinweb/pi-subagents`** — recommended when a goal has independent work
-  that can genuinely run in parallel. It gives the main agent Explore, Plan,
-  and general-purpose workers for research and focused implementation. It is
+- **`pi-subagents`** — recommended when a goal has independent work that can
+  genuinely run in parallel. Its current built-in roles are `scout`,
+  `researcher`, `worker`, `reviewer`, `oracle`, and `delegate`, with detached
+  async runs, durable status artifacts, and a versioned control RPC. It is
   not required for GLLA's main continuation, queue, recovery, or detached
   auditor; a short or mostly sequential goal is often better without the
   extra worker overhead.
@@ -288,13 +289,20 @@ GLLA is the supervisor. These companions add capabilities around it:
 Install it when parallelism will pay for its coordination and model usage:
 
 ```bash
-pi install npm:@tintinweb/pi-subagents
+pi install npm:pi-subagents
 ```
 
-GLLA supervises the parent and tracks worker activity, partial output, and
-confirmed frozen-child recovery. It also defaults Explore agents toward the
-parent model strategy so a hidden provider pin does not unexpectedly consume a
-different quota pool.
+GLLA supervises the parent and tracks current async worker activity through
+`subagent:*` lifecycle events and the companion's durable `status.json`; the
+versioned stop RPC is used only after ownership and generation checks pass.
+Current built-ins inherit the parent session model by default, so there is no
+hidden Explore/Plan model pin to consume a separate quota pool. GLLA's
+`subagentModelOverrides` setting can still pin an individual current role.
+
+Do not install the older `@tintinweb/pi-subagents` provider alongside this
+recommendation in the same session. Existing Tintin-era agent files are
+cleaned only when GLLA's management marker proves that GLLA owns them; old
+settings are not silently remapped to a different role.
 
 ### Useful, but optional
 

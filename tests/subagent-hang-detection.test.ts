@@ -11,10 +11,9 @@
 // tokens) for 5m is surfaced (ui.notify + notifyExternal) and ledgered
 // `subagent_hang_detected` so the main session can decide to abort.
 //
-// Progress evidence joins the record via the cross-package registry
-// Symbol.for("pi-subagents:manager") → getRecord(id) (live toolUses /
-// lifetimeUsage.output / status); compacted/steered events refresh the
-// streak as secondary evidence; completed/failed end the watch.
+// Current progress evidence joins the public `subagent:*` lifecycle with the
+// async status artifact (`asyncDir/status.json`); older providers can still
+// use the compatibility Symbol.for("pi-subagents:manager") registry.
 
 import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
@@ -147,6 +146,117 @@ test("v0.35.65: queued manager records stay queued and do not masquerade as acti
   const snapshot = getSubagentAgentsSnapshot(now);
   assert.equal(snapshot.agents[0]!.status, "queued");
   assert.equal(snapshot.agents[0]!.phase, "queued");
+});
+
+test("current pi-subagents async lifecycle and status.json drive live counters", async () => {
+  const { ctx } = await spawnFixture();
+  const asyncDir = fs.mkdtempSync(`${tmpCwd()}/async-`);
+  const runId = "current-status-1";
+  const startedAt = Date.now() - 3 * 60_000;
+  fs.writeFileSync(`${asyncDir}/status.json`, JSON.stringify({
+    runId,
+    sessionId: "child-session-1",
+    mode: "agent",
+    state: "running",
+    startedAt,
+    lastActivityAt: Date.now(),
+    toolCount: 4,
+    steps: [{ tokens: { output: 1_200 } }],
+  }));
+  pi.emitBus("subagent:async-started", {
+    id: runId,
+    sessionId: "child-session-1",
+    agent: "scout",
+    task: "inspect the auth flow",
+    asyncDir,
+    startedAt,
+  });
+  await tick();
+
+  const snapshot = getSubagentAgentsSnapshot();
+  assert.equal(snapshot.managerAvailable, true, "current observations provide the poll seam");
+  assert.equal(snapshot.agents[0]?.recordId, runId);
+  assert.equal(snapshot.agents[0]?.agentType, "scout");
+  assert.equal(snapshot.agents[0]?.status, "running");
+  assert.equal(snapshot.agents[0]?.toolUses, 4);
+  assert.equal(snapshot.agents[0]?.outputTokens, 1_200);
+  assert.equal(snapshot.agents[0]?.startedAt, startedAt);
+  assert.equal(ctx.ui.notifies.filter((n) => n.message.includes("scout")).length, 0);
+
+  fs.writeFileSync(`${asyncDir}/status.json`, JSON.stringify({
+    runId,
+    sessionId: "child-session-1",
+    mode: "agent",
+    state: "running",
+    startedAt,
+    lastActivityAt: Date.now(),
+    toolCount: 5,
+    steps: [{ tokens: { output: 1_500 } }],
+  }));
+  const progressed = getSubagentAgentsSnapshot();
+  assert.equal(progressed.agents[0]?.toolUses, 5);
+  assert.equal(progressed.agents[0]?.outputTokens, 1_500);
+
+  pi.emitBus("subagent:async-complete", { runId, status: "complete" });
+  await tick();
+  assert.equal(__testOnlySubagentHangProbes()[0]?.endedAt !== undefined, true, "current completion ends the watch");
+});
+
+test("current v1 stop RPC is selected after the status artifact proves top-level ownership", async () => {
+  __testOnlySetSubagentHangEscalationMs(30 * 60_000);
+  const { cwd } = await spawnFixture();
+  const asyncDir = fs.mkdtempSync(`${tmpCwd()}/async-`);
+  const runId = "current-stop-1";
+  fs.writeFileSync(`${asyncDir}/status.json`, JSON.stringify({
+    runId,
+    sessionId: "child-session-2",
+    mode: "agent",
+    state: "running",
+    startedAt: Date.now() - 40 * 60_000,
+    lastActivityAt: Date.now() - 31 * 60_000,
+    toolCount: 0,
+    steps: [{ tokens: { output: 0 } }],
+  }));
+  let request: any;
+  pi.api.events.on("subagents:rpc:v1:request", (raw: unknown) => {
+    request = raw;
+    const envelope = raw as { requestId?: string };
+    pi.emitBus(`subagents:rpc:v1:reply:${envelope.requestId}`, {
+      version: 1,
+      requestId: envelope.requestId,
+      method: "stop",
+      success: true,
+      data: { state: "stopping" },
+    });
+  });
+  pi.emitBus("subagents:rpc:v1:ready", { version: 1 });
+  pi.emitBus("subagent:async-started", {
+    id: runId,
+    sessionId: "child-session-2",
+    agent: "worker",
+    task: "frozen worker",
+    asyncDir,
+    startedAt: Date.now() - 40 * 60_000,
+  });
+  await tick();
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 31 * 60_000;
+
+  __testOnlyHeartbeatTick();
+  await tick();
+
+  assert.deepEqual(request && {
+    version: request.version,
+    method: request.method,
+    params: request.params,
+    source: request.source,
+  }, {
+    version: 1,
+    method: "stop",
+    params: { id: runId },
+    source: { extension: "pi-goal-list-loop-audit" },
+  });
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_requested").length, 1);
 });
 
 test("classify: a running subagent with no new progress for 5m is hung", () => {

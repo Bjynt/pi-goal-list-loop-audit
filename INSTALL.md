@@ -42,7 +42,7 @@ When a goal has independent repository research or focused worker tasks,
 add the optional parallel-worker companion:
 
 ```bash
-pi install npm:@tintinweb/pi-subagents
+pi install npm:pi-subagents
 ```
 
 GLLA's main continuation, queue, recovery, and detached auditor work without

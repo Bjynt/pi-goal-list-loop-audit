@@ -36,8 +36,9 @@ import {
 } from "./main-model-recovery.ts";
 
 /** Identifies which fallback chain the selector is consulting. Session is
- * the main-loop recovery; subagent chains are per-type (Explore, Plan,
- * general-purpose) and live in goal-loop-subagents.ts. */
+ * the main-loop recovery; subagent chains are per-type (scout, worker,
+ * reviewer, and the other current pi-subagents roles) and live in
+ * goal-loop-subagents.ts. */
 export type ModelScope =
   | { kind: "session" }
   | { kind: "subagent"; agentName: string }

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+  The recommended optional parallel-worker companion is now the current
+  `pi-subagents` package. GLLA tracks its versioned `subagent:*` lifecycle,
+  durable async status artifacts, and v1 stop RPC while retaining a bounded
+  compatibility path for older providers. The model settings surface now uses
+  the current `scout`/`researcher`/`worker`/`reviewer`/`oracle`/`delegate`
+  roles; current built-ins inherit the parent model by default.
+
 ### Fixed
   Durable state transitions and deferred settle repaints now bypass the
   periodic UI throttle, while unchanged activity/ticker updates remain

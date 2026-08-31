@@ -325,8 +325,8 @@ export function buildSettingsRows(
 
   // ── Subagent fallback chains (v0.34.115) ──
   // Fallback chains are editable for every embedded agent type. This is
-  // intentionally broader than KNOWN_PINNED_DEFAULT_AGENTS: Plan and
-  // general-purpose do not have upstream model pins, but their explicit
+  // intentionally broader than KNOWN_PINNED_DEFAULT_AGENTS: current
+  // pi-subagents built-ins do not have hidden model pins, but their explicit
   // fallback chains are still valid settings and have menu dispatchers.
   for (const name of OVERRIDABLE_AGENT_TYPES) {
     const chain = settings.subagentFallbacks?.[name] ?? [];

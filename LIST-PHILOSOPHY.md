@@ -85,6 +85,6 @@ Speculative feature branching across autonomous subagents creates **stale contex
 ### The Single-Trunk Operating Rule:
 * **Serial Queue on `main`**: All queue items drain sequentially on the single primary working tree. Item $N+1$ always executes with 100% truthful, up-to-date context left by item $N$.
 * **Transactional Green-or-Revert**: Every task either lands green (verified by tests and the detached auditor) and commits, or cleanly rolls back on `main` before the next backlog item is touched.
-* **Safe Subagent Parallelism**: Subagents are used for **read-only research fan-out** (e.g. concurrent `Explore` queries across subsystems in a single turn) or standalone verification, rather than speculative mutating branches.
+* **Safe Subagent Parallelism**: Subagents are used for **read-only research fan-out** (e.g. concurrent `scout` queries across subsystems in a single turn) or standalone verification, rather than speculative mutating branches.
 
 See `INSTALL.md` for the command surface.

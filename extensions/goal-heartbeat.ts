@@ -393,6 +393,8 @@ interface SubagentHangProbe {
   lastToolUses: number;
   /** Last polled record.lifetimeUsage.output — progress when it increases. */
   lastOutputTokens: number;
+  /** Last current-package status-artifact activity timestamp observed. */
+  lastObservedActivityAt?: number;
   /** Throttle: last user-facing hang warning for this subagent. */
   hangAlertedAt?: number;
   /** One-shot action state for the current no-progress episode. */
@@ -633,12 +635,13 @@ type SubagentRpcBinding = {
   events: SubagentRpcEventBus;
   generation: number;
   ready: boolean;
+  protocol: "legacy" | "v1";
 };
 
 const SUBAGENT_RPC_STOP_TIMEOUT_MS = 2_000;
 let subagentRpcBinding: SubagentRpcBinding | null = null;
 const observedSubagentRpcBuses = new Set<SubagentRpcEventBus>();
-const readySubagentRpcBuses = new Set<SubagentRpcEventBus>();
+const readySubagentRpcBuses = new Map<SubagentRpcEventBus, Set<"legacy" | "v1">>();
 
 /**
  * Observe readiness at factory time. Extension factories run before lifecycle
@@ -651,8 +654,22 @@ export function observeSubagentRpcReadiness(events: SubagentRpcEventBus): void {
   observedSubagentRpcBuses.add(events);
   try {
     events.on("subagents:ready", () => {
-      readySubagentRpcBuses.add(events);
-      if (subagentRpcBinding?.events === events) subagentRpcBinding.ready = true;
+      const protocols = readySubagentRpcBuses.get(events) ?? new Set<"legacy" | "v1">();
+      protocols.add("legacy");
+      readySubagentRpcBuses.set(events, protocols);
+      if (subagentRpcBinding?.events === events) {
+        subagentRpcBinding.ready = true;
+        if (subagentRpcBinding.protocol !== "v1") subagentRpcBinding.protocol = "legacy";
+      }
+    });
+    events.on("subagents:rpc:v1:ready", () => {
+      const protocols = readySubagentRpcBuses.get(events) ?? new Set<"legacy" | "v1">();
+      protocols.add("v1");
+      readySubagentRpcBuses.set(events, protocols);
+      if (subagentRpcBinding?.events === events) {
+        subagentRpcBinding.ready = true;
+        subagentRpcBinding.protocol = "v1";
+      }
     });
   } catch {
     // A factory-time event bus can be unavailable on older hosts; control will
@@ -663,11 +680,14 @@ export function observeSubagentRpcReadiness(events: SubagentRpcEventBus): void {
 /** Bind the RPC stop capability to an admitted MAIN host generation. */
 export function bindSubagentRpcHost(events: SubagentRpcEventBus, generation: number): void {
   observeSubagentRpcReadiness(events);
+  if (subagentRpcBinding?.generation !== generation) currentSubagentObservations.clear();
+  const protocols = readySubagentRpcBuses.get(events);
   const retainedReady = subagentRpcBinding?.events === events && subagentRpcBinding.ready;
   subagentRpcBinding = {
     events,
     generation,
-    ready: retainedReady || readySubagentRpcBuses.has(events),
+    ready: retainedReady || !!protocols?.size,
+    protocol: protocols?.has("v1") ? "v1" : "legacy",
   };
 }
 
@@ -677,6 +697,7 @@ export function releaseSubagentRpcHost(events?: SubagentRpcEventBus): void {
   const boundEvents = subagentRpcBinding?.events ?? events;
   subagentRpcBinding = null;
   if (boundEvents) readySubagentRpcBuses.delete(boundEvents);
+  currentSubagentObservations.clear();
 }
 
 function requestSubagentStopViaRpc(recordId: string, generation: number): Promise<SubagentStopRpcResult> | undefined {
@@ -690,7 +711,10 @@ function requestSubagentStopViaRpc(recordId: string, generation: number): Promis
   }
 
   const requestId = randomUUID();
-  const replyChannel = `subagents:rpc:stop:reply:${requestId}`;
+  const v1 = binding.protocol === "v1";
+  const replyChannel = v1
+    ? `subagents:rpc:v1:reply:${requestId}`
+    : `subagents:rpc:stop:reply:${requestId}`;
   return new Promise<SubagentStopRpcResult>((resolve) => {
     let settled = false;
     let unsubscribe = () => {};
@@ -712,13 +736,30 @@ function requestSubagentStopViaRpc(recordId: string, generation: number): Promis
         }
         const reply = raw as { success?: boolean; error?: unknown } | null;
         if (reply?.success === true) finish({ kind: "requested" });
-        else finish({ kind: "failed", error: typeof reply?.error === "string" ? reply.error : "the RPC service rejected the request" });
+        else {
+          const error = typeof reply?.error === "string"
+            ? reply.error
+            : reply?.error && typeof reply.error === "object" && typeof (reply.error as any).message === "string"
+              ? (reply.error as any).message
+              : "the RPC service rejected the request";
+          finish({ kind: "failed", error });
+        }
       });
       // Arm the timeout before emitting: a compatible host/test bus may reply
       // synchronously, and finish() must then be able to clear the timer.
       timeout = setTimeout(() => finish({ kind: "unavailable", reason: "the subagents stop RPC timed out" }), SUBAGENT_RPC_STOP_TIMEOUT_MS);
       timeout.unref?.();
-      binding.events.emit("subagents:rpc:stop", { requestId, agentId: recordId });
+      if (v1) {
+        binding.events.emit("subagents:rpc:v1:request", {
+          version: 1,
+          requestId,
+          method: "stop",
+          params: { id: recordId },
+          source: { extension: "pi-goal-list-loop-audit" },
+        });
+      } else {
+        binding.events.emit("subagents:rpc:stop", { requestId, agentId: recordId });
+      }
     } catch (error) {
       finish({ kind: "unavailable", reason: error instanceof Error ? error.message : String(error) });
     }
@@ -816,9 +857,12 @@ export function classifyHungSubagents(
     if (rec.status !== "running" && rec.status !== "steered" && rec.status !== "queued") continue;
     const toolUses = rec.toolUses ?? 0;
     const output = rec.lifetimeUsage?.output ?? 0;
-    if (toolUses > p.lastToolUses || output > p.lastOutputTokens) {
+    const activity = rec.lastActivityAt;
+    if (toolUses > p.lastToolUses || output > p.lastOutputTokens
+        || (activity !== undefined && activity > (p.lastObservedActivityAt ?? p.lastProgressAt))) {
       p.lastToolUses = toolUses;
       p.lastOutputTokens = output;
+      if (activity !== undefined) p.lastObservedActivityAt = activity;
       p.lastProgressAt = now;
       p.hangAlertedAt = undefined;
       p.hangAction = undefined;
@@ -847,6 +891,7 @@ function hasHealthySubagentHangProbe(now = Date.now()): boolean {
       const toolUses = rec.toolUses ?? 0;
       const output = rec.lifetimeUsage?.output ?? 0;
       if (toolUses > probe.lastToolUses || output > probe.lastOutputTokens
+          || (rec.lastActivityAt !== undefined && rec.lastActivityAt > (probe.lastObservedActivityAt ?? probe.lastProgressAt))
           || now - probe.lastProgressAt < SUBAGENT_HANG_NO_PROGRESS_MS) return true;
     } else if (!rec && now - probe.lastProgressAt < SUBAGENT_HANG_EVENT_ONLY_MS) {
       return true;
@@ -918,13 +963,16 @@ function requestSubagentHangAction(
   }
   const toolUses = rec.toolUses ?? 0;
   const output = rec.lifetimeUsage?.output ?? 0;
-  if (toolUses > probe.lastToolUses || output > probe.lastOutputTokens) {
+  const activity = rec.lastActivityAt;
+  if (toolUses > probe.lastToolUses || output > probe.lastOutputTokens
+      || (activity !== undefined && activity > (probe.lastObservedActivityAt ?? probe.lastProgressAt))) {
     // Progress arrived between classification and the capability call. Drop
     // the latch so a later genuine no-progress episode can be evaluated.
     probe.hangActionAt = undefined;
     probe.hangAction = undefined;
     probe.lastToolUses = toolUses;
     probe.lastOutputTokens = output;
+    if (activity !== undefined) probe.lastObservedActivityAt = activity;
     probe.lastProgressAt = now;
     return;
   }
@@ -1591,10 +1639,12 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
       const stillTracked = record !== undefined;
       const toolUses = finiteNonNegative(record?.toolUses) ?? probe.lastToolUses;
       const outputTokens = finiteNonNegative(record?.lifetimeUsage?.output) ?? probe.lastOutputTokens;
+      const activityAt = finiteNonNegative(record?.lastActivityAt);
       // Snapshotting must not mutate watchdog state, but a freshly observed
       // manager counter is still direct evidence for the display. Do not show
       // a stale silence age while the manager already reports new progress.
-      const managerProgress = toolUses > probe.lastToolUses || outputTokens > probe.lastOutputTokens;
+      const managerProgress = toolUses > probe.lastToolUses || outputTokens > probe.lastOutputTokens
+        || (activityAt !== undefined && activityAt > (probe.lastObservedActivityAt ?? probe.lastProgressAt));
       if (managerProgress) lastProgressAt = now;
       const silentMs = Math.max(0, now - lastProgressAt);
       evidence = record ? "live" : "event-only";
@@ -1673,5 +1723,6 @@ export function __testOnlySetSubagentHangEscalationMs(ms: number | null): void {
  * called by production code. */
 export function __testOnlyClearSubagentHangProbes(): void {
   subagentHangProbes.clear();
+  currentSubagentObservations.clear();
   subagentHangEscalationMsOverride = null;
 }

@@ -720,7 +720,7 @@ async function promptSettingsMenu(
 
 /**
  * v0.28.0: per-key dispatch for the settings menu. The id comes from
- * `buildSettingsRows` (e.g. "autoResume", "auditorModel", "subagentModelOverrides.Explore").
+ * `buildSettingsRows` (e.g. "autoResume", "auditorModel", "subagentModelOverrides.scout").
  * Same handlers as v0.27.0's if/else chain — only the trigger changed from
  * `startsWith(label)` strings to stable ids.
  */
@@ -1503,8 +1503,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "subagentModelStrategy": {
       const v = await ctx.ui.select("Subagent model (pi-subagents default agents)", [
-        "inherit-parent — share your session model (recommended)",
-        "agent-default — use the upstream pi-subagents default agents",
+      "inherit-parent — share your session model (recommended)",
+      "agent-default — use each upstream pi-subagents role default",
       ]);
       if (v) {
         const strategy: SubagentModelStrategy = v.startsWith("agent-default") ? "agent-default" : "inherit-parent";

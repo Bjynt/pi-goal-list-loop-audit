@@ -271,6 +271,10 @@ import {
   createGoalHeartbeat,
   bindSubagentRpcHost,
   observeSubagentRpcReadiness,
+  observeCurrentSubagentStart,
+  observeCurrentSubagentProgress,
+  observeCurrentSubagentComplete,
+  observeCurrentSubagentTerminal,
   releaseSubagentRpcHost,
   releaseZombieAbortKey,
   endSubagentHangProbe,
@@ -1308,9 +1312,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     ensureAgentToolsReady(ctx);
     warnOnCommandCollision(ctx);
     warnIfAuditorProviderRisky(ctx);
-    // v0.24.6: sync the pi-subagents model override (managed Explore.md) with
-    // settings. Idempotent; applies to NEW sessions (pi-subagents registers
-    // its agents at its own session start).
+    // Sync current pi-subagents role overrides with settings. Idempotent;
+    // applies to NEW sessions (the companion registers its agents at start).
     // v0.34.115: when subagentFallbacks[name] is set for an agent, the
     // first eligible ref in the chain is written as the override model; the
     // per-type pin (s.subagentModelOverrides[name]) still wins when the
@@ -2484,6 +2487,58 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // .pi-glla/active.jsonl and survives restarts, unlike the in-process
   // agent registry. Queued/repeating observations (resume, re-run) append
   // again — fresh evidence the reference is alive.
+  // Current pi-subagents uses versioned `subagent:*` events instead of the
+  // legacy `subagents:*` names. The heartbeat adapter also reads its durable
+  // async status artifact, so these listeners deliberately do not capture a
+  // context for later use.
+  pi.events.on("subagent:async-started", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    observeCurrentSubagentStart(data);
+    const ctx = freshCtx();
+    if (!ctx) return;
+    signalSupervisionEvent({ plane: "subagent", kind: "start", source: "subagent:async-started" });
+    const e = (data ?? {}) as { id?: unknown; runId?: unknown; sessionId?: unknown; agent?: unknown; task?: unknown; goal?: unknown; mode?: unknown };
+    const sessionId = typeof e.sessionId === "string" && e.sessionId.trim()
+      ? e.sessionId.trim()
+      : typeof e.id === "string" && e.id.trim()
+        ? e.id.trim()
+        : typeof e.runId === "string" && e.runId.trim() ? e.runId.trim() : undefined;
+    if (!sessionId) return;
+    const candidate = [e.task, e.goal].find((value) => typeof value === "string" && value.trim() && !/^\[prompt redacted\]$/i.test(value.trim()));
+    const summary = typeof candidate === "string" ? candidate : typeof e.mode === "string" ? e.mode : "async run";
+    appendLedger(ctx.cwd, "subagent_session", {
+      sessionId,
+      agentType: typeof e.agent === "string" ? e.agent : undefined,
+      summary,
+      goalId: state.goal?.status === "active" ? state.goal.id : undefined,
+      at: nowIso(),
+    });
+  });
+  pi.events.on("subagent:steering-notice", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    observeCurrentSubagentProgress(data);
+    if (!freshCtx()) return;
+    signalSupervisionEvent({ plane: "subagent", kind: "progress", source: "subagent:steering-notice" });
+  });
+  pi.events.on("subagent:async-complete", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    observeCurrentSubagentComplete(data);
+    if (!freshCtx()) return;
+    signalSupervisionEvent({ plane: "subagent", kind: "complete", source: "subagent:async-complete" });
+  });
+  pi.events.on("subagent:process-terminal", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    observeCurrentSubagentTerminal(data);
+    if (!freshCtx()) return;
+    signalSupervisionEvent({ plane: "subagent", kind: "complete", source: "subagent:process-terminal" });
+  });
+  pi.events.on("subagent:foreground-complete", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    observeCurrentSubagentComplete(data);
+    if (!freshCtx()) return;
+    signalSupervisionEvent({ plane: "subagent", kind: "complete", source: "subagent:foreground-complete" });
+  });
+
   pi.events.on("subagents:started", (data: unknown) => {
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
     const ctx = freshCtx();

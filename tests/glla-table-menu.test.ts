@@ -208,7 +208,7 @@ test("render: compact mode never exceeds terminal width even with a long VALUE i
   assert.ok(longPath.length > 100, "fixture must be long enough to overflow a 150-col terminal");
   const rows: SettingsRow[] = [
     { id: "autoResume", section: "keep-going", label: "Auto-resume on load", valueText: "default", sourceText: "default", description: "short" },
-    { id: "subagentFallbacks:general-purpose", section: "subagents", label: "general-purpose fallback agents", valueText: "none", sourceText: "default", description: "short" },
+    { id: "subagentFallbacks:scout", section: "subagents", label: "scout fallback agents", valueText: "none", sourceText: "default", description: "short" },
     {
       id: "auditorAllowedExtensions",
       section: "auditor",

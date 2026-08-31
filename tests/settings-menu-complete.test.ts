@@ -17,6 +17,7 @@ import {
   type SettingsRow,
 } from "../extensions/settings-menu.ts";
 import type { Settings } from "../extensions/goal-settings.ts";
+import { CURRENT_SUBAGENT_AGENT_NAMES } from "../extensions/goal-loop-subagents.ts";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 /* --------------------------------------------------------------------- */
@@ -45,8 +46,8 @@ const SAMPLE_SETTINGS: Settings = {
   tokenLimit: 200000,
   subagentModelStrategy: "inherit-parent",
   subagentModelOverrides: {
-    Explore: "minimax/MiniMax-M3",
-    Plan: "minimax/MiniMax-M3",
+    scout: "minimax/MiniMax-M3",
+    worker: "minimax/MiniMax-M3",
   },
 };
 
@@ -181,16 +182,16 @@ test("all embedded subagent types expose editable fallback-chain rows", () => {
   const rows = buildSettingsRows(
     {
       subagentFallbacks: {
-        Plan: ["provider/plan-backup"],
-        "general-purpose": ["provider/general-backup"],
+        worker: ["provider/worker-backup"],
+        scout: ["provider/scout-backup"],
       },
     } as Settings,
     EMPTY_PROV,
   );
   const byId = new Map(rows.map((row) => [row.id, row]));
-  assert.equal(byId.get("subagentFallbacks:Explore")?.valueText, "none (uses pin or inherits)");
-  assert.equal(byId.get("subagentFallbacks:Plan")?.valueText, "provider/plan-backup");
-  assert.equal(byId.get("subagentFallbacks:general-purpose")?.valueText, "provider/general-backup");
+  assert.equal(byId.get("subagentFallbacks:delegate")?.valueText, "none (uses pin or inherits)");
+  assert.equal(byId.get("subagentFallbacks:worker")?.valueText, "provider/worker-backup");
+  assert.equal(byId.get("subagentFallbacks:scout")?.valueText, "provider/scout-backup");
 });
 
 test("key rows from v0.27.0 settings menu are all present (menu coverage contract)", () => {
@@ -220,9 +221,8 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "stallShortWords",
     "stallSimilarityThreshold",
     "subagentModelStrategy",
-    "subagentModelOverrides.Explore",
-    "subagentModelOverrides.Plan",
-    "subagentModelOverrides.general-purpose",
+    ...CURRENT_SUBAGENT_AGENT_NAMES.map((name) => `subagentModelOverrides.${name}`),
+    "subagentModelOverrides.Designer",
     "notifyCmd",
     "tokenLimit",
     "toolOverrides",
@@ -254,14 +254,18 @@ test("rows map 1:1 to dispatchable ids (every id can drive a handler)", () => {
     caseLabels.add(m[1]!);
   }
   const rowIds = new Set(buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV).map((r) => r.id));
-  // Every row id must have a case in the dispatcher (with one allowed
-  // exception: subagentResolved is read-only and intentionally has no
-  // editor — it's there for visibility into runtime resolution).
+  // Every row id must have a case in the dispatcher. Current pi-subagents
+  // role ids are handled by the data-driven prefix guard before the switch.
   const readOnly = new Set(["subagentResolved"]);
   let covered = 0;
   for (const r of rowIds) {
     if (readOnly.has(r)) continue;
-    assert.ok(caseLabels.has(r), `row id "${r}" has no dispatcher case in handleSettingChoice`);
+    const currentSubagentId = r.startsWith("subagentModelOverrides.") || r.startsWith("subagentFallbacks:");
+    if (currentSubagentId) {
+      assert.match(dispatcher, /OVERRIDABLE_AGENT_TYPES\.includes\(agentType\)/, `row id "${r}" has no current-role dispatcher guard`);
+    } else {
+      assert.ok(caseLabels.has(r), `row id "${r}" has no dispatcher case in handleSettingChoice`);
+    }
     covered++;
   }
   assert.ok(covered >= 18, `expected at least 18 dispatcher-covered rows, saw ${covered}`);
@@ -312,7 +316,7 @@ test("valueText derives from settings (effective values surface for each row)", 
   assert.equal(byId.get("subagentHangEscalationMinutes")!.valueText, "30m");
   assert.equal(byId.get("zombieRetryMaxAttempts")!.valueText, "3");
   assert.equal(
-    byId.get("subagentModelOverrides.Explore")!.valueText,
+    byId.get("subagentModelOverrides.scout")!.valueText,
     "minimax/MiniMax-M3",
   );
 });

@@ -6,7 +6,7 @@ const smokeScript = `
 import Module from "node:module";
 const originalLoad = Module._load;
 Module._load = function (request, ...args) {
-  if (request === "@tintinweb/pi-subagents") throw new Error("optional provider was imported");
+  if (request === "pi-subagents" || request === "@tintinweb/pi-subagents") throw new Error("optional provider was imported");
   return originalLoad.call(this, request, ...args);
 };
 const { createJiti } = await import("jiti");
