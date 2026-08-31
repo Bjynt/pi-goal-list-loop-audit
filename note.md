@@ -1,8 +1,20 @@
+# Now
+
 # Next
 
-## Clearer working signal
+## safely parked should be active
 
-Make GLLA's active, recovery, and waiting states visibly legible in the live TUI rather than relying on hidden thinking text. We can validate the result afterward; do not let unavailable capture tooling block the implementation.
+/home/dracon/Pictures/Screenshots/Screenshot_20260831_131506.png 
 
-Historical reference only:
-`/home/dracon/Pictures/Screenshots/Screenshot_20260830_133250.png`
+# Later
+
+## Cross-harness and extension review
+
+Review other harnesses and goal extensions, notably pi goal x, DeepSeek, Codex, Claude, Antigravity, and Grok harnesses.
+
+## NVIDIA AVO
+
+There are related PRs, but they may be incomplete. Revisit after the current GLLA-owned work is prioritized:
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
+
+# Idea
