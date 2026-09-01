@@ -8,3 +8,4 @@
 {"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-09-01T12:48:33.914Z"}
 {"type":"session_rebound","value":{"reason":"resume"},"at":"2026-09-01T12:48:34.551Z"}
 {"type":"id_invalidation","value":{"oldId":"01a05d03-8bbb-76e6-bfcf-cb01f23bc68f","newId":"01a054a9-e07f-705b-87a1-9421f9b906dc","reason":"session_shutdown","shutdownReason":"resume","at":"2026-09-01T12:48:34.554Z"},"at":"2026-09-01T12:48:34.554Z"}
+{"type":"context_usage_sample","value":{"goalId":null,"provider":"openai-codex","model":"gpt-5.6-luna","providerUsage":{"inputTokens":1899,"outputTokens":299,"cacheReadTokens":156160,"cacheWriteTokens":0,"totalTokens":158358},"contextUsage":{"tokens":158358,"contextWindow":200000,"percent":79.179}},"at":"2026-09-01T12:53:47.888Z"}
