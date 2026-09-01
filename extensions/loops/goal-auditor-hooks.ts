@@ -218,11 +218,14 @@ import {
   auditorCandidateRefs,
   auditorResultFailureClass,
   cancelDetachedGoalCompletionAuditor,
+  escalatedAuditorTimeout,
   newDetachedAuditJobAttemptId,
   runAuditorFallbackWithPolicy,
   isAuditorCursorPersistenceFailure,
   normalizeAuditorInfrastructureResult,
   runDetachedGoalCompletionAuditor,
+  DEFAULT_AUDITOR_STALL_MS,
+  DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
   type AuditorFallbackAttemptInfo,
   type AuditorFallbackCandidate,
   type AuditorFallbackExhaustionInfo,
@@ -981,6 +984,25 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       ? "Fresh session recovered the interrupted completion audit — starting a detached retry for the stored claim."
       : "Auditor provider retry is due — starting a detached retry with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
+  // v0.37.0: configurable + adaptive timeouts. The bases are user settings
+  // (slow local models raise them); the durable escalation index on the
+  // claim doubles the effective budget per previously launched attempt
+  // (cap 4× base), so a retried audit never re-runs into the identical
+  // budget that timed out before.
+  const auditorToolBaseMs =
+    settings.auditorToolTimeoutMs ?? DEFAULT_AUDITOR_TOOL_TIMEOUT_MS;
+  const auditorStallBaseMs =
+    settings.auditorStallMs ?? DEFAULT_AUDITOR_STALL_MS;
+  let dispatchTimeouts = {
+    toolTimeoutMs: escalatedAuditorTimeout(
+      auditorToolBaseMs,
+      claim.timeoutEscalation ?? 0,
+    ),
+    stallMs: escalatedAuditorTimeout(
+      auditorStallBaseMs,
+      claim.timeoutEscalation ?? 0,
+    ),
+  };
   const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallbacks, settings.auditorSameSessionSwap !== false);
   if (modelError) {
     const modelFailureCopy = providerErrorPresentation(modelError, "completion");
@@ -1026,6 +1048,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           model: modelRef(candidate.model),
           via: candidate.via,
         };
+        // v0.37.0: the worker gets the SAME budgets via env so the worker's
+        // own per-tool timer and inactivity brake agree with the parent
+        // watchdogs instead of racing them at different values.
+        const { toolTimeoutMs, stallMs } = dispatchTimeouts;
         return runDetachedGoalCompletionAuditor({
           cwd: liveCtx.cwd,
           goal: auditGoal,
@@ -1040,9 +1066,26 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           // entries to install paths before hashing (see
           // goal-loop-auditor-process.ts).
           allowedExtensions: settings.auditorAllowedExtensions,
-          runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), logicalAttemptId: claim.attemptId! },
+          runtime: {
+            attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!),
+            logicalAttemptId: claim.attemptId!,
+            // v0.37.0: escalated budgets — per-tool ceiling, silence/
+            // no-progress window, and first-event window all derive from the
+            // same escalated pair (the first-event window keeps aliasing the
+            // stall budget, now explicit).
+            toolTimeoutMs,
+            heartbeatNoProgressMs: stallMs,
+            firstEventTimeoutMs: stallMs,
+            env: {
+              GLLA_AUDITOR_TOOL_TIMEOUT_MS: String(toolTimeoutMs),
+              GLLA_AUDITOR_STALL_MS: String(stallMs),
+            },
+          },
           onProgress: (progress) => {
-            publishDetachedAuditProgress(generation, goalId, claim.attemptId!, progress);
+            // toolTimeoutMs is a dispatch fact for the display layer: the
+            // quiet watcher exempts an in-budget long tool from the 3m
+            // warning, and the card renders "tool: X · 4m / 20m budget".
+            publishDetachedAuditProgress(generation, goalId, claim.attemptId!, { ...progress, toolTimeoutMs });
           },
           // v0.34.57: the parent-side heartbeat-without-progress watchdog
           // fired — persist the auditor_stalled ledger event so the recovery
@@ -1063,23 +1106,43 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         retryCandidateRef: persistedAuditorRetryCandidateRef,
         retryAttemptStarted: !!claim.auditorRetryAttemptStartedAt,
         retryFailureClass: claim.auditorFailureClass,
-        onAttempt: (candidate, info) => persistDetachedAuditorCursor(
-          generation,
-          goalId,
-          claim.attemptId!,
-          info,
-          {
-            auditorCandidateRef: info.candidateRef,
-            auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
-            auditorRetryAttemptStartedAt: info.attempt === 2 ? new Date().toISOString() : undefined,
-            ...(info.failureCount === 0 ? {
-              auditorRetryCandidateRef: undefined,
-              auditorFailureClass: undefined,
-              auditorFailureAt: undefined,
-            } : {}),
-            auditorFailureCount: Math.min(2, Math.max(0, info.failureCount)),
-          },
-        ),
+        onAttempt: (_candidate, info) => {
+          // v0.37.0: this launch's budgets come from the persisted index
+          // BEFORE incrementing; the increment persists through the same
+          // cursor write, so the NEXT launch (same-candidate retry, candidate
+          // fallback, or a scheduled/manual retry after a restart) reads the
+          // doubled budgets.
+          const priorEscalation =
+            state.goal?.pendingCompletion?.timeoutEscalation ?? 0;
+          dispatchTimeouts = {
+            toolTimeoutMs: escalatedAuditorTimeout(
+              auditorToolBaseMs,
+              priorEscalation,
+            ),
+            stallMs: escalatedAuditorTimeout(
+              auditorStallBaseMs,
+              priorEscalation,
+            ),
+          };
+          return persistDetachedAuditorCursor(
+            generation,
+            goalId,
+            claim.attemptId!,
+            info,
+            {
+              auditorCandidateRef: info.candidateRef,
+              auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
+              auditorRetryAttemptStartedAt: info.attempt === 2 ? new Date().toISOString() : undefined,
+              ...(info.failureCount === 0 ? {
+                auditorRetryCandidateRef: undefined,
+                auditorFailureClass: undefined,
+                auditorFailureAt: undefined,
+              } : {}),
+              auditorFailureCount: Math.min(2, Math.max(0, info.failureCount)),
+              timeoutEscalation: priorEscalation + 1,
+            },
+          );
+        },
         onRetry: (candidate, err, info) => {
           if (!info) return false;
           const persisted = persistDetachedAuditorCursor(

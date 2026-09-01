@@ -543,6 +543,10 @@ function publishDetachedAuditProgress(
     // v0.34.56: expose explicit unmatched-tool-fact counts to the HUD.
     unmatchedToolStarts: progress.unmatchedToolStarts?.length ?? 0,
     unmatchedToolEnds: progress.unmatchedToolEnds?.length ?? 0,
+    // v0.37.0: dispatch fact — the effective per-tool budget for this
+    // attempt; the quiet watcher and the "tool: X · 4m / 20m budget" line
+    // consume it.
+    toolTimeoutMs: progress.toolTimeoutMs,
     lastEventAt: Date.now(),
     lastActivityAt: progress.lastActivityAt,
   };

@@ -506,6 +506,10 @@ export interface AuditDisplayProgress {
   /** v0.34.86: monotonic report-stream byte count (text_delta chars) — the
    * silent-mode progress evidence that never reveals prose. */
   reportBytes?: number;
+  /** v0.37.0: dispatch fact — effective per-tool budget for this attempt
+   * (after adaptive escalation). Lets the card render "tool: X · 4m /
+   * 20m budget" and exempts an in-budget long tool from the quiet phase. */
+  toolTimeoutMs?: number;
 }
 
 type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaiting-verdict";
@@ -598,7 +602,27 @@ export function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null 
   if (/infra|error|failed|blocked|no verdict/.test(label)) return "blocked";
   if (audit?.phase === "complete") return "awaiting-verdict";
   const age = auditorActivityAge(audit, now);
-  if (age !== undefined && age > AUDITOR_QUIET_MS) return "quiet";
+  if (age !== undefined && age > AUDITOR_QUIET_MS) {
+    // v0.37.0: progress-aware quiet gate. A tool that is still running INSIDE
+    // its (possibly escalated) per-tool budget is making legitimate progress
+    // — a slow local model or a long bounded verification command — not a
+    // stuck worker. Silence only means "quiet" once the tool itself has
+    // outlived its budget (the watchdog owns that termination).
+    const toolAgeMs =
+      audit?.currentToolStartedAt !== undefined &&
+      Number.isFinite(audit.currentToolStartedAt)
+        ? Math.max(0, now - audit.currentToolStartedAt)
+        : undefined;
+    if (
+      audit?.currentTool &&
+      toolAgeMs !== undefined &&
+      typeof audit.toolTimeoutMs === "number" &&
+      audit.toolTimeoutMs > 0 &&
+      toolAgeMs < audit.toolTimeoutMs
+    )
+      return "running";
+    return "quiet";
+  }
   if (!audit && g.pendingCompletion?.phase === "running") return "awaiting-verdict";
   return "running";
 }
@@ -1420,7 +1444,13 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       const duration = audit.currentToolStartedAt !== undefined && Number.isFinite(audit.currentToolStartedAt)
         ? ` · ${fmtElapsed(now - audit.currentToolStartedAt)}`
         : "";
-      observations.push(`tool: ${truncate(audit.currentTool, 30)}${target ? ` → ${target}` : ""}${duration}`);
+      // v0.37.0: show the budget next to the elapsed time so a long tool run
+      // reads as "still inside its window", not "stuck".
+      const budget =
+        typeof audit.toolTimeoutMs === "number" && audit.toolTimeoutMs > 0
+          ? ` / ${fmtElapsed(audit.toolTimeoutMs)} budget`
+          : "";
+      observations.push(`tool: ${truncate(audit.currentTool, 30)}${target ? ` → ${target}` : ""}${duration}${budget}`);
     } else {
       const lastTool = lastAuditorTool(audit) ?? (audit?.currentTool ? truncate(audit.currentTool, 30) : undefined);
       if (lastTool) observations.push(`last tool: ${lastTool}`);

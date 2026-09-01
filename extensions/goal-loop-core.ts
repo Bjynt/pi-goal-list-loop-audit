@@ -304,6 +304,14 @@ export interface PendingCompletion {
   auditorFailureClass?: AuditorRecoveryFailureClass;
   auditorFallbackExhausted?: boolean;
   auditorFailureAt?: string;
+  /** v0.37.0: adaptive-timeout escalation index. Incremented once per
+   * launched detached attempt (persisted through the same cursor writes as
+   * the candidate position), so the ×2-per-attempt budget schedule survives
+   * host restarts and candidate fallbacks. A NEW completion claim starts at
+   * 0 (undefined); a retried claim keeps its escalated position — a slow
+   * model is a machine fact, not an attempt fact. Clamped to [0, 100] on
+   * load. */
+  timeoutEscalation?: number;
   /** Durable generic retry accounting; survives reloads and worker restarts. */
   retryAttempts?: number;
   retryFirstAt?: string;
@@ -1978,6 +1986,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     auditorFailureClass: _auditorFailureClass,
     auditorFallbackExhausted: _auditorFallbackExhausted,
     auditorFailureAt: _auditorFailureAt,
+    timeoutEscalation: _timeoutEscalation,
     ...canonicalOrUnknown
   } = raw;
   const phase = _phase === "quota-waiting" ? "retry-waiting" : _phase;
@@ -2012,6 +2021,15 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
   const auditorFailureAt = typeof _auditorFailureAt === "string" && Number.isFinite(Date.parse(_auditorFailureAt))
     ? new Date(Date.parse(_auditorFailureAt)).toISOString()
     : undefined;
+  // v0.37.0: escalation index — hand-edited/corrupt state must not produce a
+  // negative or astronomical budget multiplier.
+  const timeoutEscalation =
+    typeof _timeoutEscalation === "number" &&
+    Number.isInteger(_timeoutEscalation) &&
+    _timeoutEscalation >= 0 &&
+    _timeoutEscalation <= 100
+      ? _timeoutEscalation
+      : undefined;
   return {
     ...canonicalOrUnknown,
     ...(auditorCandidateRefs !== undefined ? { auditorCandidateRefs } : {}),
@@ -2023,6 +2041,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     ...(auditorFailureClass ? { auditorFailureClass } : {}),
     ...(auditorFallbackExhausted ? { auditorFallbackExhausted: true } : {}),
     ...(auditorFailureAt ? { auditorFailureAt } : {}),
+    ...(timeoutEscalation !== undefined ? { timeoutEscalation } : {}),
     ...(phase === "running" || phase === "recovery-pending" || phase === "retry-waiting" ? { phase } : {}),
     ...(typeof raw.retryAttempts === "number"
       ? { retryAttempts: raw.retryAttempts }

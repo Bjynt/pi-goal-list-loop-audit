@@ -168,6 +168,14 @@ export function buildSettingsRows(
   // detached verifier at the same effective reasoning level as the main
   // agent (including max) without preventing an explicit auditor override.
   const auditorThinking = settings.auditorThinkingLevel ?? sessionThinking;
+  // v0.37.0: compact ms duration for the auditor timeout rows ("5m" / "90s").
+  const fmtTimeoutMs = (ms?: number): string => {
+    if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "?";
+    if (ms % 3_600_000 === 0) return `${Math.round(ms / 3_600_000)}h`;
+    if (ms % 60_000 === 0) return `${Math.round(ms / 60_000)}m`;
+    if (ms % 1_000 === 0) return `${Math.round(ms / 1_000)}s`;
+    return `${ms}ms`;
+  };
 
   // ── Keep-going ──
   rows.push(
@@ -404,6 +412,24 @@ export function buildSettingsRows(
       valueText: show("auditorProgressSignals", "on"),
       sourceText: src("auditorProgressSignals"),
       description: "on: during silent audits the card shows a phase label (reading source… / writing report…) and a report byte-counter so a long pass shows movement · off: plain timer-only card",
+    },
+    {
+      id: "auditorToolTimeoutMs",
+      section: "auditor",
+      label: "Auditor tool timeout",
+      valueText: `${fmtTimeoutMs(settings.auditorToolTimeoutMs)} base · ×2 per retry · cap 4×`,
+      sourceText: src("auditorToolTimeoutMs"),
+      description:
+        "base budget for ONE allowed auditor tool call — every failed retried attempt doubles the effective budget (cap 4× base); raise for slow local models or long bounded verification commands",
+    },
+    {
+      id: "auditorStallMs",
+      section: "auditor",
+      label: "Auditor stall budget",
+      valueText: `${fmtTimeoutMs(settings.auditorStallMs)} base · ×2 per retry · cap 4×`,
+      sourceText: src("auditorStallMs"),
+      description:
+        "base silence/no-progress budget — no new tool call or output for this long aborts the audit; doubles per retried attempt (cap 4× base); an actively generating model never counts as silent",
     },
     {
       id: "auditCap",

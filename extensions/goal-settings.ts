@@ -30,6 +30,16 @@ import {
   DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES,
   normalizeMainModelFallbackRefs,
 } from "./main-model-recovery.js";
+// v0.37.0: the auditor timeout bases/bounds live with the watchdogs that
+// consume them — the settings layer only defaults/clamps against them.
+import {
+  DEFAULT_AUDITOR_STALL_MS,
+  DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
+  MAX_AUDITOR_STALL_MS,
+  MAX_AUDITOR_TOOL_TIMEOUT_MS,
+  MIN_AUDITOR_STALL_MS,
+  MIN_AUDITOR_TOOL_TIMEOUT_MS,
+} from "./goal-loop-auditor-process.js";
 import {
   DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
   MAX_ZOMBIE_RETRY_ATTEMPTS,
@@ -107,6 +117,20 @@ export interface Settings {
    * label ("reading source…" / "writing report…") + report byte-counter.
    * Default ON; off = the plain timer-only card. */
   auditorProgressSignals?: boolean;
+  /** v0.37.0: base budget, in milliseconds, for ONE allowed auditor tool
+   * call (read/grep/find/ls/bash). Default 5m. Every failed detached
+   * attempt that gets retried doubles the effective budget (cap 4× base),
+   * so slow local models and long bounded verification commands stop being
+   * killed by the identical 5m wall on every retry. Bounds: 30s–6h.
+   * Global-only: it describes machine/provider speed, not the project. */
+  auditorToolTimeoutMs?: number;
+  /** v0.37.0: base silence/no-progress budget, in milliseconds, for the
+   * detached auditor (worker inactivity brake + parent stale-heartbeat /
+   * no-progress / first-event windows). Default 10m; doubles per retried
+   * attempt (cap 4× base). A model that is actively generating (streaming
+   * text, running a tool) never counts as silent. Bounds: 1m–24h.
+   * Global-only for the same reason as auditorToolTimeoutMs. */
+  auditorStallMs?: number;
   /** Global-only: when main-model recovery is parked, fire an extra retry at
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
@@ -238,6 +262,8 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "drafterThinkingLevel",
   "drafterModelFallbacks",
   "auditorModelFallbacks",
+  "auditorToolTimeoutMs",
+  "auditorStallMs",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -282,6 +308,11 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.34.86: progress signals are on by default — silent audits still
   // show a phase label + byte counter (note.md Screenshots 161837/175627).
   auditorProgressSignals: true,
+  // v0.37.0: auditor timeout bases default to the watchdog constants; users
+  // on slow local models raise them via /glla → Auditor rows. Escalation
+  // (×2 per retried attempt, cap 4×) applies on top of whatever base is set.
+  auditorToolTimeoutMs: DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
+  auditorStallMs: DEFAULT_AUDITOR_STALL_MS,
   // v0.34.142: an extra blind retry at :00:30 after every hour starts.
   // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.
@@ -366,6 +397,32 @@ function normalizeLoadedSettings(settings: Settings): Settings {
       || settings.zombieRetryMaxAttempts > MAX_ZOMBIE_RETRY_ATTEMPTS) {
     settings.zombieRetryMaxAttempts = DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
   }
+  // v0.37.0: auditor timeout bases — hand-edited files may carry junk or
+  // out-of-range values. Clamp into [min, max]; non-finite falls back to
+  // the watchdog default. The escalation schedule multiplies these bases,
+  // so the bounds apply to the BASE, not the escalated value.
+  if (
+    typeof settings.auditorToolTimeoutMs !== "number" ||
+    !Number.isFinite(settings.auditorToolTimeoutMs)
+  ) {
+    settings.auditorToolTimeoutMs = DEFAULT_AUDITOR_TOOL_TIMEOUT_MS;
+  } else {
+    settings.auditorToolTimeoutMs = Math.min(
+      MAX_AUDITOR_TOOL_TIMEOUT_MS,
+      Math.max(MIN_AUDITOR_TOOL_TIMEOUT_MS, Math.floor(settings.auditorToolTimeoutMs)),
+    );
+  }
+  if (
+    typeof settings.auditorStallMs !== "number" ||
+    !Number.isFinite(settings.auditorStallMs)
+  ) {
+    settings.auditorStallMs = DEFAULT_AUDITOR_STALL_MS;
+  } else {
+    settings.auditorStallMs = Math.min(
+      MAX_AUDITOR_STALL_MS,
+      Math.max(MIN_AUDITOR_STALL_MS, Math.floor(settings.auditorStallMs)),
+    );
+  }
   // v0.34.142: these old policy knobs no longer control recovery. Drop
   // them from the effective object so stale files cannot resurrect the old
   // behavior or make the settings UI imply that quota inspection exists.
@@ -444,6 +501,8 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditorAllowedExtensions",
   "auditorSameSessionSwap",
   "auditorThinkingLevel",
+  "auditorToolTimeoutMs",
+  "auditorStallMs",
   "notifyCmd",
   "tokenLimit",
   "wedgeAlertMinutes",

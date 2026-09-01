@@ -63,7 +63,10 @@ test("v0.34.22: detached completion audits persist lifecycle claims and stop app
   assert.match(complete, /shouldRetry: \(\) => detachedAuditContext\(auditGeneration, auditGoalId, auditAttemptId\) !== null/);
   assert.match(complete, /completionAuditGeneration = auditGeneration/);
   assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);
-  assert.match(complete, /publishDetachedAuditProgress\(auditGeneration, auditGoalId, auditAttemptId, progress\)/);
+  // v0.37.0: the dispatch spreads the effective per-tool budget into the
+  // display progress; the lifecycle guard (generation-scoped publish) is
+  // what this pin protects.
+  assert.match(complete, /publishDetachedAuditProgress\(auditGeneration, auditGoalId, auditAttemptId, \{ \.\.\.progress, toolTimeoutMs \}\)/);
   assert.match(complete, /detachedAuditContext\(auditGeneration, auditGoalId, auditAttemptId\)/);
   assert.match(complete, /if \(!auditContextAfterRun \|\| !state\.goal \|\| state\.goal\.id !== auditGoalId\)/);
   assert.match(GOAL, /shouldRetry: \(\) => detachedAuditContext\(generation, goalId, claim\.attemptId!\) !== null/);
