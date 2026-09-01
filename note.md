@@ -1,9 +1,5 @@
 # Now
 
-
-
-# Next
-
 ## more visual queued cause i mistook it for stuck 
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260901_190127.png 
@@ -15,6 +11,10 @@
 /home/dracon/Pictures/Screenshots/Screenshot_20260901_193529.png 
 
 also we may need to have a better way of handling long running tasks we just need to check on 
+
+
+# Next
+
 
 # Later
 
