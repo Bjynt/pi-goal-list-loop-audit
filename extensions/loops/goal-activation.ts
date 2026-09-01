@@ -671,6 +671,36 @@ function refuseForeignCommand(ctx: ExtensionContext): boolean {
   return true;
 }
 
+export function __testOnlyClassifyStaleContinuation(content: string, cwd: string): string | null {
+  const goalIdMatch = content.match(/\[GOAL CHECKPOINT goalId=([^\]\s]+)\]/);
+  const loopMatch = content.match(/\[LOOP ITERATION (\d+)\]/);
+  const isStall = content.includes("[STALL WARNING");
+  const isLengthContinue = content.includes("Your previous response was cut off") || content.includes("Response hit the output-token cap");
+  if (isLengthContinue) return null;
+  if (goalIdMatch) {
+    const gid = goalIdMatch[1]!;
+    if (!state.goal) return `no active goal (expected ${gid})`;
+    if (state.goal.id !== gid) return `goal mismatch (expected ${gid}, active ${state.goal.id})`;
+    if (state.goal.status !== "active") return `goal ${gid} not active (status=${state.goal.status})`;
+    try {
+      const p = archivedGoalPath(cwd, gid);
+      if (fs.existsSync(p)) return `goal ${gid} already archived`;
+    } catch {}
+    if ((state.goal as any).stopReason) return `goal ${gid} terminal stopReason present`;
+    return null;
+  }
+  if (loopMatch) {
+    if (!state.loop?.active) return `loop not active (iteration ${loopMatch[1]})`;
+    return null;
+  }
+  if (isStall) {
+    if (!state.goal || state.goal.status !== "active") return "stall warning with no active goal";
+    return null;
+  }
+  if (!state.goal && !state.loop?.active) return "no active supervision for generic goal-event";
+  return null;
+}
+
 export function registerGoalRuntime(pi: ExtensionAPI): void {
   // Factories run before lifecycle events, so observe readiness now; the
   // admitted session_start below decides which bus/generation may control a
@@ -985,32 +1015,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (typeof msg.content === "string") content = msg.content;
     else if (Array.isArray(msg.content)) content = msg.content.map((c: any) => typeof c === "string" ? c : (c?.text ?? "")).join("\n");
     else if (msg.content != null) content = String(msg.content);
+    const staleReason = __testOnlyClassifyStaleContinuation(content, ctx.cwd);
+    if (!staleReason) return;
     const goalIdMatch = content.match(/\[GOAL CHECKPOINT goalId=([^\]\s]+)\]/);
     const loopMatch = content.match(/\[LOOP ITERATION (\d+)\]/);
-    const isStall = content.includes("[STALL WARNING");
-    const isLengthContinue = content.includes("Your previous response was cut off") || content.includes("Response hit the output-token cap");
-    if (isLengthContinue) return;
-    let staleReason: string | null = null;
-    if (goalIdMatch) {
-      const gid = goalIdMatch[1];
-      if (!state.goal) staleReason = `no active goal (expected ${gid})`;
-      else if (state.goal.id !== gid) staleReason = `goal mismatch (expected ${gid}, active ${state.goal.id})`;
-      else if (state.goal.status !== "active") staleReason = `goal ${gid} not active (status=${state.goal.status})`;
-      else {
-        try {
-          const p = archivedGoalPath(ctx.cwd, gid);
-          if (fs.existsSync(p)) staleReason = `goal ${gid} already archived`;
-        } catch {}
-        if (!staleReason && (state.goal as any).stopReason) staleReason = `goal ${gid} terminal stopReason present`;
-      }
-    } else if (loopMatch) {
-      if (!state.loop?.active) staleReason = `loop not active (iteration ${loopMatch[1]})`;
-    } else if (isStall) {
-      if (!state.goal || state.goal.status !== "active") staleReason = "stall warning with no active goal";
-    } else {
-      if (!state.goal && !state.loop?.active) staleReason = "no active supervision for generic goal-event";
-    }
-    if (!staleReason) return;
     const sanitizedContent = `[GLLA: discarded stale continuation — ${staleReason}. No action required. Live state: ${state.goal ? `goal ${state.goal.id} (${state.goal.status})` : state.loop?.active ? `loop active iteration ${state.loop.iteration}` : "idle (no goal/loop)"}.]`;
     appendLedger(ctx.cwd, "stale_continuation_sanitized", {
       reason: staleReason,
