@@ -221,7 +221,13 @@ function packageSourceLabel(scope: string, spec: string): string {
 
 function readPackages(settingsPath: string): string[] {
   try {
-    return (JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as { packages?: string[] }).packages ?? [];
+    const raw = (JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as { packages?: unknown[] }).packages ?? [];
+    // v0.37.0: pi settings also allow object-form package entries
+    // ({ source, extensions }); flatten them to their source spec so the
+    // routing scan sees the packages the loader actually resolves.
+    return raw
+      .map((entry) => (typeof entry === "string" ? entry : (entry as { source?: unknown })?.source))
+      .filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
   } catch {
     return [];
   }

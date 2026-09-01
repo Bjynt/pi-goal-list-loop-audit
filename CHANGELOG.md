@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Added
+  Configurable detached-auditor watchdog budgets (`auditorToolTimeoutMs` and
+  `auditorStallMs`, global-scope settings edited via `/glla` with plain-ms or
+  s/m/h duration input) replace the hardcoded 5-minute per-tool and 10-minute
+  no-progress defaults. Both dispatch sites now thread the configured values
+  into the parent watchdogs AND into the worker environment
+  (`GLLA_AUDITOR_TOOL_TIMEOUT_MS` / `GLLA_AUDITOR_STALL_MS`), so parent and
+  worker can never disagree about who kills first.
+
+  Adaptive timeout escalation for stalled auditor attempts: each consecutive
+  kill-and-restart of the same claim doubles the per-tool and first-event
+  budgets (capped at 4x the configured base), persisted on the durable claim
+  as `timeoutEscalation` so slow local models get a growing budget instead of
+  an identical kill-and-restart loop on every restart.
+
+  Progress-aware watchdog: the parent progress signature now includes streamed
+  report bytes, so an actively-streaming model (including extended thinking
+  between tool calls) registers as live progress instead of tripping the
+  no-progress kill; the quiet-phase UI warning is suppressed while a tool is
+  legitimately running inside its effective budget and shows the budget on
+  the live tool line.
+
 ### Changed
   The recommended parallel-orchestration companion is now **pinned**
   `pi-subagents@0.62.0` — the power-max choice for GLLA. GLLA tracks its

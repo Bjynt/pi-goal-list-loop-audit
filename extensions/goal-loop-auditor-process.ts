@@ -121,6 +121,11 @@ export interface AuditorProgress {
    * in scripts/goal-auditor-worker.mjs. Never dropped, never falsely paired. */
   unmatchedToolStarts: Array<{ name: string; argsPrefix: string; startedAt: number; toolCallId?: string }>;
   unmatchedToolEnds: Array<{ toolCallId?: string; toolName?: string; at: number }>;
+  /** v0.37.0: dispatch fact (not worker telemetry) — the effective per-tool
+   * budget this attempt was launched with, after adaptive escalation. The
+   * display layer renders "tool: X · 4m / 20m budget" and exempts an
+   * in-budget long tool from the 3m quiet warning. */
+  toolTimeoutMs?: number;
 }
 
 export type AuditorModel = string | { provider: string; id: string };
@@ -514,7 +519,11 @@ export function auditorResultFailureClass(result: GoalAuditorResult): AuditorRec
 // still get the independent per-tool timeout below.
 export const AUDITOR_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
 const PROTOCOL_VERSION = 1;
-const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
+/** v0.37.0: base budget for ONE allowed auditor tool call. Exported so the
+ * settings layer defaults/clamps the user-facing `auditorToolTimeoutMs` key
+ * against the exact value the watchdogs use — one source of truth. */
+export const DEFAULT_AUDITOR_TOOL_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_TOOL_TIMEOUT_MS = DEFAULT_AUDITOR_TOOL_TIMEOUT_MS;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 /** v0.34.57 (steal-list #7 / bug #1.4): heartbeat-without-progress watchdog.
  * A worker heartbeat (`lastActivityAt`) fresher than this is "activity";
@@ -527,8 +536,42 @@ const DEFAULT_HEARTBEAT_FRESH_MS = 60_000;
  * and auto-cancel the detached job. Mirrors the worker's 10m default brake
  * on the complementary axis: silence→worker cancels, activity-without-
  * progress→parent cancels. Both are event-derived safety mechanisms; neither
- * is a wall-clock horizon for a worker that continues making real progress. */
-const DEFAULT_HEARTBEAT_NO_PROGRESS_MS = 10 * 60_000;
+ * is a wall-clock horizon for a worker that continues making real progress.
+ * v0.37.0: exported as the `auditorStallMs` setting's base budget — the
+ * user-facing knob and this watchdog share one source of truth. */
+export const DEFAULT_AUDITOR_STALL_MS = 10 * 60_000;
+/** v0.37.0: bounds for the user-facing timeout settings. The floors keep a
+ * genuinely dead worker failing fast; the ceilings still bound a single
+ * attempt (a 6h per-tool / 24h silence budget is "let the slow local model
+ * finish", not "no bound at all"). */
+export const MIN_AUDITOR_TOOL_TIMEOUT_MS = 30_000;
+export const MAX_AUDITOR_TOOL_TIMEOUT_MS = 6 * 3_600_000;
+export const MIN_AUDITOR_STALL_MS = 60_000;
+export const MAX_AUDITOR_STALL_MS = 24 * 3_600_000;
+/** v0.37.0: adaptive timeout escalation. Each failed detached attempt that
+ * gets retried doubles BOTH base budgets (per-tool and silence), saturating
+ * after AUDITOR_TIMEOUT_ESCALATION_MAX_STEPS doublings (4× base). The
+ * durable index lives on the claim (PendingCompletion.timeoutEscalation) so
+ * the schedule survives host restarts instead of resetting into the same
+ * identical budget that timed out before — the infinite identical loop.
+ * Pure function so tests can pin the schedule. */
+export const AUDITOR_TIMEOUT_ESCALATION_MAX_STEPS = 2;
+export function escalatedAuditorTimeout(
+  baseMs: number,
+  attemptIndex: number,
+): number {
+  const base = Number.isFinite(baseMs)
+    ? Math.max(50, Math.floor(baseMs))
+    : DEFAULT_AUDITOR_TOOL_TIMEOUT_MS;
+  const steps = Number.isFinite(attemptIndex)
+    ? Math.min(
+        Math.max(0, Math.floor(attemptIndex)),
+        AUDITOR_TIMEOUT_ESCALATION_MAX_STEPS,
+      )
+    : 0;
+  return base * 2 ** steps;
+}
+const DEFAULT_HEARTBEAT_NO_PROGRESS_MS = DEFAULT_AUDITOR_STALL_MS;
 const ATTEMPT_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const WORKER_SHUTDOWN_GRACE_MS = 1_000;
 const WORKER_FORCE_SETTLE_MS = 250;
@@ -1115,10 +1158,13 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
  * thinking on message_start/agent_start) without delivering progress — this
  * signature deliberately excludes both, so only a NEW finished tool call,
  * new report output, or a NEW tool start counts as progress. */
-function progressSignature(file: AuditorProgressFile): string {
+export function progressSignature(file: AuditorProgressFile): string {
   const calls = file.toolCalls;
   const lastToolFinishedAt = calls.length > 0 ? (calls[calls.length - 1]?.finishedAt ?? 0) : 0;
-  return `${calls.length}|${lastToolFinishedAt}|${file.recentOutput.join("\u0000")}|${file.currentTool ?? ""}|${file.currentToolStartedAt ?? 0}`;
+  // v0.37.0: reportBytes (the monotonic text_delta counter) is part of the
+  // signature — an actively generating model resets the no-progress clock
+  // even when the bounded recentOutput tail renders identically.
+  return `${calls.length}|${lastToolFinishedAt}|${file.recentOutput.join("\u0000")}|${file.currentTool ?? ""}|${file.currentToolStartedAt ?? 0}|${file.reportBytes ?? 0}`;
 }
 
 function infra(model: string, thinkingLevel: string, error: string, output = "", capturedToken?: GoalRevisionToken, infrastructureClass: AuditorInfrastructureClass = "transport"): GoalAuditorResult {
