@@ -47,6 +47,7 @@ import {
   isStaleApiError,
   supervisorPaused,
   objectiveIsUserSeeded,
+  isMonitorGoal,
   type Goal,
   type ObjectiveRepairTarget,
 } from "./goal-loop-core.js";
@@ -64,14 +65,11 @@ import {
 import { BACKOFF_IDLE_RETRY_MS, HEARTBEAT_MAX_NUDGES } from "./goal-loop-backoff.js";
 import { LENGTH_CONTINUE_MAX, LENGTH_CONTINUE_TEXT } from "./length-continue.js";
 
-const MONITOR_CHECK_INTERVAL_MS = Number(process.env.GLLA_MONITOR_INTERVAL_MS ?? 120_000);
-export function isMonitorGoalForSchedule(g: Goal): boolean {
-  const objective = g.objective?.toLowerCase() ?? "";
-  if (/daemon|supervisor|keep.*running|monitor|healthz|book-daemon/.test(objective)) return true;
-  const started = Date.parse(g.createdAt);
-  if (Number.isFinite(started) && Date.now() - started > 60 * 60 * 1000) return true;
-  return false;
-}
+const DEFAULT_MONITOR_CHECK_INTERVAL_MS = 120_000;
+const configuredMonitorIntervalMs = Number(process.env.GLLA_MONITOR_INTERVAL_MS);
+const MONITOR_CHECK_INTERVAL_MS = Number.isFinite(configuredMonitorIntervalMs) && configuredMonitorIntervalMs > 0
+  ? Math.max(1_000, configuredMonitorIntervalMs)
+  : DEFAULT_MONITOR_CHECK_INTERVAL_MS;
 import { VISION_ASSIST_GUIDANCE } from "./vision-assist.js";
 import { loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, isLoopActive } from "./goal-loop.js";
@@ -1001,7 +999,7 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
     return;
   }
   // v0.37.x: monitor goals (daemon, long-running >1h) check less frequently to avoid constant QUEUED churn.
-  if (delayMs === undefined && state.goal && isMonitorGoalForSchedule(state.goal)) {
+  if (delayMs === undefined && state.goal && isMonitorGoal(state.goal)) {
     delay = Math.max(delay, MONITOR_CHECK_INTERVAL_MS);
   }
   // v0.34.104 ([Image-#1]): the post-list-completion settle window delays

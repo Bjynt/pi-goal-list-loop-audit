@@ -12,11 +12,11 @@
 
 also we may need to have a better way of handling long running tasks we just need to check on 
 
-
 # Next
 
-
 # Later
+
+## weneed to keep checking instead of waiting for tasks that take a while
 
 ## Review NVIDIA AVO
 

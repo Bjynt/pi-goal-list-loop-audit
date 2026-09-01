@@ -13,7 +13,9 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
 import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
-import { buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+
+export { isMonitorGoal };
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 import { auditorSurfaceSuppressed } from "./loops/goal-auditor-surface.js";
 
@@ -34,19 +36,6 @@ export const MAIN_HOST_LABEL = "MAIN HOST · SUPERVISING";
 function heldLoop(state: State): LoopState | undefined {
   const l = state.loop;
   return l && !l.active && l.stopReason === HELD_ON_RESTORE ? l : undefined;
-}
-
-/** v0.37.x: long-running monitor goals (daemon, keep running, supervisor) are displayed as MONITORING, not QUEUED, to avoid "stuck" confusion. */
-export function isMonitorGoal(g: Goal, now = Date.now()): boolean {
-  const objective = g.objective?.toLowerCase() ?? "";
-  const isDaemon = /daemon|supervisor|keep.*running|monitor|healthz|book-daemon/.test(objective);
-  if (isDaemon) return true;
-  const started = Date.parse(g.createdAt);
-  if (Number.isFinite(started)) {
-    const elapsed = now - started;
-    if (elapsed > 60 * 60 * 1000) return true;
-  }
-  return false;
 }
 
 // ---- formatters ----

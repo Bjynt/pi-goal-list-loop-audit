@@ -569,6 +569,19 @@ export function objectiveIsUserSeeded(goal: Pick<Goal, "objective" | "createdVia
 }
 
 /**
+ * A long-running goal whose next turn is a health check should not look like
+ * a wedged queue. Keep this predicate pure and shared by scheduling and both
+ * TUI surfaces so a goal cannot be throttled without receiving the matching
+ * monitoring icon (or vice versa).
+ */
+export function isMonitorGoal(goal: Pick<Goal, "objective" | "createdAt">, now = Date.now()): boolean {
+  const objective = goal.objective.toLowerCase();
+  if (/daemon|supervisor|keep.*running|monitor|healthz|book-daemon/.test(objective)) return true;
+  const started = Date.parse(goal.createdAt);
+  return Number.isFinite(started) && now - started > 60 * 60 * 1000;
+}
+
+/**
  * During a LIST drafting session the agent must not add items one by one
  * with list_add/list_activate — that bypasses the user's Confirm gate
  * (observed in the wild: the agent decomposed a dump and ACTIVATED the first

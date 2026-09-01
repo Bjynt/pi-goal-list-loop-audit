@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import {
   buildStatusText,
   buildWidgetLines,
+  isMonitorGoal,
   meter,
   fmtElapsed,
   fmtTokens,
@@ -81,6 +82,29 @@ test("active goal shows a compact state capsule + elapsed", () => {
   const s = buildStatusText({ goal: goalOf(), list: [] }, null, NOW)!;
   assert.match(s, /glla: \[ACTIVE\] total 3m/);
   assert.doesNotMatch(s, /glla: goal/, 'v0.34.1: the status line drops the policy word — the widget owns type naming');
+});
+
+test("monitor goals use the eye icon and do not masquerade as a stuck queue", () => {
+  const daemon = goalOf({ objective: "Keep the book-daemon health monitor running" });
+  const longRunning = goalOf({
+    objective: "Grow the music catalog",
+    createdAt: "2026-07-20T12:00:00Z",
+  });
+  const ordinary = goalOf({ objective: "Create x.txt", createdAt: "2026-07-21T11:59:00Z" });
+  assert.equal(isMonitorGoal(daemon, NOW), true);
+  assert.equal(isMonitorGoal(longRunning, NOW), true);
+  assert.equal(isMonitorGoal(ordinary, NOW), false);
+
+  const status = buildStatusText(
+    { goal: daemon, list: [] },
+    null,
+    NOW,
+    undefined,
+    { activity: "queued", turnPending: true, lastActivityAt: NOW - 5_000 },
+  )!;
+  assert.match(status, /glla: \[👁 MONITORING\]/);
+  assert.match(status, /next check/);
+  assert.doesNotMatch(status, /⏳ QUEUED|awaiting pi turn/);
 });
 
 test("repair cards show the preserved target and the concrete one-turn recovery", () => {
