@@ -108,7 +108,7 @@ test("v0.34.4: audit templates carry brief discipline in the fan-out clause (bot
   const collect = listAuditCollectTarget("x");
   const oneshot = projectAuditTarget("x");
   for (const [name, t] of [["collect", collect], ["oneshot", oneshot]] as const) {
-    assert.match(t, /TIGHT brief: named directories, a ~30-40 tool-use budget, and a ~150-line report cap/, name);
+    assert.match(t, /TIGHT brief: named directories(?: under cwd)?, a ~30-40 tool-use budget, and a ~150-line report cap/, name);
   }
 });
 

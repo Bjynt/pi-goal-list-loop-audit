@@ -90,7 +90,7 @@ test("listAuditCollectTarget: collect-only — marker, no-fix law, honest-empty 
   assert.match(t, /empty findings set is a success/, "honesty law against fabricated findings");
   assert.match(t, /Done when:/);
   assert.ok(t.includes(AUDIT_FINDINGS_REL));
-  assert.match(listAuditCollectTarget(), /Scope: the whole project/, "default scope");
+  assert.match(listAuditCollectTarget(), /Scope: the current project rooted at the cwd/, "default scope is cwd-project with nested .git boundary");
 });
 
 // ---------- orchestrator wiring pins ----------
