@@ -9,6 +9,10 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 # Next
 
+## the ui keeps jumping around with pi subagents
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260901_163511.png 
+
 # Done (2026-09-01)
 
 - PR #39 merged as 714b9662 (auditorToolTimeoutMs/auditorStallMs global settings, adaptive ×2 cap 4× via timeoutEscalation, reportBytes progress, CHANGELOG union with pi-subagents@0.62.0 pinned) — field incident qwen27b_180k_turbo closed
