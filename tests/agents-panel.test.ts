@@ -176,6 +176,33 @@ test("v0.35.66: --tail selects the exact persisted child identity among same-typ
   assert.doesNotMatch(result.lines.join("\n"), /unrelated child/);
 });
 
+test("v0.37.1: --tail uses the persisted session id to find an older transcript", () => {
+  const targetId = "12345678-target";
+  const sessionId = "target-session";
+  const oldFile = `2026-08-01T00-00-00.000Z_${sessionId}.jsonl`;
+  const files = [
+    ...Array.from({ length: 26 }, (_, i) => `newer-${String(i).padStart(2, "0")}.jsonl`),
+    oldFile,
+  ];
+  const target = [
+    JSON.stringify({ type: "session", id: sessionId }),
+    JSON.stringify({ type: "session_info", name: "Explore#12345678" }),
+    JSON.stringify({ role: "assistant", content: "old tracked child transcript" }),
+  ].join("\\n");
+  const result = tailChildTranscript("/tmp/fake-sessions", {
+    recordId: targetId,
+    sessionId,
+    agentType: "Explore",
+  }, {
+    listDir: () => files,
+    statMtime: (f) => f.endsWith(oldFile) ? 1 : 200,
+    readFile: (f) => Buffer.from(path.basename(f) === oldFile ? target : ""),
+  });
+  assert.equal(result.ok, true, `older direct candidate: ${result.detail}`);
+  assert.match(result.detail, /target-session\\.jsonl/);
+  assert.match(result.lines.join("\\n"), /old tracked child transcript/);
+});
+
 test("v0.35.66: --tail refuses a same-type transcript without exact child identity", () => {
   const result = tailChildTranscript("/tmp/fake-sessions", {
     recordId: "12345678-target",
