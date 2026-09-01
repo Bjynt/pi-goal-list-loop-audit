@@ -973,6 +973,59 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     draftingUserReplies++;
   });
 
+  // v0.37.2: stale queued goal-event continuations (hidden display:false
+  // custom messages) can survive goal archival via Pi's followUp queue.
+  // Pi has no public clear queue API, so sanitize at delivery: replace
+  // stale content before it is persisted or drives a turn.
+  pi.on("message_end", async (event: any, ctx: ExtensionContext) => {
+    const msg: any = event?.message;
+    if (!msg || msg.role !== "custom" || msg.customType !== "goal-event") return;
+    if (isForeignCtx(ctx)) return;
+    let content = "";
+    if (typeof msg.content === "string") content = msg.content;
+    else if (Array.isArray(msg.content)) content = msg.content.map((c: any) => typeof c === "string" ? c : (c?.text ?? "")).join("\n");
+    else if (msg.content != null) content = String(msg.content);
+    const goalIdMatch = content.match(/\[GOAL CHECKPOINT goalId=([^\]\s]+)\]/);
+    const loopMatch = content.match(/\[LOOP ITERATION (\d+)\]/);
+    const isStall = content.includes("[STALL WARNING");
+    const isLengthContinue = content.includes("Your previous response was cut off") || content.includes("Response hit the output-token cap");
+    if (isLengthContinue) return;
+    let staleReason: string | null = null;
+    if (goalIdMatch) {
+      const gid = goalIdMatch[1];
+      if (!state.goal) staleReason = `no active goal (expected ${gid})`;
+      else if (state.goal.id !== gid) staleReason = `goal mismatch (expected ${gid}, active ${state.goal.id})`;
+      else if (state.goal.status !== "active") staleReason = `goal ${gid} not active (status=${state.goal.status})`;
+      else {
+        try {
+          const p = archivedGoalPath(ctx.cwd, gid);
+          if (fs.existsSync(p)) staleReason = `goal ${gid} already archived`;
+        } catch {}
+        if (!staleReason && (state.goal as any).stopReason) staleReason = `goal ${gid} terminal stopReason present`;
+      }
+    } else if (loopMatch) {
+      if (!state.loop?.active) staleReason = `loop not active (iteration ${loopMatch[1]})`;
+    } else if (isStall) {
+      if (!state.goal || state.goal.status !== "active") staleReason = "stall warning with no active goal";
+    } else {
+      if (!state.goal && !state.loop?.active) staleReason = "no active supervision for generic goal-event";
+    }
+    if (!staleReason) return;
+    const sanitizedContent = `[GLLA: discarded stale continuation — ${staleReason}. No action required. Live state: ${state.goal ? `goal ${state.goal.id} (${state.goal.status})` : state.loop?.active ? `loop active iteration ${state.loop.iteration}` : "idle (no goal/loop)"}.]`;
+    appendLedger(ctx.cwd, "stale_continuation_sanitized", {
+      reason: staleReason,
+      goalId: goalIdMatch?.[1],
+      loopIteration: loopMatch?.[1],
+      originalPreview: content.slice(0, 200),
+    });
+    const sanitized = {
+      ...msg,
+      content: sanitizedContent,
+      display: false,
+    };
+    return { message: sanitized };
+  });
+
   // v0.15.1: ask_user_question answers arrive as tool results, not chat
   // messages — count answered (non-cancelled) questionnaires as replies too.
   pi.on("tool_result", async (event: any, eventCtx: ExtensionContext) => {
