@@ -2,3 +2,9 @@
 {"type":"context_usage_sample","value":{"goalId":null,"provider":"openai-codex","model":"gpt-5.6-luna","providerUsage":{"inputTokens":939,"outputTokens":531,"cacheReadTokens":149120,"cacheWriteTokens":0,"totalTokens":150590},"contextUsage":{"tokens":150590,"contextWindow":200000,"percent":75.295}},"at":"2026-08-31T22:57:10.331Z"}
 {"type":"context_usage_sample","value":{"goalId":null,"provider":"openai-codex","model":"gpt-5.6-luna","providerUsage":{"inputTokens":1208,"outputTokens":275,"cacheReadTokens":150144,"cacheWriteTokens":0,"totalTokens":151627},"contextUsage":{"tokens":151627,"contextWindow":200000,"percent":75.8135}},"at":"2026-08-31T23:01:33.736Z"}
 {"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-09-01T08:46:17.460Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-09-01T12:48:30.594Z"}
+{"type":"id_invalidation","value":{"oldId":"01a054a9-e07f-705b-87a1-9421f9b906dc","newId":"01a05d03-8bbb-76e6-bfcf-cb01f23bc68f","reason":"session_shutdown","shutdownReason":"quit","at":"2026-09-01T12:48:30.600Z"},"at":"2026-09-01T12:48:30.600Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-09-01T12:48:30.600Z"}
+{"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-09-01T12:48:33.914Z"}
+{"type":"session_rebound","value":{"reason":"resume"},"at":"2026-09-01T12:48:34.551Z"}
+{"type":"id_invalidation","value":{"oldId":"01a05d03-8bbb-76e6-bfcf-cb01f23bc68f","newId":"01a054a9-e07f-705b-87a1-9421f9b906dc","reason":"session_shutdown","shutdownReason":"resume","at":"2026-09-01T12:48:34.554Z"},"at":"2026-09-01T12:48:34.554Z"}
