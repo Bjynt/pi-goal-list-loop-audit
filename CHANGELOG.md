@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.37.2 — queued vs monitoring visuals and long-running daemon handling (2026-09-01)
+
+### Added
+  Monitor icon for long-running daemon/supervisor goals: goals matching
+  `daemon|supervisor|keep.*running|monitor|healthz` or with `total >1h` are
+  displayed as `👁 MONITORING` (dim) instead of `⏳ QUEUED` (accent), with
+  "next check" instead of "awaiting pi turn", and are scheduled with
+  `GLLA_MONITOR_INTERVAL_MS` (default 120s) instead of immediate continuation
+  to avoid constant queued churn.
+
+### Changed
+  `QUEUED` now renders as `⏳ QUEUED` in accent blue (distinct from `BUSY`
+  warning yellow) with `awaiting pi turn` detail, fixing the "mistook it
+  for stuck" report (note.md 2026-09-01, screenshots 190127/193438/193529).
+  `LIVE · WORKING` remains success-accent with signal.
+
+### Fixed
+  Stale `followUp` continuations that survived `archiveCurrentGoal` via Pi's
+  `followUpQueue` are sanitized at `message_end` (ExtensionRunner →
+  AgentSession) plus timer disarm at archival — `LENGTH_CONTINUE` and foreign
+  ctx are exempt.
+
 ## 0.37.1 — auditor watchdogs, continuous list handoff, and audit hardening (2026-09-01)
 
 ### Added
