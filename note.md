@@ -4,6 +4,10 @@
 
 # Next
 
+## more visual queued cause i mistook it for stuck 
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260901_190127.png 
+
 # Later
 
 ## Review NVIDIA AVO
