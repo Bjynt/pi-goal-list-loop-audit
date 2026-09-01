@@ -36,6 +36,19 @@ function heldLoop(state: State): LoopState | undefined {
   return l && !l.active && l.stopReason === HELD_ON_RESTORE ? l : undefined;
 }
 
+/** v0.37.x: long-running monitor goals (daemon, keep running, supervisor) are displayed as MONITORING, not QUEUED, to avoid "stuck" confusion. */
+export function isMonitorGoal(g: Goal, now = Date.now()): boolean {
+  const objective = g.objective?.toLowerCase() ?? "";
+  const isDaemon = /daemon|supervisor|keep.*running|monitor|healthz|book-daemon/.test(objective);
+  if (isDaemon) return true;
+  const started = Date.parse(g.createdAt);
+  if (Number.isFinite(started)) {
+    const elapsed = now - started;
+    if (elapsed > 60 * 60 * 1000) return true;
+  }
+  return false;
+}
+
 // ---- formatters ----
 
 export function fmtElapsed(ms: number): string {
@@ -95,7 +108,7 @@ export interface RecentActionDisplay {
 }
 
 /** v0.33.0: widget extras — the refire streak plus the recent-action feed. */
-export type GoalDisplayActivity = "active" | "awaiting-first-turn" | "working" | "busy" | "queued" | "idle";
+export type GoalDisplayActivity = "active" | "awaiting-first-turn" | "working" | "busy" | "queued" | "monitoring" | "idle";
 
 export interface ModelProvenanceDisplay {
   /** The primary model reference selected for the supervised work. */
@@ -355,6 +368,7 @@ function activityStatusMarker(activity: GoalDisplayActivity | undefined, now: nu
     case "working": return activityBadge("LIVE · WORKING", now, theme);
     case "busy": return activityStateBadge("BUSY", theme, "warning");
     case "queued": return activityStateBadge("⏳ QUEUED", theme, "accent");
+    case "monitoring": return activityStateBadge("👁 MONITORING", theme, "dim");
     case "idle": return activityStateBadge("IDLE", theme, "warning");
     case "awaiting-first-turn": return activityStateBadge("AWAITING FIRST TURN", theme, "warning");
     case "active": return activityStateBadge("ACTIVE", theme, "accent");
@@ -757,9 +771,11 @@ function lastAuditorTool(audit: AuditDisplayProgress | null | undefined): string
   return typeof name === "string" && name.trim() ? truncate(name, 30) : undefined;
 }
 
-function goalDisplayActivity(g: Goal, extras?: WidgetExtras): GoalDisplayActivity {
+function goalDisplayActivity(g: Goal, extras?: WidgetExtras, now = Date.now()): GoalDisplayActivity {
   if (g.status !== "active") return "active";
-  return extras?.activity ?? "active";
+  const activity = extras?.activity ?? "active";
+  if (activity === "queued" && isMonitorGoal(g, now)) return "monitoring";
+  return activity;
 }
 
 function hostLastActivity(extras: WidgetExtras | undefined, now: number): string {
