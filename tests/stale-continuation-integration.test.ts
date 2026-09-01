@@ -10,6 +10,11 @@ import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __test
 import { state, replaceState } from "../extensions/goal-state.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal } from "./harness/mock-pi.js";
 
+const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
+function setGlobalAutoResume(v: boolean): void {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true, aggressiveMode: false } : { aggressiveMode: false }));
+}
+
 function readLedger(cwd: string): Array<{ type: string; value: Record<string, unknown> }> {
   const file = path.join(cwd, ".pi-glla", "active.jsonl");
   if (!fs.existsSync(file)) return [];
@@ -25,6 +30,7 @@ afterEach(() => {
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
   __testOnlyResetOwnerSession();
+  try { fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false })); } catch {}
 });
 
 test("integration: stale goal continuation is sanitized at message_end and ledgered, raw source dropped", async () => {
@@ -68,6 +74,7 @@ test("integration: fresh continuation for active goal is NOT sanitized", async (
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
   __testOnlyResetOwnerSession();
+  setGlobalAutoResume(true);
   const pi = new MockPi();
   activate(pi.api);
   const cwd = tmpCwd();
@@ -75,12 +82,15 @@ test("integration: fresh continuation for active goal is NOT sanitized", async (
   seedState(cwd, { goal: seedGoal({ id: gid, status: "active" }) });
   const ctx = makeMockCtx(cwd, { sessionManager: { name: "test-sm2", getSessionFile: () => path.join(cwd, "sm2.jsonl"), getSessionId: () => "sm2" } } as any);
   await pi.fire("session_start", { reason: "startup" }, ctx);
+  // session_start with autoResume:true keeps the goal active; ensure it
+  replaceState({ goal: seedGoal({ id: gid, status: "active" }), list: [], loop: null } as any);
   const raw = `[GOAL CHECKPOINT goalId=${gid}] continue work`;
   const handler = pi.handlers.get("message_end");
   const result: any = await (handler as any)({ message: { role: "custom", customType: "goal-event", content: raw, display: false } }, ctx);
   assert.equal(result, undefined, "fresh continuation must not be sanitized (handler returns undefined)");
   const ledger = readLedger(cwd);
   assert.equal(ledger.filter((e) => e.type === "stale_continuation_sanitized").length, 0, "no sanitization ledger for fresh message");
+  setGlobalAutoResume(false);
 });
 
 test("integration: foreign ctx never sanitizes (subagent isolation)", async () => {
