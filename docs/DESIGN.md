@@ -633,6 +633,24 @@ shapes (details in CHANGELOG.md; each is pinned by tests):
   that NEVER moves gets its own loud bounded stop. Audit loops keep their
   purpose-built deferred-baseline + reprieve semantics verbatim.
 
+## Addendum v0.36.3 (subagent orchestration — power-max pin)
+
+- **One pinned orchestrator**: `pi-subagents@0.62.0` is the power-max companion
+  for GLLA. Capability ceiling chosen over minimalism: `runs.all` parallel
+  fan-out, `runs.lanes` worker→review→fix chains, `outputSchema` +
+  `acceptance` structured verification, `runs.host` gated shell, worktree
+  isolation, model routing (`subagents.defaultModel` / `subagentModelOverrides`
+  / `modelScope`), missions/schedules, and durable recovery. GLLA supervises
+  via `subagent:async-started` + durable `status.json` + versioned stop RPC
+  (ownership/generation-checked). The 0.x pin is exact because the 93k-line
+  surface moves fast; upgrades run a compatibility canary.
+- **One owner, no stacking**: `@tintinweb/pi-subagents` (legacy),
+  `@narumitw/pi-subagents` (minimal without durable status/workflow), and
+  `@quintinshaw/pi-dynamic-workflows` (complement-only LLM-vote helpers) are
+  not stacked as second orchestrators in the same session — duplicate tools and
+  competing events create ambiguous ownership. `@juicesharp/rpiv-advisor`
+  remains a composable second-opinion reviewer.
+
 ## Addendum v0.36.2 (continuous list handoff)
 
 - **A list is a continuous work plan**: after a standalone goal reaches a
