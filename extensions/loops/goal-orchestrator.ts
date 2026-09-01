@@ -983,7 +983,7 @@ function autoArbitrateStackedState(ctx: ExtensionContext): void {
 async function fanOutListAuditFindings(cwd: string, generation: number): Promise<void> {
   let md = "";
   try {
-    md = fs.readFileSync(path.join(cwd, AUDIT_FINDINGS_REL), "utf-8");
+    md = fs.readFileSync(path.join(piGlaDir(cwd), "audit-loop", "findings.md"), "utf-8");
   } catch {
     /* no findings file — the audit was clean or never wrote */
   }
