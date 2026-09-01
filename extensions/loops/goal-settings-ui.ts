@@ -232,6 +232,20 @@ function parseSettingsInteger(raw: string): number | undefined {
   const value = Number(trimmed);
   return Number.isSafeInteger(value) ? value : undefined;
 }
+
+/**
+ * v0.37.0: parse a millisecond-valued setting as either a plain integer of ms or a compact duration with an
+ * s/m/h suffix ("90s", "15m", "1h"). Returns undefined for anything unparseable.
+ */
+export function parseSettingsDurationMs(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (/^\d+$/.test(trimmed)) return Number.isSafeInteger(Number(trimmed)) ? Number(trimmed) : undefined;
+  const match = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)$/.exec(trimmed);
+  if (!match) return undefined;
+  const mult = match[2] === "ms" ? 1 : match[2] === "s" ? 1_000 : match[2] === "m" ? 60_000 : 3_600_000;
+  const ms = Math.round(Number(match[1]) * mult);
+  return Number.isFinite(ms) && ms > 0 ? ms : undefined;
+}
 import {
   curateAuditReviewSources,
   normalizeObjective,
@@ -253,6 +267,12 @@ import {
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
   runDetachedGoalCompletionAuditor,
+  DEFAULT_AUDITOR_STALL_MS,
+  DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
+  MAX_AUDITOR_STALL_MS,
+  MAX_AUDITOR_TOOL_TIMEOUT_MS,
+  MIN_AUDITOR_STALL_MS,
+  MIN_AUDITOR_TOOL_TIMEOUT_MS,
   type AuditorProgress,
 } from "../goal-loop-auditor-process.js";
 import {
@@ -1053,6 +1073,35 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (v) {
         saveSettings("global", ctx.cwd, { auditorProgressSignals: v.startsWith("off") ? false : undefined });
         ctx.ui.notify(v.startsWith("off") ? "Auditor progress signals OFF — silent card shows only the timer." : "Auditor progress signals ON — phase + byte-counter visible during audits.", "info");
+      }
+      return;
+    }
+    case "auditorToolTimeoutMs":
+    case "auditorStallMs": {
+      // v0.37.0: millisecond-valued auditor watchdog budgets (plain ms or s/m/h duration strings).
+      const isTool = id === "auditorToolTimeoutMs";
+      const def = isTool ? DEFAULT_AUDITOR_TOOL_TIMEOUT_MS : DEFAULT_AUDITOR_STALL_MS;
+      const min = isTool ? MIN_AUDITOR_TOOL_TIMEOUT_MS : MIN_AUDITOR_STALL_MS;
+      const max = isTool ? MAX_AUDITOR_TOOL_TIMEOUT_MS : MAX_AUDITOR_STALL_MS;
+      const s = loadSettings(ctx.cwd);
+      const current = typeof s[id] === "number" ? s[id] : def;
+      const input = await ctx.ui.input(
+        `${isTool ? "Per-tool timeout" : "No-progress stall window"} in ms (or s/m/h, e.g. 300000 / 10m; empty = default ${def / 60000}m)`,
+        `current: ${current} ms`,
+      );
+      if (input === undefined) return;
+      const t = input.trim();
+      if (t === "") {
+        saveSettings("global", ctx.cwd, { [id]: undefined });
+        ctx.ui.notify(`Cleared: ${id} (default ${def / 60000}m).`);
+      } else {
+        const ms = parseSettingsDurationMs(t);
+        if (ms !== undefined && ms >= min && ms <= max) {
+          saveSettings("global", ctx.cwd, { [id]: ms });
+          ctx.ui.notify(`Saved ${id} = ${ms} ms.`);
+        } else {
+          ctx.ui.notify(`Rejected: enter ${min}-${max} ms (e.g. 15m). Allowed range: ${min / 60000}m-${max / 60000}m.`);
+        }
       }
       return;
     }

@@ -36,7 +36,7 @@ import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
-import { cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth } from "./goal-loop-auditor-process.js";
+import { cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
 import { inferStartFromSession, type StartContextInference } from "./start-context.js";
 
@@ -2673,6 +2673,8 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("auditorSameSessionSwap", "auditorSameSessionSwap"),
       fmt("auditorSilent", "auditorSilent"),
       fmt("auditorProgressSignals", "auditorProgressSignals"),
+      `auditorToolTimeoutMs: ${((effectiveSettings.auditorToolTimeoutMs ?? DEFAULT_AUDITOR_TOOL_TIMEOUT_MS) / 60000).toString()}m  [${prov.auditorToolTimeoutMs?.source ?? "default"}]`,
+      `auditorStallMs: ${((effectiveSettings.auditorStallMs ?? DEFAULT_AUDITOR_STALL_MS) / 60000).toString()}m  [${prov.auditorStallMs?.source ?? "default"}]`,
       fmt("hourlyRetryProbe", "hourlyRetryProbe"),
       fmt("subagentModelStrategy", "subagentModelStrategy"),
       fmt("subagentModelOverrides", "subagentModelOverrides"),
