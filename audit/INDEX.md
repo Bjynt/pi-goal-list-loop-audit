@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-01):**
+- `CROSS-HARNESS-REVIEW-2026-09-01.md` — cross-harness review (pi-goal-x / dgoal / until-done / codex-goal / pi-goal / better-goal + Codex/Claude/DeepSeek hosts; 9 GLLA-owned deltas, 6 now / 4 defer)
 - `SUBAGENT-PACKAGE-SELECTION-2026-09-01.md` — power-max audit of five subagent/orchestration packages; pin `pi-subagents@0.62.0` for GLLA
 - `LIST-CONTINUOUS-HANDOFF-2026-09-01.md` — automatic handoff from successful standalone completion, waiting-queue `/glla resume`, and settle/fence regressions
 
@@ -110,6 +111,7 @@ long-term preferences).
 ## Topic index (canonical docs, newest first)
 
 **2026-09-01**
+- CROSS-HARNESS-REVIEW-2026-09-01.md — cross-harness review (pi-goal-x/dgoal/until-done/codex-goal + Codex/Claude/DeepSeek hosts; 9 GLLA-owned deltas, pipe/health/heartbeat next)
 - SUBAGENT-PACKAGE-SELECTION-2026-09-01.md — five-package power audit (pi-subagents 0.62.0 pinned, tintinweb/narumitw/dynamic-workflows/rpiv-advisor disposition) and README/external-recommendation updates
 - LIST-CONTINUOUS-HANDOFF-2026-09-01.md — automatic standalone-goal/list handoff, waiting-queue `/glla resume`, and bounded successor settle
 
