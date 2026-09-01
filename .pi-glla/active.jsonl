@@ -113,3 +113,5 @@
 {"type":"send_rearm_start","value":{"kind":"continuation"},"at":"2026-09-01T18:08:55.075Z"}
 {"type":"send_rearm_storm","value":{"kind":"continuation","streak":19,"minutes":2},"at":"2026-09-01T18:11:20.283Z"}
 {"type":"rearm_no_turn_started","value":{"streak":19,"minutes":2},"at":"2026-09-01T18:11:20.283Z"}
+{"type":"send_rearm_storm","value":{"kind":"continuation","streak":25,"minutes":5},"at":"2026-09-01T18:14:20.309Z"}
+{"type":"rearm_no_turn_started","value":{"streak":25,"minutes":5},"at":"2026-09-01T18:14:20.309Z"}
