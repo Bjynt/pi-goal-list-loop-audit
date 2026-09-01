@@ -276,36 +276,40 @@ GLLA is the supervisor. These companions add capabilities around it:
   previews, and Confirm dialogs for drafting and decisions. GLLA has a prose
   fallback, but this is the intended UX.
 
-### Optional parallel workers
+### Recommended for power — parallel orchestration (`pi-subagents`)
 
-- **`pi-subagents`** — recommended when a goal has independent work that can
-  genuinely run in parallel. Its current built-in roles are `scout`,
-  `researcher`, `worker`, `reviewer`, `oracle`, and `delegate`, with detached
-  async runs, durable status artifacts, and a versioned control RPC. It is
-  not required for GLLA's main continuation, queue, recovery, or detached
-  auditor; a short or mostly sequential goal is often better without the
-  extra worker overhead.
+- **`pi-subagents` 0.62.0 (pinned) — the power-max choice for GLLA.** Use it
+  when you want the best automation and quality: `runs.all` parallel fan-out,
+  `runs.lanes` worker→review→fix chains, `outputSchema` + `acceptance` structured
+  verification, `runs.host` gated shell, worktree isolation, model routing
+  (`subagents.defaultModel` / `subagentModelOverrides` / `modelScope`), durable
+  missions/schedules/recovery, and versioned control RPC. Built-ins are `scout`,
+  `researcher`, `worker`, `reviewer`, `oracle`, `delegate` plus external-CLI
+  writers (`claude-code-writer` etc.); all inherit the parent model by default
+  so there is no hidden Explore/Plan quota pool. This is the companion GLLA
+  supervises via `subagent:*` lifecycle events + durable `status.json` + versioned
+  stop RPC (ownership/generation-checked). GLLA's `subagentModelOverrides`
+  can still pin an individual role.
 
   The main pi session remains the owner of the goal/list/loop; subagents are
-  workers and cannot silently replace the parent's objective.
+  workers and cannot silently replace the parent's objective. A short or mostly
+  sequential goal can still run cleanly without workers — install when
+  parallelism will pay for its coordination and model usage.
 
-Install it when parallelism will pay for its coordination and model usage:
+Install (or keep pinned):
 
 ```bash
-pi install npm:pi-subagents
+pi install npm:pi-subagents@0.62.0
 ```
-
-GLLA supervises the parent and tracks current async worker activity through
-`subagent:*` lifecycle events and the companion's durable `status.json`; the
-versioned stop RPC is used only after ownership and generation checks pass.
-Current built-ins inherit the parent session model by default, so there is no
-hidden Explore/Plan model pin to consume a separate quota pool. GLLA's
-`subagentModelOverrides` setting can still pin an individual current role.
 
 Do not install the older `@tintinweb/pi-subagents` provider alongside this
 recommendation in the same session. Existing Tintin-era agent files are
 cleaned only when GLLA's management marker proves that GLLA owns them; old
-settings are not silently remapped to a different role.
+settings are not silently remapped to a different role. Do not stack
+`@quintinshaw/pi-dynamic-workflows` as a competing orchestrator alongside
+GLLA + `pi-subagents` in the same session — duplicate tools and competing
+orchestration events create ambiguous ownership. Use its quality helpers
+(`verify`/`judgePanel`/`loopUntilDry`) only as isolated complements if needed.
 
 ### Useful, but optional
 
