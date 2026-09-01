@@ -2442,6 +2442,14 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** A freshness marker is valid only when it was emitted already, not merely
+ * within the upper age bound. Rejecting negative ages prevents future-dated
+ * sidecars from bypassing restart/replay fences. */
+export function isFreshPastTimestamp(at: number, windowMs: number, now = Date.now()): boolean {
+  const age = now - at;
+  return Number.isFinite(at) && Number.isFinite(windowMs) && windowMs > 0 && age >= 0 && age < windowMs;
+}
+
 /** Stable queue ordering: new sidecars use queueOrder; legacy sidecars fall
  * back to their durable timestamp and id instead of filesystem enumeration. */
 export function compareQueueItems(a: Pick<ListItem, "id" | "addedAt" | "queueOrder">, b: Pick<ListItem, "id" | "addedAt" | "queueOrder">): number {

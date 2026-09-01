@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
-import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, resolveEffectiveAggressiveSettings, sanitizeProviderDisplayText, supervisorPaused, writeGoalMd, MAX_AUDITOR_CANDIDATE_REFS, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
+import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isFreshPastTimestamp, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, resolveEffectiveAggressiveSettings, sanitizeProviderDisplayText, supervisorPaused, writeGoalMd, MAX_AUDITOR_CANDIDATE_REFS, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { persistStateLine } from "./goal-state.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import {
@@ -60,7 +60,7 @@ export function consumeRecoveryResume(cwd: string): boolean {
     const raw = fs.readFileSync(p, "utf-8");
     fs.unlinkSync(p);
     const at = Date.parse((JSON.parse(raw) as { at?: string }).at ?? "");
-    return !Number.isNaN(at) && Date.now() - at < RECOVERY_RESUME_FRESH_MS;
+    return isFreshPastTimestamp(at, RECOVERY_RESUME_FRESH_MS);
   } catch {
     return false;
   }

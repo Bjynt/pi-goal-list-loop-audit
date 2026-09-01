@@ -89,6 +89,7 @@ import {
   goalMdPath,
   newGoalId,
   nowIso,
+  isFreshPastTimestamp,
   compactDisplayText,
   sanitizeDisplayText,
   piGlaDir,
@@ -793,7 +794,7 @@ function consumeSessionHandoff(
     fs.unlinkSync(p);
     const data = JSON.parse(raw) as Partial<SessionHandoffRecord>;
     const at = Date.parse(data.at ?? "");
-    const fresh = !Number.isNaN(at) && Date.now() - at < SESSION_HANDOFF_FRESH_MS;
+    const fresh = isFreshPastTimestamp(at, SESSION_HANDOFF_FRESH_MS);
     const matches = data.version === SESSION_HANDOFF_VERSION
       && data.pid === process.pid
       && data.reason?.trim().toLowerCase() !== "quit"
@@ -856,8 +857,7 @@ function queuePendingListOperation(ctx: ExtensionContext, args: string): boolean
       && prior.pid === process.pid
       && prior.generation === handoffGeneration
       && prior.ownerSessionId === sessionManagerId(ctx)
-      && Number.isFinite(priorAt)
-      && Date.now() - priorAt < PENDING_LIST_OPERATION_FRESH_MS
+      && isFreshPastTimestamp(priorAt, PENDING_LIST_OPERATION_FRESH_MS)
       && Array.isArray(prior.operations);
     if (sameOwner) {
       const priorOperations = prior.operations ?? [];
@@ -911,8 +911,7 @@ function consumePendingListOperations(
       : [];
     const valid = data.version === PENDING_LIST_OPERATION_VERSION
       && data.pid === process.pid
-      && Number.isFinite(at)
-      && Date.now() - at < PENDING_LIST_OPERATION_FRESH_MS
+      && isFreshPastTimestamp(at, PENDING_LIST_OPERATION_FRESH_MS)
       && (expectedGeneration === null || data.generation === expectedGeneration)
       && (expectedOwnerSessionId === null || data.ownerSessionId === expectedOwnerSessionId)
       && operations.length > 0;
