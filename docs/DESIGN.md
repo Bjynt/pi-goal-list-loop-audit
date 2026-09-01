@@ -669,6 +669,10 @@ shapes (details in CHANGELOG.md; each is pinned by tests):
   deliberate skip or non-head choice. It is no longer required between
   successful list items.
 
+## Addendum v0.37.1 (folder-scoped audits)
+
+- **Primary scope is the cwd project**: `listAuditCollectTarget`, `projectAuditTarget`, and `auditTarget` now state "current project rooted at the cwd where pi was opened (treat any nested .git as a separate project boundary — do not walk into parent or sibling projects)". The TIGHT scout brief is "named directories under cwd" — external code outside cwd may be READ only to diagnose a failure that blocks the current project, and a finding about external code is valid only when it affects the current project (a typo in an unrelated sibling project is out of scope and never auto-queued). This closes the "audit the parent when you opened a subproject" leak observed when hellhunter was audited from the dracon-platform root and vice-versa.
+
 ## Files
 
 - `docs/DESIGN.md` — **this file**
