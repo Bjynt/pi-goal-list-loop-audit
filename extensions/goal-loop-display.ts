@@ -1047,7 +1047,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     if (attention) {
       return withRecovery(`glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`);
     }
-    const activity = goalDisplayActivity(g, extras);
+    const activity = goalDisplayActivity(g, extras, now);
     // v0.34.97: while the post-compaction grace window is open, surface
     // "compacting…" so the user knows the session just shrank. The chip
     // survives reload because lastCompactionAt is persisted on State.
