@@ -38,19 +38,22 @@ and confirmation UX:
 pi install npm:@juicesharp/rpiv-ask-user-question
 ```
 
-When a goal has independent repository research or focused worker tasks,
-add the optional parallel-worker companion:
+For best automation and quality, add the **pinned parallel-orchestration companion** (`pi-subagents` 0.62.0) — GLLA's power-max choice for `runs.all` fan-out, `runs.lanes` worker→review→fix chains, structured verification, worktree isolation, and durable recovery:
 
 ```bash
-pi install npm:pi-subagents
+pi install npm:pi-subagents@0.62.0
 ```
 
 GLLA's main continuation, queue, recovery, and detached auditor work without
-it. Other companions are optional: `@pi-unipi/notify` sends remote
-notifications, and `pi-chrome` enables logged-in browser research. For a deeper
-completion check, choose a stronger auditor model in `/glla`; a separate advisor
-extension is not required. None of these companions is required for a basic
-GLLA goal.
+it, but parallelism pays for its coordination when a goal has independent
+research or implementation. Other companions are optional: `@pi-unipi/notify`
+sends remote notifications, and `pi-chrome` enables logged-in browser research.
+For a deeper completion check, choose a stronger auditor model in `/glla`;
+a separate advisor extension is not required. Do not run `@tintinweb/pi-subagents`
+or `@quintinshaw/pi-dynamic-workflows` as a second orchestrator alongside GLLA +
+`pi-subagents` in the same session.
+
+None of these companions is required for a basic GLLA goal.
 
 Do not run another extension that drives agent turns at the same time as GLLA.
 Likewise, avoid a second task queue or overlapping retry/compaction supervisor

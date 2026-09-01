@@ -3,12 +3,15 @@
 ## Unreleased
 
 ### Changed
-  The recommended optional parallel-worker companion is now the current
-  `pi-subagents` package. GLLA tracks its versioned `subagent:*` lifecycle,
-  durable async status artifacts, and v1 stop RPC while retaining a bounded
-  compatibility path for older providers. The model settings surface now uses
-  the current `scout`/`researcher`/`worker`/`reviewer`/`oracle`/`delegate`
-  roles; current built-ins inherit the parent model by default.
+  The recommended parallel-orchestration companion is now **pinned**
+  `pi-subagents@0.62.0` — the power-max choice for GLLA. GLLA tracks its
+  versioned `subagent:*` lifecycle, durable async status artifacts, and v1
+  stop RPC while retaining a bounded compatibility path for older providers.
+  The model settings surface now uses the current `scout`/`researcher`/
+  `worker`/`reviewer`/`oracle`/`delegate` roles; current built-ins inherit
+  the parent model by default. Do not stack `@tintinweb/pi-subagents` or
+  `@quintinshaw/pi-dynamic-workflows` as a second orchestrator alongside it.
+  See `audit/SUBAGENT-PACKAGE-SELECTION-2026-09-01.md` (five-package power audit).
 
 ### Fixed
   Completed standalone goals now hand off to an already-waiting list and arm
