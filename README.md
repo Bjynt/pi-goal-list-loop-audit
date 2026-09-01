@@ -37,7 +37,9 @@ the long-running policy.
 
 Use `/glla version` to inspect the installed version and compare it with the
 registry. This checkout may contain unreleased changes; npm is authoritative
-for published versions.
+for published versions. The npm/Pi package listing displays this README from
+the published tarball, so release the package after updating it when store
+readers need the latest guidance.
 
 ## Is GLLA the right tool?
 
@@ -357,7 +359,9 @@ tree.
 The state is inspectable: active JSONL, goal markdown, queue state, audit jobs,
 ledger history, and archived goals are kept under `.pi-glla/` (or the selected
 session root). Repository audit findings remain repository-only; the npm package
-ships the user-facing docs, not local audit history.
+ships the user-facing docs, not local audit history. The list-audit findings
+file and its fan-out follow the same selected state root, including the
+opt-in `sessionDir` root.
 
 ### Recovery behavior
 

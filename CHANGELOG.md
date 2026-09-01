@@ -60,6 +60,15 @@
   longer swings 4→10 lines and the editor layout stays stable under
   `scout x3` / 150+ tool-use fan-outs.
 
+  Recovery and session-handoff freshness now rejects future-dated sidecars,
+  preventing an edited or clock-skewed marker from triggering an unexpected
+  resume or deferred-list replay.
+
+  Tracked child transcript tails use the persisted session id for direct
+  lookup, so older children remain inspectable without an unbounded directory
+  scan. List-audit fan-out now reads the configured state root, including
+  `sessionDir`, instead of assuming `<cwd>/.pi-glla`.
+
 ## 0.36.1 — crash-safe persistence and packed-release verification (2026-08-31)
 
 ### Fixed

@@ -29,13 +29,13 @@ For shipped docs, the relevant entry points are:
   trail.
 - `../README.md` — what the plugin is, install, quickstart, and the
   architectural guarantee (drafting + confirm + detached auditor).
-- `../INSTALL.md` — manual install / symlink setup; the recommended
+- `../INSTALL.md` — source install / local development setup; the recommended
   companion plugins and the `auditor reads / writes are path-checked`
   note.
 
 ## Entry points
 - `../README.md` — what the plugin is, install, quickstart
-- `../INSTALL.md` — manual install / symlink setup
+- `../INSTALL.md` — source install / local development setup
 - `../CHANGELOG.md` — user-facing changelog; the first versioned heading is
   the current released package version (use `/glla version` to compare with
   the registry); post-release work may appear in `Unreleased` above it.
