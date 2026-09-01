@@ -8,6 +8,14 @@
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260901_190127.png 
 
+## pi did not start turn, continuation accepted
+
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260901_193438.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260901_193529.png 
+
+also we may need to have a better way of handling long running tasks we just need to check on 
+
 # Later
 
 ## Review NVIDIA AVO
