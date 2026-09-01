@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.37.1 — auditor watchdogs, continuous list handoff, and audit hardening (2026-09-01)
 
 ### Added
   Configurable detached-auditor watchdog budgets (`auditorToolTimeoutMs` and
