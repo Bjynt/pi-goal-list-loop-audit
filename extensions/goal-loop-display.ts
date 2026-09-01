@@ -1090,11 +1090,14 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const n = state.list?.length ?? 0;
     const live = activity === "working";
     const queued = activity === "queued";
+    const monitoring = activity === "monitoring";
     const marker = live
       ? activityBadge("LIVE · WORKING", now, theme)
-      : queued
-        ? activityStateBadge("⏳ QUEUED", theme, "accent")
-        : activityStateBadge("ACTIVE", theme, "accent");
+      : monitoring
+        ? activityStateBadge("👁 MONITORING", theme, "dim")
+        : queued
+          ? activityStateBadge("⏳ QUEUED", theme, "accent")
+          : activityStateBadge("ACTIVE", theme, "accent");
     // When recovery parks a queued goal, name the blocker — `[QUEUED] 12m
     // 26s` reads as a stalled queue with no WHY. State.mainModelRecovery is
     // the bounded envelope's parked state; the status line says what is
@@ -1113,7 +1116,8 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       // started, and the last real activity age. A ticking timer with no
       // freshness told the user nothing (note.md 221249).
       queued && extras?.turnPending ? "awaiting pi turn" : "",
-      queued ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
+      monitoring ? "next check" : "",
+      (queued || monitoring) ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
     return withRecovery(`glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${recoverySuffix}${heldSuffix}`);
