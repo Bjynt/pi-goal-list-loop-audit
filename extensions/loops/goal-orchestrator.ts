@@ -1237,6 +1237,9 @@ function archiveCurrentGoal(
   }
   releaseContinuationDispatchStandDown();
   clearDispatchRecord(ctx.cwd);
+  clearContinuationTimer();
+  clearContinuationStartWatchdog();
+  clearQueueStuckProbe();
   postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
   postCompactResyncPending = false;
   // v0.34.120: archive is the durable history; a terminal goal must not
