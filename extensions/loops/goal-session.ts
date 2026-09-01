@@ -1366,7 +1366,7 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
       if (snap.listCount > 0) done.push(`dropped ${snap.listCount} waiting list item(s)`);
       if (clearedSidecars.removed > 0) done.push(`removed ${clearedSidecars.removed} durable queue sidecar(s)`);
     } else {
-      waiting.push(`${snap.listCount} waiting list item(s) (/list next)`);
+      waiting.push(`${snap.listCount} waiting list item(s) (/glla resume)`);
     }
   }
   if (snap.heldLoop) {

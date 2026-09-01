@@ -157,8 +157,8 @@ quietly inventing an unbounded backlog.
 /list plan.md                              # import a checklist or plan file
 /list                                     # show active and waiting items
 /list start                                # activate the queued head, or draft one clear recent request
-/list next                                 # intentionally activate the next item
-/list next <n>                             # choose a specific item
+/list next                                 # explicitly skip/activate the next item
+/list next <n>                             # explicitly choose a specific item
 /list resume                               # explicitly retry/resume the list
 /list remove <n>
 /list clear
@@ -167,13 +167,16 @@ quietly inventing an unbounded backlog.
 
 Order is the default, not the law. Automatic advance normally uses the head of
 the queue, while `/list next <n>` or the agent's `list_activate` tool can choose
-another item. Numbering always matches `/list` output.
+another item. Numbering always matches `/list` output. After a list item is
+approved and archived, the next queued item starts automatically; no `/list
+next` is needed between items.
 
 If a saved item is malformed or needs a repair, the repair card preserves the
 full original target, explains the concrete recovery action, and permits one
 bounded bootstrap turn containing `propose_task_list`. Confirm the redraft;
-automatic repeats are fenced. Use `/list resume` for an intentional retry and
-`/list next` when you intentionally want another queued item. `/list start` is
+automatic repeats are fenced. Use `/list resume` or `/glla resume` for an
+intentional retry of a waiting/restored queue, and `/list next` when you
+intentionally want to skip or choose another queued item. `/list start` is
 also explicit: it activates the queued head, or—when the queue is empty—uses
 one clear recent user request as a seed for the normal Confirm-gated list
 drafting flow. Ambiguous context is never queued automatically.

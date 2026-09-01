@@ -2245,12 +2245,29 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
     scheduleLoopTick(ctx);
     return;
   }
+  // A waiting queue is resumable work even when its previous goal has already
+  // archived. `/glla resume` is explicit consent for this handoff, so it must
+  // start the head instead of reporting "Nothing to resume". Normal list
+  // completion still advances automatically; this branch covers a waiting
+  // queue left by a legacy run, a completed standalone goal, or a cold load.
+  // Hydrate sidecars too: a prior process may have published queue work after
+  // the last state snapshot, and `/glla resume` must not mistake that durable
+  // queue for an empty one.
+  hydrateListQueueFromDisk(ctx);
+  const waitingListCount = listQueue().length;
+  if (waitingListCount > 0) {
+    appendLedger(ctx.cwd, "list_queue_resume", { waiting: waitingListCount, via: "glla-resume" });
+    ctx.ui.notify(`Resuming the waiting list — starting its next item (${waitingListCount} waiting).`, "info");
+    if (activateNextListItem(ctx)) return;
+    ctx.ui.notify("The waiting list remains queued because its head could not be activated. Use /list show for the reason.", "warning");
+    return;
+  }
   if (clearedSupervisorPause) {
     // The pause was the only thing being resumed — do not follow it with a
     // misleading "Nothing to resume".
     return;
   }
-  ctx.ui.notify("Nothing to resume — no paused goal/list-item, no held loop. /goal, /list, or /loop to start something.", "info");
+  ctx.ui.notify("Nothing to resume — no paused goal/list-item, no held loop, or waiting list. /goal, /list, or /loop to start something.", "info");
 }
 
 /**

@@ -207,6 +207,6 @@ test("v0.34.119: /glla cancel cancels the whole list objective, while standalone
   assert.match(cancel, /await cmdCancel\(ctx\);/);
   assert.match(cancel, /await cmdLoop\("stop", ctx\);/);
   // empty states guide to the typed verbs / power verbs:
-  assert.match(SRC, /Nothing to resume — no paused goal\/list-item, no held loop\./);
+  assert.match(SRC, /Nothing to resume — no paused goal\/list-item, no held loop, or waiting list\./);
   assert.match(SRC, /Nothing to cancel — no active\/paused goal\/list-item, no loop\./);
 });

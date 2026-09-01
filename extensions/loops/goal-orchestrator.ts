@@ -1338,9 +1338,46 @@ function archiveCurrentGoal(
   }
   // v0.26.0: a /goal (non-list) reached a terminal state → maybe fire.
   if (goal.policy !== "list") {
+    // A queue that was already waiting belongs to the user's work plan. A
+    // successful standalone completion therefore hands off automatically;
+    // only reviewer items created by this completion remain subject to their
+    // existing autoResume gate. Do this before fireReviewer so a reviewer
+    // cannot double-activate the same queue head.
+    const waitingBeforeHandoff = state.list?.length ?? 0;
+    if (status === "complete") handoffCompletedGoalToWaitingList(ctx, goal, waitingBeforeHandoff);
     fireReviewer(ctx, { kind: "goal", goalId: goal.id, objective: goal.objective, terminal: status === "complete" ? "goal-complete" : status === "aborted" ? "goal-aborted" : "goal-paused" });
   }
   closeArchivedSlot();
+  return true;
+}
+
+/**
+ * A completed standalone goal may have a list waiting behind it. The list is
+ * a work plan, not a prompt for the user to advance one item at a time: once
+ * the prior goal has reached its terminal archive, hand the live surface to
+ * the queued head and apply the same bounded completion-settle window used by
+ * list-to-list completion. Aborts deliberately do not enter this path.
+ */
+function handoffCompletedGoalToWaitingList(ctx: ExtensionContext, completedGoal: Goal, waitingCount: number): boolean {
+  if (waitingCount <= 0 || completedGoal.policy === "list" || state.goal?.id !== completedGoal.id) return false;
+  postCompletionSettleUntil = Date.now() + LIST_COMPLETION_SETTLE_MS;
+  const advanced = activateNextListItem(ctx);
+  if (!advanced) {
+    postCompletionSettleUntil = 0;
+    return false;
+  }
+  appendLedger(ctx.cwd, "goal_completion_list_handoff", {
+    goalId: completedGoal.id,
+    nextGoalId: state.goal?.id,
+    nextObjective: state.goal?.objective?.slice(0, 120),
+    waitingBefore: waitingCount,
+  });
+  appendLedger(ctx.cwd, "list_completion_settle_armed", {
+    goalId: completedGoal.id,
+    settleMs: LIST_COMPLETION_SETTLE_MS,
+    nextObjective: state.goal?.objective?.slice(0, 120),
+    sourcePolicy: completedGoal.policy,
+  });
   return true;
 }
 

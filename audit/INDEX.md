@@ -13,7 +13,10 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-08-31):**
+**Most recent (2026-09-01):**
+- `LIST-CONTINUOUS-HANDOFF-2026-09-01.md` — automatic handoff from successful standalone completion, waiting-queue `/glla resume`, and settle/fence regressions
+
+**Previous (2026-08-31):**
 - `LIVE-ACTIVITY-AND-RESUME-2026-08-31.md` — generation-scoped activity cleanup, real `/glla resume` host evidence, uniform auditor recovery, and queued-list disposition
 - `UI-REPAINT-AND-AUDITOR-PROMPT-2026-08-31.md` — durable UI repaint bypass and escaped detached-auditor payload boundaries; Codex-informed follow-up
 - `EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md` — MMX-corroborated loadable Explore-session triage; fixed GLLA's exact child-transcript correlation while leaving Pi/pi-subagents session-picker ownership unchanged
@@ -104,6 +107,9 @@ long-term preferences).
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
+
+**2026-09-01**
+- LIST-CONTINUOUS-HANDOFF-2026-09-01.md — automatic standalone-goal/list handoff, waiting-queue `/glla resume`, and bounded successor settle
 
 **2026-08-31**
 - LIVE-ACTIVITY-AND-RESUME-2026-08-31.md — generation-scoped live activity, `/glla resume` RPC reproduction, auditor recovery, and queue disposition

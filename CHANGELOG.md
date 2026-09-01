@@ -11,6 +11,13 @@
   roles; current built-ins inherit the parent model by default.
 
 ### Fixed
+  Completed standalone goals now hand off to an already-waiting list and arm
+  the same bounded completion-settle window used by list-item cascades. The
+  explicit `/glla resume` surface now hydrates and starts a waiting-only queue,
+  while aborts, loop ownership, suspicious-objective, sidecar, and persistence
+  fences remain intact. Waiting-list cards name `/glla resume` as the recovery
+  action and retain `/list next` for deliberate skip/selection.
+
   Durable state transitions and deferred settle repaints now bypass the
   periodic UI throttle, while unchanged activity/ticker updates remain
   cadence-limited. A replacement host therefore gets its first paint and

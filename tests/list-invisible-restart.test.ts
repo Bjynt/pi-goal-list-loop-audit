@@ -103,11 +103,12 @@ test("v0.35.61: a waiting-only queue is visible and startable without a reload",
   const status = ctx.ui.statuses["pi-glla"] ?? "";
   assert.match(status, /LIST QUEUED/);
   assert.match(status, /1 waiting/);
-  assert.match(status, /\/list next/);
+  assert.match(status, /\/glla resume/);
   const lines = buildWidgetLines(state)?.join("\\n") ?? "";
   assert.match(lines, /list queued/);
   assert.match(lines, /up next: waiting-only list item/);
-  assert.match(lines, /\/list next starts the queue/);
+  assert.match(lines, /\/glla resume starts the queue/);
+  assert.match(lines, /\/list next skips\/chooses/);
 
   // The visible command is also immediately actionable; no second reload or
   // manual sidecar repair is needed to promote the waiting item.

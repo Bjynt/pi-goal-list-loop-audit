@@ -2,15 +2,17 @@
 // tests/list-stall-reproduction.test.ts
 //
 // Durable MockPi reproductions for the screenshot-shaped `LIST QUEUED` card.
-// The card is not, by itself, evidence that list execution wedged:
+// The card is evidence of a broken handoff when a completed standalone goal
+// leaves a user-owned list waiting instead of starting it:
 //
-//   * a standalone `/goal` completion deliberately leaves waiting list work
-//     for explicit `/list next` consent;
+//   * a successful standalone completion hands off to an already-waiting list;
+//   * explicit `/glla resume` starts a waiting-only list after a cold/legacy
+//     boundary;
 //   * a list-sourced completion promotes its successor through
 //     `archiveCurrentGoal()` and records the settle window.
 //
 // These tests assert both state and ledger transitions so a future change
-// cannot mistake the intentional queue boundary for a silent stall.
+// cannot regress the list's start-to-finish execution contract.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -24,7 +26,7 @@ import activate, {
 } from "../extensions/loops/goal.js";
 import { clearContinuationTimer } from "../extensions/goal-continuation.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.js";
-import { readState } from "../extensions/goal-loop-core.js";
+import { readState, writeQueueItemFile } from "../extensions/goal-loop-core.js";
 import {
   MockPi,
   makeMockCtx,
@@ -54,7 +56,7 @@ async function startSession(pi: MockPi, cwd: string) {
   return ctx;
 }
 
-test("screenshot-shaped queue after standalone goal completion is an intentional waiting state", async () => {
+test("completed standalone goal automatically hands off to the waiting list", async () => {
   const pi = new MockPi();
   activate(pi.api);
   const cwd = tmpCwd();
@@ -82,8 +84,8 @@ test("screenshot-shaped queue after standalone goal completion is an intentional
   assert.match(buildWidgetLines(before)?.join("\n") ?? "", /4 queued/);
 
   // This is the same terminal archive fence used after an approved detached
-  // auditor result. A standalone goal is not a list item and must not consume
-  // the queue implicitly.
+  // auditor result. A successful standalone goal must hand off to a list that
+  // was already waiting; the user should not need to type `/list next`.
   const archiveCurrentGoal = (globalThis as any).archiveCurrentGoal as (
     context: unknown,
     status: "complete",
@@ -93,23 +95,44 @@ test("screenshot-shaped queue after standalone goal completion is an intentional
   await tick(20);
 
   const after = readState(cwd);
-  assert.equal(after.goal, null);
-  assert.equal(after.list?.length, 4);
-  assert.match(ctx.ui.statuses["pi-glla"] ?? "", /LIST QUEUED.*4 waiting/);
-  assert.match(buildWidgetLines(after)?.join("\n") ?? "", /list queued.*4 waiting/i);
-  assert.match(buildWidgetLines(after)?.join("\n") ?? "", /\/list next starts the queue/);
+  assert.equal(after.goal?.policy, "list");
+  assert.equal(after.goal?.status, "active");
+  assert.equal(after.goal?.objective, "queue one — done when pinned");
+  assert.equal(after.list?.length, 3);
+  assert.match(buildWidgetLines(after)?.join("\n") ?? "", /queue one.*active|queue one/i);
 
   const types = ledgerTypes(cwd);
-  const archivedAt = types.lastIndexOf("goal_archived");
-  assert.ok(archivedAt >= 0);
-  assert.equal(types.slice(archivedAt + 1).includes("list_completion_settle_armed"), false);
+  assert.equal(types.filter((type) => type === "goal_created").length, 2, "the handoff creates exactly one successor goal");
+  assert.equal(types.filter((type) => type === "goal_completion_list_handoff").length, 1);
+  assert.ok(types.includes("list_completion_settle_armed"));
+  clearContinuationTimer();
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
 
-  // The visible recovery action is live and does not require a reload.
-  await pi.command("list", "next", ctx);
-  const activated = readState(cwd);
-  assert.equal(activated.goal?.policy, "list");
-  assert.equal(activated.goal?.objective, "queue one — done when pinned");
-  assert.equal(activated.list?.length, 3);
+test("/glla resume starts a waiting-only list instead of reporting nothing", async () => {
+  const pi = new MockPi();
+  activate(pi.api);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: null, list: [] });
+  resetRuntime();
+  const ctx = await startSession(pi, cwd);
+  const waitingItem = {
+    id: "resume-head",
+    objective: "resume queued head — done when pinned",
+    addedAt: new Date().toISOString(),
+    queueOrder: 0,
+  };
+  assert.equal(writeQueueItemFile(cwd, waitingItem as never).wrote, true);
+  assert.equal(readState(cwd).goal, null);
+  await pi.command("glla", "resume", ctx);
+  await tick(20);
+
+  const after = readState(cwd);
+  assert.equal(after.goal?.policy, "list");
+  assert.equal(after.goal?.objective, "resume queued head — done when pinned");
+  assert.equal(after.list?.length, 0);
+  assert.ok(ledgerTypes(cwd).includes("list_queue_resume"));
+  assert.equal(ctx.ui.matching("Nothing to resume").length, 0);
   clearContinuationTimer();
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });

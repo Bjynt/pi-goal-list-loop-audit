@@ -74,13 +74,13 @@ real run and belongs to model selection, not the GLLA resume path.
 
 ## Queued-list disposition
 
-The prior screenshot-shaped queue report remains covered by
-`LIST-STALL-REPRODUCTION-2026-08-29.md`. Its MockPi reproduction confirms that
-a standalone goal archive intentionally leaves waiting list items for explicit
-`/list next`, while a list-sourced completion promotes its successor. No
-GLLA-owned queued-list stall was reproduced, so no new queue fix is warranted
-without a screenshot-linked ledger sequence showing the owning policy and
-blocking transition.
+The prior screenshot-shaped queue report remains the historical baseline in
+`LIST-STALL-REPRODUCTION-2026-08-29.md`. The later screenshot/report exposed a
+GLLA-owned gap in that old boundary: a successful standalone goal could leave
+an already-waiting list behind, and `/glla resume` did not activate a
+queue-only state. `LIST-CONTINUOUS-HANDOFF-2026-09-01.md` records the fix and
+behavioral evidence. Cold-load automation is still held until explicit
+consent; `/glla resume` now supplies that consent for the waiting queue.
 
 ## Compatibility and scope disposition
 

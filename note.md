@@ -1,4 +1,4 @@
-# Next
+# Now
 
 ## 1. Obtain and assess `recommend-subagents`
 
@@ -9,24 +9,30 @@
 - Keep external packages unchanged; prove any GLLA change with behavioral
   coverage.
 
-## 2. Reproduce the queued-list symptom only with fresh evidence
+## 2. Confirm the continuous queue fix in a live host
 
-If the symptom recurs, capture the screenshot-linked ledger, active/list
-state, and transition sequence. Distinguish a standalone goal archive that
-requires explicit `/list next` from a list-policy successor that should
-promote automatically. Change GLLA only if a GLLA-owned blocking transition is
-proven.
+The GLLA-owned gap is fixed: successful standalone completion hands off to an
+already-waiting list, and `/glla resume` hydrates/starts a waiting-only queue.
+Confirm the screenshot-shaped path in a live host when provider conditions
+permit, capturing the ledger transition if it recurs. Cold-load automation
+remains explicit-consent gated.
 
-- `/home/dracon/Pictures/Screenshots/Screenshot_20260831_233920.png`
-- `audit/LIST-STALL-REPRODUCTION-2026-08-29.md`
+- `/home/dracon/Pictures/Screenshots/Screenshot_20260901_105419.png`
+- `audit/LIST-CONTINUOUS-HANDOFF-2026-09-01.md`
 
-## 3. Perform the cross-harness review
+# Next 
+
+## https://github.com/DraconDev/pi-goal-list-loop-audit/pull/39
+
+# Later 
+
+## Perform the cross-harness review
 
 Review pi Goal X, DeepSeek, Codex, Claude, Antigravity, and Grok harnesses and
 related goal extensions. Compare recovery, queue, supervision, and persistence
 behavior, then record only actionable GLLA-owned differences.
 
-## 4. Review NVIDIA AVO
+## Review NVIDIA AVO
 
 Assess whether the related PRs are complete and relevant after the higher-
 priority GLLA work:

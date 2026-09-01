@@ -633,6 +633,24 @@ shapes (details in CHANGELOG.md; each is pinned by tests):
   that NEVER moves gets its own loud bounded stop. Audit loops keep their
   purpose-built deferred-baseline + reprieve semantics verbatim.
 
+## Addendum v0.36.2 (continuous list handoff)
+
+- **A list is a continuous work plan**: after a standalone goal reaches a
+  successful terminal archive, an already-waiting queue is handed to the same
+  activation choke point used by list-item completion. The bounded
+  `LIST_COMPLETION_SETTLE_MS` window still protects the first successor
+  continuation from the host's completion acknowledgement settling. User
+  aborts do not auto-advance, and one-active-thing, suspicious-objective,
+  sidecar, persistence, carryover, and loop-owner fences remain authoritative.
+- **Resume repairs waiting queues**: `/glla resume` hydrates durable queue
+  sidecars, records `list_queue_resume`, and explicitly activates the waiting
+  head when no higher-priority goal, loop, auditor, or provider-recovery plane
+  owns the surface. Cold-load automation remains consent-gated; this command
+  is the consent boundary.
+- **Selection remains explicit**: `/list next` is still available for a
+  deliberate skip or non-head choice. It is no longer required between
+  successful list items.
+
 ## Files
 
 - `docs/DESIGN.md` — **this file**

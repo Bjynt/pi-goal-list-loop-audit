@@ -1,5 +1,8 @@
 # Queued-list stall reproduction — 2026-08-29
 
+> Historical baseline. The later GLLA-owned completion/resume gap and its fix
+> are recorded in `LIST-CONTINUOUS-HANDOFF-2026-09-01.md`.
+
 ## Scope
 
 This investigation targets the two latest field screenshots,

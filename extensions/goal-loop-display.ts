@@ -1169,7 +1169,7 @@ function waitingListStatus(state: State, _now: number, theme?: DisplayTheme): st
   const head = queue[0];
   const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
   const hold = typeof state.loadHoldAt === "number" ? " · held on restore" : "";
-  return `glla: ${paint(theme, "accent", "LIST QUEUED")} · ${queue.length} waiting · next: ${truncate(objective, 72)} · /list next${hold}`;
+  return `glla: ${paint(theme, "accent", "LIST QUEUED")} · ${queue.length} waiting · next: ${truncate(objective, 72)} · /glla resume${hold}`;
 }
 
 function waitingListLines(state: State, theme?: DisplayTheme, width?: number): string[] {
@@ -1178,8 +1178,8 @@ function waitingListLines(state: State, theme?: DisplayTheme, width?: number): s
   const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
   const objectiveBudget = budgetFor(width, visibleLen("├─ up next: "), 56);
   const action = typeof state.loadHoldAt === "number"
-    ? "held on restore · /list next starts the queue"
-    : "/list next starts the queue · /list show to inspect";
+    ? "held on restore · /glla resume starts the queue · /list next skips/chooses"
+    : "/glla resume starts the queue · /list next skips/chooses · /list show to inspect";
   return [
     `${paint(theme, "accent", "↻")} ${paint(theme, "accent", "list queued")} · ${queue.length} waiting`,
     `├─ up next: ${truncate(objective, objectiveBudget)}`,
