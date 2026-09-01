@@ -72,7 +72,9 @@ bun test --parallel=1 --max-concurrency=1 --timeout=60000 \
 ```
 
 Result at implementation time: **37 pass, 0 fail** across the five focused
-files; TypeScript passed.
+files; TypeScript passed. The live detached-auditor path is also covered by
+`tests/behavioral-orchestrator.test.ts`: **130 pass, 0 fail**, including an
+approved standalone completion handing off to a pre-queued list head.
 
 ## Disposition
 

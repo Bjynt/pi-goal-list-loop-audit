@@ -3446,6 +3446,47 @@ test("v0.34.119: auditor-approved list completion archives the item and activate
   }
 });
 
+test("v0.36.2: approved standalone completion automatically activates a pre-queued list head", { timeout: 30_000 }, async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditor(cwd, "approved", 0);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "standalone completion before list — done when pinned", ctx);
+    await tick();
+    await pi.runTool("list_add", {
+      items: [
+        "first post-standalone item — done when pinned",
+        "second post-standalone item — done when pinned",
+      ],
+    }, ctx);
+    const standalone = readState(cwd).goal as { id: string; policy: string; status: string };
+    assert.equal(standalone.policy, "goal");
+    assert.equal(standalone.status, "active");
+
+    await pi.runTool("complete_goal", {
+      completionSummary: "The standalone objective is complete with the required proof.",
+      verificationSummary: "The fake auditor verifies the standalone proof.",
+    }, ctx);
+    await waitUntil(() => {
+      const current = readState(cwd).goal as { objective?: string; status?: string } | null;
+      return current?.status === "active" && current.objective?.includes("first post-standalone item") === true;
+    });
+
+    const after = readState(cwd);
+    assert.equal(after.goal?.policy, "list");
+    assert.equal(after.list?.length, 1);
+    assert.ok(fs.existsSync(path.join(cwd, ".pi-glla", "archive", `${standalone.id}.md`)));
+    assert.ok(readLedger(cwd).some((entry) => entry.type === "goal_completion_list_handoff"));
+    clearContinuationTimer();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.91: detached approval notify carries the agent's completion recap, not process boilerplate", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

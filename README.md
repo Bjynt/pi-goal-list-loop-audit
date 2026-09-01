@@ -168,8 +168,8 @@ quietly inventing an unbounded backlog.
 Order is the default, not the law. Automatic advance normally uses the head of
 the queue, while `/list next <n>` or the agent's `list_activate` tool can choose
 another item. Numbering always matches `/list` output. After a list item is
-approved and archived, the next queued item starts automatically; no `/list
-next` is needed between items.
+approved and archived, the next queued item starts automatically; no manual
+`/list next` is needed between items.
 
 If a saved item is malformed or needs a repair, the repair card preserves the
 full original target, explains the concrete recovery action, and permits one

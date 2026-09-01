@@ -645,8 +645,9 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // reported a blank startup context; automatic restore never reaches here.
   releaseInitialSessionLoadBarrier();
   // v0.28.14: one-active-thing choke point — NO call site (session_start,
-  // completion cascade, /list next, list_activate, list-draft auto-activate)
-  // may activate a list item over a live loop, present or future.
+  // completion cascade, /list next, /glla resume, list_activate,
+  // list-draft auto-activate) may activate a list item over a live loop,
+  // present or future.
   if (isLoopActive()) {
     // v0.35.22 (note.md Next #3, field 2026-08-21): this refusal used to be
     // LEDGER-ONLY — a queued repair card behind a paused suspicious goal

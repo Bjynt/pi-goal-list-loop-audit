@@ -725,14 +725,14 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     return cmdSettings(args, ctx);
   };
   pi.registerCommand("glla", {
-    description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla version` shows the installed package version; `/glla pause` freezes the supervisor's automatic machinery (re-arms/recovery/auto-resume/dispatch) without touching active work; `/glla cancel` cancels the active objective; `/glla wipe` Confirm-gatedly clears all live state while preserving history.",
+    description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla version` shows the installed package version; `/glla pause` freezes the supervisor's automatic machinery (re-arms/recovery/auto-resume/dispatch) without touching active work; `/glla resume` also starts a waiting-only list; `/glla cancel` cancels the active objective; `/glla wipe` Confirm-gatedly clears all live state while preserving history.",
     getArgumentCompletions: completions([
       // Operational verbs only. Settings and section navigation belong in
       // the bare `/glla` table, so they do not compete with action completion.
       ["version", "show the installed package version and registry check"],
       ["status", "show goal, list, loop, and pending decisions"],
       ["log", "show the recent event trail"],
-      ["resume", "resume the paused or held live thing; also unfreezes a /glla pause"],
+      ["resume", "resume paused/held work or start a waiting-only list; also unfreezes a /glla pause"],
       ["pause", "freeze ALL supervisor automation (re-arms/recovery/dispatch) — active work keeps running"],
       ["cancel", "cancel the active objective (list item + queue)"],
       ["wipe", "Confirm-gated idempotent reset of all live goal/list/loop state"],
@@ -763,7 +763,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       ["settings", "settings live under /glla — bare /glla opens the settings table"],
       ["audit", "collect-then-drain: audit the project, queue every finding as its own item"],
       ["plan", "extended draft: deep research + multi-round interview, then ONE Confirm proposes the whole items[] batch"],
-      ["resume", "resume the paused list item (the list's head)"],
+      ["resume", "resume the paused list head; use /glla resume for a waiting-only queue"],
       ["pause", "pause the active list item (it stays head; /list resume brings it back)"],
       ["tweak", "change the paused list item: /list tweak <text>"],
       ["next", "activate the next item (or /list next <n> for position n)"],
