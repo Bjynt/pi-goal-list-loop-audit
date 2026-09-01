@@ -354,7 +354,7 @@ function activityStatusMarker(activity: GoalDisplayActivity | undefined, now: nu
   switch (activity) {
     case "working": return activityBadge("LIVE · WORKING", now, theme);
     case "busy": return activityStateBadge("BUSY", theme, "warning");
-    case "queued": return activityStateBadge("QUEUED", theme, "warning");
+    case "queued": return activityStateBadge("⏳ QUEUED", theme, "accent");
     case "idle": return activityStateBadge("IDLE", theme, "warning");
     case "awaiting-first-turn": return activityStateBadge("AWAITING FIRST TURN", theme, "warning");
     case "active": return activityStateBadge("ACTIVE", theme, "accent");
@@ -1077,7 +1077,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const marker = live
       ? activityBadge("LIVE · WORKING", now, theme)
       : queued
-        ? activityStateBadge("QUEUED", theme, "warning")
+        ? activityStateBadge("⏳ QUEUED", theme, "accent")
         : activityStateBadge("ACTIVE", theme, "accent");
     // When recovery parks a queued goal, name the blocker — `[QUEUED] 12m
     // 26s` reads as a stalled queue with no WHY. State.mainModelRecovery is
@@ -1096,7 +1096,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       // v0.34.124: the QUEUED "why" — an accepted dispatch that pi has not
       // started, and the last real activity age. A ticking timer with no
       // freshness told the user nothing (note.md 221249).
-      queued && extras?.turnPending ? "turn pending" : "",
+      queued && extras?.turnPending ? "awaiting pi turn" : "",
       queued ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);

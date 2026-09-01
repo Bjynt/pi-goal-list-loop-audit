@@ -147,20 +147,20 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   assert.doesNotMatch(busy, /WORKING/);
 
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /glla: \[QUEUED\] total 1m 09s · 3 queued/);
+  assert.match(queued, /glla: \[⏳ QUEUED\] total 1m 09s · 3 queued/);
   assert.doesNotMatch(queued, /WORKING/);
 
   // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch and
   // the last real activity age. A ticking timer with no freshness told the
   // user nothing (note.md 221249 "time ticking but nothing else").
   const queuedPending = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true, lastActivityAt: NOW - 180_000 })!;
-  assert.match(queuedPending, /\[QUEUED\] total 1m 09s · turn pending · last host activity 3m 00s ago · 3 queued/);
+  assert.match(queuedPending, /\[⏳ QUEUED\] total 1m 09s · awaiting pi turn · last host activity 3m 00s ago · 3 queued/);
   // turnPending WITHOUT a known last-activity epoch still names the pending turn.
   const queuedPendingNoAge = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true })!;
-  assert.match(queuedPendingNoAge, /\[QUEUED\] total 1m 09s · turn pending · 3 queued/);
+  assert.match(queuedPendingNoAge, /\[⏳ QUEUED\] total 1m 09s · awaiting pi turn · 3 queued/);
   // No turnPending (scheduled-but-not-yet-sent) stays the plain QUEUED line.
   const queuedScheduled = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.doesNotMatch(queuedScheduled, /turn pending/);
+  assert.doesNotMatch(queuedScheduled, /awaiting pi turn/);
 
   const goldenQueued = {
     goal: goalOf({ createdAt: "2026-07-21T11:59:16Z" }),
@@ -168,7 +168,7 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   assert.equal(
     buildStatusText(goldenQueued, null, NOW, undefined, { activity: "queued" }),
-    "glla: [QUEUED] total 44s · 18 queued",
+    "glla: [⏳ QUEUED] total 44s · 18 queued",
   );
 });
 
@@ -200,7 +200,7 @@ test("v0.34.95: queued + parked recovery surfaces 'parked on provider recovery' 
   // The recovery envelope retains retryAt, but this surface intentionally
   // renders the relative next-probe wording rather than an absolute clock.
   const status = buildStatusText(queuedWithRecovery, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(status, /\[QUEUED\]/);
+  assert.match(status, /\[⏳ QUEUED\]/);
   assert.match(status, /18 queued/);
   assert.match(status, /parked on provider recovery/);
   assert.doesNotMatch(status, /quota reset/);
@@ -212,7 +212,7 @@ test("v0.34.95: queued WITHOUT a parked recovery does NOT show quota text (no fa
     list: [{ id: "queued-0", objective: "queued", addedAt: "z" }],
   };
   const status = buildStatusText(queuedNoRecovery, null, NOW, undefined, { activity: "queued" })!;
-  assert.equal(status, "glla: [QUEUED] total 44s · 1 queued");
+  assert.equal(status, "glla: [⏳ QUEUED] total 44s · 1 queued");
   assert.doesNotMatch(status, /quota/);
 });
 
@@ -812,7 +812,7 @@ test("active loop status names evidence-backed working, waiting, and idle states
   assert.match(working, /^glla: \[[▁▂▄▆█]{6} LIVE · WORKING\] · loop ↓ iter 12\/50/);
 
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /^glla: \[QUEUED\] · loop ↓ iter 12\/50/);
+  assert.match(queued, /^glla: \[⏳ QUEUED\] · loop ↓ iter 12\/50/);
 
   const idle = buildStatusText(state, null, NOW, undefined, { activity: "idle" })!;
   assert.match(idle, /^glla: \[IDLE\] · loop ↓ iter 12\/50/);
