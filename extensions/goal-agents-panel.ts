@@ -29,6 +29,8 @@ export type AgentPhase = "queued" | "active" | "hung" | "ended" | "unknown";
 
 export interface AgentsPanelRow {
   recordId: string;
+  /** Persisted pi session id, when the subagent runtime exposes it. */
+  sessionId?: string;
   agentType?: string;
   summary?: string;
   status: AgentStatus;
@@ -219,7 +221,7 @@ function parsedSessionInfoName(content: Buffer): string | undefined {
  * tail/head readers. */
 export function tailChildTranscript(
   sessionsDir: string,
-  row: { recordId: string; agentType?: string; summary?: string },
+  row: { recordId: string; sessionId?: string; agentType?: string; summary?: string },
   opts: {
     lines?: number;
     readFile?: (file: string, maxBytes?: number) => Buffer;
@@ -259,7 +261,19 @@ export function tailChildTranscript(
     .map((f) => ({ f, mtime: statMtime(f) }))
     .sort((a, b) => b.mtime - a.mtime);
   let matched: string | undefined;
-  const candidatesToScan = candidates.slice(0, 25);
+  // Pi names session files `<timestamp>_<sessionId>.jsonl`. Prefer the exact
+  // session id from the manager/event record so an old tracked child remains
+  // discoverable without turning the main-thread fallback into an unbounded
+  // full-directory scan. Identity in session_info.name remains authoritative.
+  const sessionId = row.sessionId?.trim();
+  const directCandidates = sessionId
+    ? candidates.filter(({ f }) => {
+      const base = path.basename(f);
+      return base === `${sessionId}.jsonl` || base.endsWith(`_${sessionId}.jsonl`);
+    })
+    : [];
+  const recentCandidates = candidates.filter((candidate) => !directCandidates.includes(candidate)).slice(0, 25);
+  const candidatesToScan = [...directCandidates, ...recentCandidates];
   if (expectedSessionName) for (const candidate of candidatesToScan) {
     try {
       // Check the bounded tail first so the existing scan remains the first
@@ -279,7 +293,7 @@ export function tailChildTranscript(
     return {
       ok: false,
       lines: [],
-      detail: `no session file in ${sessionsDir} matches this child (searched ${candidatesToScan.length}${candidates.length > candidatesToScan.length ? ` of ${candidates.length}` : ""} transcripts for exact identity in session_info.name: ${expectedSessionName ? `"${truncate(expectedSessionName, 32)}"` : "none"}) — the child may not persist a session, or it lives under another working directory`,
+      detail: `no session file in ${sessionsDir} matches this child (searched ${candidatesToScan.length}${candidatesToScan.length < candidates.length ? ` of ${candidates.length}` : ""} transcripts for exact identity in session_info.name: ${expectedSessionName ? `"${truncate(expectedSessionName, 32)}"` : "none"}) — the child may not persist a session, or it lives under another working directory`,
     };
   }
   try {

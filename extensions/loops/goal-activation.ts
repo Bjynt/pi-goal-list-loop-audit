@@ -2558,7 +2558,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       at: nowIso(),
     });
     // v0.34.85: seed the hang-watchdog probe (spawn = baseline evidence).
-    upsertSubagentHangProbe(sessionId, typeof e.type === "string" ? e.type : undefined, typeof e.description === "string" ? e.description : undefined);
+    upsertSubagentHangProbe(sessionId, typeof e.type === "string" ? e.type : undefined, typeof e.description === "string" ? e.description : undefined, Date.now(), sessionId);
   });
 
   // v0.34.85 — subagent hang watchdog inputs. Progress evidence (compacted =

@@ -382,6 +382,8 @@ function hasLiveSubagentHangProbes(now = Date.now()): boolean {
 
 interface SubagentHangProbe {
   recordId: string;
+  /** Persisted pi session id used to locate the child transcript directly. */
+  sessionId?: string;
   agentType?: string;
   summary?: string;
   spawnedAt: number;
@@ -571,7 +573,7 @@ export function observeCurrentSubagentStart(data: unknown): void {
   const id = eventRecordId(data);
   if (!id) return;
   observeCurrentSubagent(data, undefined);
-  upsertSubagentHangProbe(id, eventString(data, "agent"), currentSummary(data), eventNumber(data, "startedAt") ?? Date.now());
+  upsertSubagentHangProbe(id, eventString(data, "agent"), currentSummary(data), eventNumber(data, "startedAt") ?? Date.now(), eventString(data, "sessionId"));
 }
 
 /** Observe current-package progress evidence. */
@@ -781,7 +783,7 @@ function ownerGeneration(): number {
   try { return flags?.sessionGeneration ?? 0; } catch { return 0; }
 }
 
-export function upsertSubagentHangProbe(recordId: string, agentType: string | undefined, summary: string | undefined, now = Date.now()): void {
+export function upsertSubagentHangProbe(recordId: string, agentType: string | undefined, summary: string | undefined, now = Date.now(), sessionId?: string): void {
   const existing = subagentHangProbes.get(recordId);
   if (existing) {
     // Re-observation (resume / re-run): fresh evidence + refreshed metadata.
@@ -793,10 +795,11 @@ export function upsertSubagentHangProbe(recordId: string, agentType: string | un
     existing.hangActionAt = undefined;
     if (agentType) existing.agentType = agentType;
     if (summary) existing.summary = summary;
+    if (sessionId) existing.sessionId = sessionId;
     return;
   }
   subagentHangProbes.set(recordId, {
-    recordId, agentType, summary,
+    recordId, ...(sessionId ? { sessionId } : {}), agentType, summary,
     ownerGeneration: ownerGeneration(),
     spawnedAt: now, lastProgressAt: now, lastToolUses: 0, lastOutputTokens: 0,
   });
@@ -1601,6 +1604,7 @@ export function __testOnlySetHeartbeatStaleDebounce(n: number | null): void {
  * SUBAGENT_HANG_EVENT_ONLY_MS window applies = event-only. */
 export interface SubagentAgentView {
   recordId: string;
+  sessionId?: string;
   agentType?: string;
   summary?: string;
   status: AgentStatus;
@@ -1668,6 +1672,7 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
       const startedAt = finiteNonNegative(record?.startedAt) ?? probe.spawnedAt;
       agents.push({
         recordId: probe.recordId,
+        ...((record?.sessionId ?? probe.sessionId) ? { sessionId: record?.sessionId ?? probe.sessionId } : {}),
         ...(probe.agentType ? { agentType: probe.agentType } : {}),
         ...(probe.summary ? { summary: probe.summary } : {}),
         status,
@@ -1687,6 +1692,7 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
     }
     agents.push({
       recordId: probe.recordId,
+      ...(probe.sessionId ? { sessionId: probe.sessionId } : {}),
       ...(probe.agentType ? { agentType: probe.agentType } : {}),
       ...(probe.summary ? { summary: probe.summary } : {}),
       status: "ended",
