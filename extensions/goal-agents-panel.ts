@@ -163,7 +163,11 @@ export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now()
   return lines;
 }
 
-/** The compact footer summary: count + the least-live child. */
+/** The compact footer summary: count + the least-live child.
+ * v0.37.1 (ui-jitter fix): bucket the silent age so the status/widget
+ * text stays stable between ticks — a per-second change made the footer
+ * and widget keys differ every 2s, forcing a TUI re-layout that looked
+ * like "jumping" under heavy scout fan-out. */
 export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefined {
   const active = rows.filter((r) => r.status !== "ended");
   if (active.length === 0) return undefined;
@@ -173,7 +177,16 @@ export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefin
     : busiest.status === "hung"
       ? " ⚠"
       : "";
-  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} silent ${fmtDuration(busiest.silentMs)}${hung}`;
+  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} silent ${fmtDuration(bucketSilentMs(busiest.silentMs))}${hung}`;
+}
+
+/** Bucket silentMs to coarser granularity for display stability:
+ * <1m → 5s buckets, <5m → 15s, otherwise 30s. The underlying
+ * hung classification still uses the exact value. */
+function bucketSilentMs(ms: number): number {
+  if (ms < 60_000) return Math.floor(ms / 5000) * 5000;
+  if (ms < 300_000) return Math.floor(ms / 15_000) * 15_000;
+  return Math.floor(ms / 30_000) * 30_000;
 }
 
 export interface TranscriptTailResult {

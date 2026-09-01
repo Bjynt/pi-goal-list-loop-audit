@@ -264,7 +264,7 @@ import {
   type HeartbeatFlags,
 } from "../goal-heartbeat.js"; // decomposition step 4 (v0.34.112)
 import { getSubagentAgentsSnapshot } from "../goal-heartbeat.js";
-import { renderAgentsWidgetLine, renderAgentsWidgetLines, type AgentsPanelRow } from "../goal-agents-panel.js";
+import { renderAgentsWidgetLine, type AgentsPanelRow } from "../goal-agents-panel.js";
 import {
   clearMainModelRecoveryTimer,
   createGoalRecovery,
@@ -794,16 +794,18 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
     const extras = {
       stalls: consecutiveStalls,
       recent: recentActions,
-      // v0.35.29 (issue #15): tracked-subagent display is one snapshot with
-      // two projections — a compact footer summary and detailed widget rows.
-      // The detached auditor is intentionally not part of this roster.
+      // v0.37.1 (ui-jitter fix): compact-only widget — one stable footer
+      // line "● N agents · scout silent Xm". Detailed per-agent rows live
+      // in `/glla agents` / `--tail` (DESIGN intent); splicing 2 lines per
+      // scout into the above-editor card made height swing 4→10 lines and
+      // re-laid out the editor every 2–5s. Keep lines empty so
+      // buildWidgetLines does not splice.
       ...(() => {
         try {
           const { agents } = getSubagentAgentsSnapshot();
           const rows = agents as AgentsPanelRow[];
           const line = renderAgentsWidgetLine(rows);
-          const lines = renderAgentsWidgetLines(rows, Date.now());
-          return line || lines.length > 0 ? { agents: { line, lines } } : {};
+          return line ? { agents: { line, lines: [] } } : {};
         } catch { return {}; }
       })(),
       ...activity,
