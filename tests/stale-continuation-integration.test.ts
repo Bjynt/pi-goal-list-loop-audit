@@ -6,7 +6,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags } from "../extensions/loops/goal.js";
 import { state, replaceState } from "../extensions/goal-state.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal } from "./harness/mock-pi.js";
 
@@ -22,9 +22,15 @@ function readLedger(cwd: string): Array<{ type: string; value: Record<string, un
 
 afterEach(() => {
   replaceState({ goal: null, list: [], loop: null } as any);
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
 });
 
 test("integration: stale goal continuation is sanitized at message_end and ledgered, raw source dropped", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
   const pi = new MockPi();
   activate(pi.api);
   const cwd = tmpCwd();
@@ -59,6 +65,9 @@ test("integration: stale goal continuation is sanitized at message_end and ledge
 });
 
 test("integration: fresh continuation for active goal is NOT sanitized", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
   const pi = new MockPi();
   activate(pi.api);
   const cwd = tmpCwd();
@@ -75,6 +84,9 @@ test("integration: fresh continuation for active goal is NOT sanitized", async (
 });
 
 test("integration: foreign ctx never sanitizes (subagent isolation)", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
   const pi = new MockPi();
   activate(pi.api);
   const cwd = tmpCwd();
