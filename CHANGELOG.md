@@ -52,6 +52,14 @@
   completion, verification, and shield data so untrusted text cannot close a
   prompt boundary or impersonate prompt structure.
 
+  TUI jitter under scout fan-out is fixed: the above-editor widget now shows
+  only the compact one-line summary `● N agents · <busiest> silent Xm`
+  (bucketed 5s/<1m, 15s/<5m, 30s otherwise) instead of splicing 2 lines per
+  scout into the card. Detailed per-agent rows remain in `/glla agents` and
+  `--tail` as designed (docs/DESIGN-subagent-visibility.md), so height no
+  longer swings 4→10 lines and the editor layout stays stable under
+  `scout x3` / 150+ tool-use fan-outs.
+
 ## 0.36.1 — crash-safe persistence and packed-release verification (2026-08-31)
 
 ### Fixed
