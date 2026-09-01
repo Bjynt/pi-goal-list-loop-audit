@@ -120,6 +120,52 @@
       },
       "description": "Bounded per-goal activity counters used by /glla stats."
     },
+    "stagnation": {
+      "type": "object",
+      "required": ["window", "recentTexts", "exhaustedStreak"],
+      "properties": {
+        "window": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["at", "toolCalls", "fileWrites", "bashCalls", "gitCommits", "taskCompletions"],
+            "properties": {
+              "at": { "type": "string", "format": "date-time" },
+              "toolCalls": { "type": "integer", "minimum": 0 },
+              "fileWrites": { "type": "integer", "minimum": 0 },
+              "bashCalls": { "type": "integer", "minimum": 0 },
+              "gitCommits": { "type": "integer", "minimum": 0, "maximum": 1 },
+              "taskCompletions": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "recentTexts": { "type": "array", "maxItems": 6, "items": { "type": "string" } },
+        "exhaustedStreak": { "type": "integer", "minimum": 0 },
+        "directive": {
+          "type": "object",
+          "required": ["kind", "reason", "at", "injections"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["exhaustion", "cycling"] },
+            "reason": { "type": "string" },
+            "at": { "type": "string", "format": "date-time" },
+            "injections": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "lastTotals": {
+          "type": "object",
+          "required": ["turns", "fileWrites", "bashCalls"],
+          "properties": {
+            "turns": { "type": "integer", "minimum": 0 },
+            "fileWrites": { "type": "integer", "minimum": 0 },
+            "bashCalls": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "lastHead": { "type": "string" },
+        "completedTasks": { "type": "integer", "minimum": 0 }
+      },
+      "description": "v0.36.0 AVO-inspired stagnation supervision: bounded progress-lineage window plus any pending SupervisorDirective."
+    },
     "usage": {
       "type": "object",
       "required": ["tokensUsed", "tokensLimit"],

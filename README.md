@@ -34,6 +34,7 @@ The aim is not “run forever.” The aim is **more useful work per unit of
 attention, with event-driven progress instead of guessed-duration waiting, and
 better evidence at the end**. See `docs/DESIGN-long-running-supervision.md` for
 the long-running policy.
+**Current package version:** `v0.36.1` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 Use `/glla version` to inspect the installed version and compare it with the
 registry. This checkout may contain unreleased changes; npm is authoritative

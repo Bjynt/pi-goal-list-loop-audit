@@ -4490,3 +4490,90 @@ test("v0.35.4: context-starved warning is one-shot per refusal episode", async (
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
 });
+
+// ────────────────────────────────────────────────────────────────────
+// v0.36.0 AVO-inspired stagnation supervision (goal-stagnation.ts +
+// noteGoalStagnationTurn wiring) — behavioral pin through the REAL
+// agent_end handler, not just pure-function units.
+// ────────────────────────────────────────────────────────────────────
+
+test("v0.37.0 stagnation: lineage folds per goal turn, exhaustion directive fires and clears on progress", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ objective: "stagnation lineage item — done when the supervisor is proven end to end" }) });
+  setGlobalAutoResume(true);
+  const ctx = await freshSession(cwd, "reload");
+  resetContinuationDispatchState(cwd);
+  clearContinuationTimer();
+
+  // Programmable HEAD: commit detection becomes observable without a real
+  // repo under the tmp cwd. Restored in finally (shared MockPi).
+  let head = "head-0001";
+  pi.execHandler = (cmd, args) =>
+    cmd === "git" && args[0] === "rev-parse"
+      ? { code: 0, stdout: head, stderr: "" }
+      : { code: 0, stdout: "", stderr: "" };
+
+  // Genuinely different reply bodies — near-duplicates would trip the
+  // CYCLING detector instead of letting EXHAUSTION accumulate.
+  const texts = [
+    "Reading the scheduler sources to compare lock ordering against the upstream series.",
+    "Regenerating the API docs because the generated tables reference a renamed module.",
+    "Rerunning the benchmark suite with more warm-up rounds and pinned CPU frequency.",
+    "Adding an explicit poll deadline to the flaky test instead of the bare sleep.",
+    "Switching the hot serializer loop to a reusable buffer to cut garbage pressure.",
+    "Making the config loader fail loudly on malformed YAML and fixing the fixtures.",
+  ];
+  // Each turn carries ordinary (read-only) tool activity so the EXISTING
+  // stall-nudge brake stays satisfied — these are productive-LOOKING turns,
+  // which is precisely the population the stagnation supervisor owns. Reads
+  // bump neither fileWrites nor bashCalls telemetry, so committed progress
+  // stays zero and exhaustion accumulates.
+  const activeTurn = (text: string, stopReason = "end_turn") =>
+    pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text }], stopReason }] }, ctx);
+  const doTool = () => pi.fire("tool_call", { toolName: "read", input: {} }, ctx);
+
+  try {
+    // Turn 1: baseline-only observation (no vector against unknown totals).
+    await doTool();
+    await activeTurn(texts[0]!);
+    await tick();
+    let g = readState(cwd).goal as { stagnation?: { window: unknown[]; lastHead?: string; exhaustedStreak?: number; directive?: { kind: string } | null } };
+    assert.ok(g.stagnation, "stagnation bookkeeping exists after the first turn");
+    assert.equal(g.stagnation!.window.length, 0, "first observation records no vector");
+    assert.equal(g.stagnation!.lastHead, "head-0001", "baseline HEAD captured");
+
+    // Turns 2-5: active, no committed progress → exhaustion fires at 4.
+    for (const text of texts.slice(1, 5)) {
+      await doTool();
+      await activeTurn(text);
+      await tick();
+    }
+    g = readState(cwd).goal as typeof g;
+    assert.equal(g.stagnation!.window.length, 4, "one vector per post-baseline turn");
+    assert.equal(g.stagnation!.exhaustedStreak, 4);
+    assert.equal(g.stagnation!.directive?.kind, "exhaustion", "supervisor fired");
+    assert.ok(readLedger(cwd).some((e) => e.type === "goal_progress_vector"), "lineage ledgered");
+
+    // A committing turn clears the directive and resets the streak.
+    head = "head-0002";
+    await doTool();
+    await activeTurn(texts[5]!);
+    await tick();
+    g = readState(cwd).goal as typeof g;
+    assert.equal(g.stagnation!.directive ?? null, null, "progress clears the pending directive");
+    assert.equal(g.stagnation!.exhaustedStreak, 0, "progress resets the streak");
+    const vectors = readLedger(cwd).filter((e) => e.type === "goal_progress_vector");
+    assert.equal((vectors[vectors.length - 1]!.value as { gitCommits: number }).gitCommits, 1, "HEAD movement counted as a commit");
+
+    // Error turns are exempt: no vector, no streak growth (model never got a say).
+    const before = readLedger(cwd).filter((e) => e.type === "goal_progress_vector").length;
+    await activeTurn(texts[0]!, "error");
+    await tick();
+    assert.equal(readLedger(cwd).filter((e) => e.type === "goal_progress_vector").length, before, "error turn exempt from the lineage");
+  } finally {
+    pi.execHandler = null;
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});

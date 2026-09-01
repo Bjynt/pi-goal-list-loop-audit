@@ -3,3 +3,11 @@
 {"type":"context_usage_sample","value":{"goalId":null,"provider":"openai-codex","model":"gpt-5.6-luna","providerUsage":{"inputTokens":1208,"outputTokens":275,"cacheReadTokens":150144,"cacheWriteTokens":0,"totalTokens":151627},"contextUsage":{"tokens":151627,"contextWindow":200000,"percent":75.8135}},"at":"2026-08-31T23:01:33.736Z"}
 {"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T05:51:55.869Z"}
 {"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T05:53:02.876Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:11:01.269Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:11:38.089Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:12:29.072Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:13:24.152Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:14:36.714Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:16:26.786Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:18:39.184Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260831215229-u39w7e","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2977,"generation":60},"at":"2026-09-01T06:19:52.475Z"}
