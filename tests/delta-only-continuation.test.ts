@@ -6,8 +6,11 @@ import {
   buildMarkerContent,
   continuationPrompt,
   needsFullContinuation,
+  pendingContinuationDispatchRef,
+  resetContinuationDispatchState,
   sendContinuation,
   setLastContinuationSentAtRef,
+  setPendingContinuationDispatchRef,
 } from "../extensions/goal-continuation.js";
 import type { Goal } from "../extensions/goal-loop-core.js";
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
@@ -73,14 +76,29 @@ test("steady-state send is marker-only; dirty sends full", async () => {
   seedState(cwd, { goal: cleanGoal(), list: [] });
   const pi = new MockPi();
   activate(pi.api);
-  await boot(pi, cwd);
+  const ctx = await boot(pi, cwd);
   const live = readState(cwd).goal;
   assert.ok(live, "goal seeded");
+  // Settle any auto-continuation armed by boot so our sends are not fenced by pendingContinuationDispatch.
+  await pi.fire("agent_start", {}, ctx);
+  await tick(40);
+  resetContinuationDispatchState(cwd);
+  setPendingContinuationDispatchRef(null);
+  await tick(20);
   pi.sent.length = 0;
+  console.log("DEBUG pending=", pendingContinuationDispatchRef()?.phase ?? null);
   // Force steady-state (not first-send) so the assertion is order-independent.
   setLastContinuationSentAtRef(Date.now());
   await sendContinuation(live!.id);
-  await tick(40);
+  await tick(80);
+  try {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const ledgerPath = path.join(cwd, ".pi-glla", "ledger.jsonl");
+    const lines = fs.existsSync(ledgerPath) ? fs.readFileSync(ledgerPath, "utf-8").trim().split("\n").slice(-15).join("\n") : "(no ledger)";
+    console.log("DEBUG ledger tail:\n" + lines);
+    console.log("DEBUG sent=", pi.sent.length, "idle=", (ctx as any).isIdle(), "pending=", (ctx as any).hasPendingMessages());
+  } catch (e) { console.log("DEBUG ledger err", e); }
   assert.ok(pi.sent.length >= 1, "steady-state send lands");
   const markerSend = pi.sent[pi.sent.length - 1]?.message.content ?? "";
   assert.equal(markerSend, buildMarkerContent(live!.id));
