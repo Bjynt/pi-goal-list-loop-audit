@@ -1054,6 +1054,43 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
   continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), delay);
 }
 
+export function buildMarkerContent(goalId: string): string {
+  return `[GOAL CHECKPOINT goalId=${goalId}]`;
+}
+
+/** v0.38.5 (delta-only): steady-state live turns need only the wake-up marker —
+ * history already holds T0 objective/contract/tasks + complete_task deltas.
+ * Full is required only for dynamic deltas the model has not seen: repair,
+ * recovery, auditor TODOs/report, stale-approval mismatch, plus the rare
+ * designer / full-audit paths (preserved verbatim in v1). Stable guidance
+ * (vision, discipline) stays clean — it was in the first full send.
+ */
+export function needsFullContinuation(goal: Goal): boolean {
+  if (goal.repairTarget) return true;
+  if (goal.autoResumedAt) return true;
+  if (!auditorSurfaceSuppressed() && goal.pendingTasks && goal.pendingTasks.length > 0) return true;
+  const lastAudit = goal.auditHistory?.[goal.auditHistory.length - 1];
+  if (lastAudit && lastAudit.report && !auditorSurfaceSuppressed()) return true;
+  if (
+    !auditorSurfaceSuppressed() &&
+    goal.status === "active" &&
+    !goal.pendingCompletion &&
+    lastAudit?.approved &&
+    !lastAudit.impossible &&
+    lastAudit.regressionShieldPassed !== false &&
+    typeof lastAudit.revision === "number" &&
+    lastAudit.revision !== (goal.revision ?? 0)
+  ) return true;
+  const next = findNextPendingTask(goal.taskList?.tasks ?? []);
+  if (goal.agentRole === "designer" || next?.agentRole === "designer") return true;
+  try {
+    const settingsCwd = freshCtx?.()?.cwd ?? process.cwd();
+    const eff = resolveEffectiveAggressiveSettings(loadSettings(settingsCwd));
+    if (eff.aggressiveMode && isFullAuditObjective(goal.objective)) return true;
+  } catch { /* settings read failure must not force full */ }
+  return false;
+}
+
 export function sendContinuation(goalId: string): void {
   // v0.35.15: `/glla pause` — a continuation timer armed BEFORE the pause
   // must not fire into the frozen window. scheduleContinuation already
@@ -1118,15 +1155,38 @@ export function sendContinuation(goalId: string): void {
       resync: Boolean(resync),
     });
     if (!attempt) return;
+    // v0.38.5 (delta-only, ongoing conversation): clean live turns send the
+    // 45-char marker only — history already holds objective/contract/tasks.
+    // Resync (post-compact) sends resync+marker (~250 chars). Full 23k sends
+    // only on first-send per process or dynamic deltas (repair/recovery/
+    // audit). Marker still carries the dispatch marker so before_agent_start
+    // start-proof matching keeps working; fallback agent_start/turn_start
+    // needs no prompt at all.
+    const goalForSend = state.goal!;
+    const marker = buildMarkerContent(goalId);
+    const firstSend = lastContinuationSentAt === 0;
+    const needsFull = firstSend || needsFullContinuation(goalForSend);
+    let content: string;
+    let kind: string;
+    if (needsFull) {
+      content = resync + continuationPrompt(goalForSend);
+      kind = resync ? "full+resync" : "full";
+    } else if (resync) {
+      content = resync + marker;
+      kind = "resync";
+    } else {
+      content = marker;
+      kind = "marker";
+    }
     flags.extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
-      content: resync + continuationPrompt(state.goal!),
+      content,
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-    lastContinuationSentPayload = { content: resync + continuationPrompt(state.goal!), display: false }; // v0.34.88: verbatim retry payload
+    lastContinuationSentPayload = { content, display: false }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
-    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation });
+    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation, kind, payloadChars: content.length });
     // v0.35.37 (audit finding): the welcome-back recovery notice must fire
     // EXACTLY ONCE per auto-resume. The payload above was built with the
     // notice in it; once the dispatch is ACCEPTED the message has landed in
