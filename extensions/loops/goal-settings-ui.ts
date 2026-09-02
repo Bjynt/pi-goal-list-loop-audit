@@ -1187,40 +1187,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       );
       return;
     }
-    case "drafterThinkingLevel": {
-      const settings = loadSettings(ctx.cwd);
-      const pickedModel = settings.drafterModel
-        ? resolvePickedModel(ctx, { kind: "ref", ref: settings.drafterModel })
-        : (ctx.model as any);
-      const levels = auditorThinkingLevels(pickedModel);
-      if (levels.length <= 1) {
-        ctx.ui.notify(
-          `Drafter agent ${pickedModel ? `${pickedModel.provider}/${pickedModel.id}` : "(session)"} exposes no thinking levels — drafting runs with thinking off.`,
-          "info",
-        );
-        return;
-      }
-      const preferred = settings.drafterThinkingLevel ?? ctx.thinkingLevel ?? "high";
-      const thinking = await ctx.ui.select(
-        "Drafter thinking — TEMPORARY DRAFTING AGENT ONLY (your session thinking is restored afterward)",
-        drafterThinkingChoiceOptions(
-          levels,
-          levels.includes(preferred) ? preferred : levels.includes("high") ? "high" : levels[levels.length - 1],
-          settings.drafterThinkingLevel === undefined,
-        ),
-      );
-      if (thinking) {
-        if (thinking.startsWith("session —")) {
-          saveSettings("global", ctx.cwd, { drafterThinkingLevel: undefined });
-          ctx.ui.notify("Drafter thinking: inherited from the session.", "info");
-        } else {
-          const level = thinking.split(" ")[0] as ConfiguredThinkingLevel;
-          saveSettings("global", ctx.cwd, { drafterThinkingLevel: level });
-          ctx.ui.notify(`Drafter thinking: ${level}.`, "info");
-        }
-      }
-      return;
-    }
     case "drafterModelFallbacks": {
       const global = loadGlobalSettings();
       const current = normalizeMainModelFallbackRefs(global.drafterModelFallbacks);
@@ -1314,30 +1280,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
-      return;
-    }
-    case "auditorThinkingLevel": {
-      // v0.34.127: standalone path — the v0.31.4 comment claimed "/glla
-      // thinking=" is the direct path, but no such action ever existed; the
-      // ONLY way to change the level was re-picking the auditor model. The
-      // Auditor thinking row fixes that with the same ladder + dialog the
-      // model flow uses.
-      const curThinking = loadSettings(ctx.cwd).auditorThinkingLevel;
-      const inheritedThinking = ctx.thinkingLevel ?? "max";
-      const resolved = resolveAuditorModel(ctx);
-      const levels = auditorThinkingLevels(resolved.model);
-      if (levels.length <= 1) {
-        ctx.ui.notify(
-          `Auditor model ${resolved.model ? `${resolved.model.provider}/${resolved.model.id}` : "(session)"} exposes no thinking levels — the auditor runs with thinking off.`,
-          "info",
-        );
-        return;
-      }
-      const t = await ctx.ui.select(
-        "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
-        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? inheritedThinking) ? " (current)" : ""}`),
-      );
-      if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       return;
     }
     case "auditorModelFallbacks": {

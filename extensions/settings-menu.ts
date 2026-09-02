@@ -312,14 +312,6 @@ export function buildSettingsRows(
       description: "temporary agent/model used only during /goal, /list, and /loop drafting; after confirmation or interruption the session agent is restored",
     },
     {
-      id: "drafterThinkingLevel",
-      section: "drafter",
-      label: "Drafter thinking",
-      valueText: settings.drafterThinkingLevel ? settings.drafterThinkingLevel : `inherit ${sessionThinking}`,
-      sourceText: src("drafterThinkingLevel"),
-      description: "requested drafting-agent reasoning level — the same request follows the drafter fallback chain and Pi clamps it per model; unset inherits the session level",
-    },
-    {
       id: "drafterModelFallbacks",
       section: "drafter",
       label: `Drafter fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
@@ -357,14 +349,6 @@ export function buildSettingsRows(
       valueText: modelThinkingText(auditorRef, auditorThinking, subagent),
       sourceText: src("auditorModel"),
       description: "provider/model override for the isolated auditor agent — the fallback chain below runs after this primary; its thinking defaults to the parent session",
-    },
-    {
-      id: "auditorThinkingLevel",
-      section: "auditor",
-      label: "Auditor thinking",
-      valueText: settings.auditorThinkingLevel ?? sessionThinking,
-      sourceText: src("auditorThinkingLevel"),
-      description: "DETACHED auditor worker's reasoning level — unset inherits the parent session dial (including max); an explicit value overrides it",
     },
     {
       id: "auditorModelFallbacks",
