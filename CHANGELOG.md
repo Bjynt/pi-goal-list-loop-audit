@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.3 — truncate picker/settings titles to terminal width (PR #41) (2026-09-02)
+
+### Fixed
+  `Rendered line N exceeds terminal width` crash when opening `Main/Auditor fallback models` (and `ModelPicker` / `SettingsMenu`) — long help titles now truncated with `truncateToWidth(…, "…")` to the available width, matching existing picker-row truncation. Prevents `pi` TUI crash that made the `glla: [LIVE]` widget disappear between audit/loop iterations and after `page.reload()`/`/reload` (Next item `audit ended between loops, and the ui disappeared` / Screenshot_20260902_121313). Regression test `multi-model-picker: render truncates a long title to the terminal width` pins 140-col rendering.
+
 ## 0.38.2 — thinking selected with model, remove standalone rows (2026-09-02)
 
 ### Changed
