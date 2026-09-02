@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.4 — human-input zombie stand-down (PR #36 slice) + AVO close (2026-09-02)
+
+### Fixed
+  Zombie watchdog no longer aborts while waiting on human input: `pause_goal`, `propose_goal_draft`, `propose_loop_draft`, `propose_loop_refine`, `propose_task_list`, `list_add`, `list_activate`, and `ask_user_question` now stand down the `BUSY + zero stream` abort exactly like `subagent` waits (field: drafting confirm / decision popup / `ask_user_question` looked like a hung provider, the bounded abort parked the dialog and the retry re-opened the same dialog). Own ledger `zombie_run_stood_down_user_input` vs `zombie_run_stood_down_subagent_wait`; genuinely hung streams still abort after the grace window. Selective port of PR #36 `USER_INPUT_WAIT_TOOL_NAMES` + `isUserInputWaitCall` with `heartbeatTick` carve-out; `tests/zombie-user-input-standdown.test.ts` pins the set and the branch.
+
+### Changed
+  AVO consideration closed: `audit/AVO-DEEP-DIVE-2026-09-02.md` remains the full read (`Vary(Pt)=Agent(Pt,K,f)`, §3.3 3-sentence supervisor). PR #22 (stagnation nudge, true AVO pattern but P1s: raw HEAD, no fencing, cycling-cap bypass) and PR #36 (commissar not AVO) dispositioned as `no merge as-is`; only the zombie stand-down ships in this release. PRs to be closed.
+
 ## 0.38.3 — truncate picker/settings titles to terminal width (PR #41) (2026-09-02)
 
 ### Fixed

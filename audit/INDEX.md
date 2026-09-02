@@ -15,6 +15,7 @@ long-term preferences).
 
 **Most recent (2026-09-02):**
 - `AVO-DEEP-DIVE-2026-09-02.md` — full paper+blog read of NVIDIA AVO (2603.24517 + 2026-08-21 ARC-AGI-3): Vary(Pt)=Agent(Pt,K,f), 40 versions/500 dirs in 7d B200, supervisor = conditional trajectory review, MHA+3.5%/FA4+10.5% → GQA 30-min transfer, vs PR #22/#36 map
+- `v0.38.4` — `USER_INPUT_WAIT` zombie stand-down (PR #36 10-line slice): `pause_goal`/`propose_*`/`list_add`/`ask_user_question` stand down `BUSY+zero-stream` abort with own ledger `zombie_run_stood_down_user_input`; AVO+PRs closed
 
 **2026-09-01:**
 - `PR-AVO-DISPOSITION-2026-09-01.md` — read-only disposition of PRs #22/#36; neither merge as-is, selective stagnation/zombie ports only
