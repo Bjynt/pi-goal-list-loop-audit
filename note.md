@@ -16,6 +16,9 @@ we can compensave by asking more questions up front
 
 # Next
 
+## audit ended between loops, and the ui disappeared, this is after reload
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260902_121313.png 
 
 # Later
 
