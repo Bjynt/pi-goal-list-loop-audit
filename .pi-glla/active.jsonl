@@ -163,3 +163,10 @@
 {"type":"session_rebound","value":{"reason":"resume"},"at":"2026-09-02T11:14:04.467Z"}
 {"type":"id_invalidation","value":{"oldId":"01a061d3-6846-702d-8a0e-7776759d1a48","newId":"01a054a9-e07f-705b-87a1-9421f9b906dc","reason":"session_shutdown","shutdownReason":"resume","at":"2026-09-02T11:14:04.469Z"},"at":"2026-09-02T11:14:04.469Z"}
 {"type":"context_usage_sample","value":{"goalId":null,"provider":"opencode-go","model":"muse-spark-1.2-contributor","providerUsage":{"inputTokens":210,"outputTokens":628,"cacheReadTokens":179185,"cacheWriteTokens":0,"totalTokens":180023},"contextUsage":{"tokens":180023,"contextWindow":200000,"percent":90.0115}},"at":"2026-09-02T11:30:47.278Z"}
+{"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-09-02T12:13:38.161Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-09-02T12:13:40.777Z"}
+{"type":"id_invalidation","value":{"oldId":"01a054a9-e07f-705b-87a1-9421f9b906dc","newId":"01a0620a-044c-77a6-8879-62a5a87a2df9","reason":"session_shutdown","shutdownReason":"quit","at":"2026-09-02T12:13:40.784Z"},"at":"2026-09-02T12:13:40.784Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-09-02T12:13:40.784Z"}
+{"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-09-02T12:13:43.388Z"}
+{"type":"session_rebound","value":{"reason":"resume"},"at":"2026-09-02T12:13:43.687Z"}
+{"type":"id_invalidation","value":{"oldId":"01a0620a-044c-77a6-8879-62a5a87a2df9","newId":"01a054a9-e07f-705b-87a1-9421f9b906dc","reason":"session_shutdown","shutdownReason":"resume","at":"2026-09-02T12:13:43.689Z"},"at":"2026-09-02T12:13:43.689Z"}
