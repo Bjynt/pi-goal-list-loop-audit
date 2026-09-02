@@ -274,3 +274,5 @@
 {"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"500 {\"type\":\"error\",\"error\":{\"type\":\"error\",\"message\":\"Internal server error\"}}","generation":402},"at":"2026-09-02T21:40:31.011Z"}
 {"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"500 {\"type\":\"error\",\"error\":{\"type\":\"error\",\"message\":\"Internal server error\"}}","generation":402},"at":"2026-09-02T21:40:35.021Z"}
 {"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"500 {\"type\":\"error\",\"error\":{\"type\":\"error\",\"message\":\"Internal server error\"}}","generation":402},"at":"2026-09-02T21:40:41.381Z"}
+{"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"500 {\"type\":\"error\",\"error\":{\"type\":\"error\",\"message\":\"Internal server error\"}}","generation":402},"at":"2026-09-02T21:40:57.195Z"}
+{"type":"context_hygiene_compaction_input","value":{"dropped":4,"generation":402},"at":"2026-09-02T21:40:58.927Z"}
