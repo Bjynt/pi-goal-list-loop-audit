@@ -402,11 +402,14 @@ test("drafter agent picker immediately offers model-specific thinking and persis
     assert.equal(saved.drafterThinkingLevel, "medium");
     assert.ok(ctx.ui.matching("Drafter agent").length >= 1);
 
+    // Thinking is chosen WITH the model — re-picking the model with "session — inherit"
+    // clears the explicit thinking level (no standalone row needed).
+    ctx.ui.customImpl = async () => ({ kind: "model", ref: "openai/drafter" });
     ctx.ui.selectImpl = async (title: string) => title.startsWith("Drafter thinking")
       ? "session — inherit current session level (default) (current)"
       : undefined;
-    await handleSettingChoice("drafterThinkingLevel", ctx as ExtensionContext);
-    assert.equal("drafterThinkingLevel" in readGlobal(), false, "the drafter row can restore session-level inheritance");
+    await handleSettingChoice("drafterModel", ctx as ExtensionContext);
+    assert.equal("drafterThinkingLevel" in readGlobal(), false, "the model pick can restore session-level inheritance");
   } finally {
     restoreGlobal();
   }

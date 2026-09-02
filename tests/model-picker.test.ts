@@ -206,24 +206,26 @@ test("v0.36.0: auditor thinking inherits the parent dial unless explicitly overr
   assert.match(SRC, /thinkingLevel: \(settings\.auditorThinkingLevel \?\? liveCtx\.thinkingLevel \?\? "max"\) as any,/);
   assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is explicit context, not a hidden helper");
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
-  // v0.31.4: thinking is chained into the Auditor model drill-in ("we are
-  // setting the thinking when we select the model"); v0.34.127 adds the
-  // standalone Auditor thinking row because the claimed "/glla thinking="
-  // direct path never existed — the level was otherwise only reachable by
-  // re-picking the model. The row reuses the SAME ladder/dialog.
-  assert.ok(MENU.includes('id: "auditorThinkingLevel"'), "standalone thinking row present (v0.34.127)");
+  // v0.38.2: thinking is selected WITH the model pick (drafter/auditor model rows
+  // already chain a thinking select after the model picker). The standalone
+  // Auditor thinking row added in v0.34.127 is removed — it duplicated the
+  // ladder and violated "Main has no thinking row, neither should they".
+  assert.ok(!MENU.includes('id: "auditorThinkingLevel"'), "standalone thinking row removed — thinking is chosen with the model");
+  assert.ok(!MENU.includes('id: "drafterThinkingLevel"'), "standalone thinking row removed — thinking is chosen with the model");
   assert.match(MENU, /valueText: modelThinkingText\(auditorRef, auditorThinking, subagent\)/);
   const UI = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
-  assert.ok(UI.includes('case "auditorThinkingLevel"'), "standalone thinking row has a dispatcher case");
+  assert.ok(!UI.includes('case "auditorThinkingLevel"'), "standalone thinking dispatcher removed");
+  assert.ok(!UI.includes('case "drafterThinkingLevel"'), "standalone thinking dispatcher removed");
   assert.ok(!UI.includes('/glla thinking='), "the never-existing /glla thinking= claim is gone");
   // v0.36.0: the auditor fallback row is the same ordered multi-select
   // shape as mainModelFallbacks.
   assert.match(MENU, /valueText: settings\.auditorModelFallbacks/);
   const caseIdx2 = SRC.indexOf('case "auditorModel": {');
   assert.match(SRC.slice(caseIdx2, caseIdx2 + 2600), /"Auditor thinking — DETACHED auditor worker ONLY/);
-  // v0.34.127: the standalone row is dispatchable (no dead id) — the old
-  // v0.31.4 "no row" contract is superseded by the row + its case.
-  assert.ok(SRC.includes('case "auditorThinkingLevel"'), "standalone thinking row case present");
+  // v0.38.2: standalone row removed — the model cases already carry the
+  // thinking ladder inline, so no separate dispatcher is needed.
+  assert.ok(!SRC.includes('case "auditorThinkingLevel"'), "standalone thinking dispatcher removed");
+  assert.ok(!SRC.includes('case "drafterThinkingLevel"'), "standalone thinking dispatcher removed");
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /inherit the live session thinking level/);
 });

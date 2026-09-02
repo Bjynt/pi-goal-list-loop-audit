@@ -176,7 +176,7 @@ test("settings expose drafting-only primary and fallback controls", () => {
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
   assert.equal(byId.get("drafterModel")?.valueText, "test/primary · session thinking");
-  assert.equal(byId.get("drafterThinkingLevel")?.valueText, "inherit session thinking");
+  assert.equal(byId.get("drafterThinkingLevel"), undefined, "thinking is selected with the model, not as a standalone row");
   assert.equal(byId.get("drafterModelFallbacks")?.valueText, "1/10 · 1. test/backup · session thinking");
   assert.match(byId.get("drafterModelFallbacks")!.description, /ordered and deselectable/);
 });

@@ -98,8 +98,8 @@ test("main-agent tab starts with the runtime agent; drafter and subagent chains 
   assert.equal(byId.get("mainModelFallbacks")?.section, "main-agent");
   assert.equal(rows.filter((r) => r.section === "main-agent")[0]!.id, "mainAgent");
   assert.equal(byId.get("drafterModel")?.section, "drafter");
-  assert.equal(byId.get("drafterThinkingLevel")?.section, "drafter");
   assert.equal(byId.get("drafterModelFallbacks")?.section, "drafter");
+  assert.equal(byId.get("drafterThinkingLevel"), undefined, "thinking is selected with the model, not as a standalone row");
   assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "subagents"));
   assert.equal(byId.get("forbiddenModels")?.section, "keep-going", "policy gate stays with keep-going controls");
 });
@@ -162,7 +162,7 @@ test("v0.36.0: unset auditor thinking mirrors the parent session and the fallbac
   );
   const byId = new Map(rows.map((row) => [row.id, row]));
   assert.equal(byId.get("auditorModel")?.valueText, "provider/auditor · max");
-  assert.equal(byId.get("auditorThinkingLevel")?.valueText, "max");
+  assert.equal(byId.get("auditorThinkingLevel"), undefined, "thinking is selected with the model, not as a standalone row");
   assert.equal(byId.get("auditorModelFallbacks")?.valueText, "1/10 · 1. provider/backup · max");
   assert.match(byId.get("auditorModelFallbacks")?.description ?? "", /ordered and deselectable/);
 });
@@ -206,9 +206,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "hourlyRetryProbe",
     "mainModelFailback",
     "mainModelPrimaryProbeMinutes",
-    "drafterThinkingLevel",
     "auditorModel",
-    "auditorThinkingLevel",
     "auditorModelFallbacks",
     "auditorSilent",
     "auditCap",
