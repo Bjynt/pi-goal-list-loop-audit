@@ -96,4 +96,25 @@ Only after (1)–(3) green, spec the paired change behind no flag (explicit goal
 
 If you want the "pi-goal-x is shorter" win, you must first **teach GLLA to speak via systemPrompt at `before_agent_start` like pi-goal-x does**, then you may silence the followUp. Doing the second without the first breaks correctness and does not improve cache — it just deletes context. Keep A2 as **Later, conditional, measured**, ranked after A8/A1.
 
+## 9. Addendum 2026-09-03 late note — "ongoing conversation, why summary at all?"
+
+User: *"there is also no need to summary or what they are gaining its an ongoing conversation, i dont get it"* — exactly right for **steady-state ongoing** turns.
+
+History already contains the objective, contract, and task list from T0 + every `complete_task` tool_result. Resending `prompts/goal-loop-continuation.md` (21–40k) as a new followUp user message each turn (GLLA today `goal-continuation.ts:1123`) buys almost nothing in steady state — it just appends a 5k duplicate to history. Over n=10 idle wakeups, history grows +50k and each new followUp is 5k `cacheWrite` (previous prompt's marker is not prefix, so `commonPrefixLength` → low hit). That's the `context-growth-measurement.test.ts` fixture shape (23015-char resync) — O(n²) billed context.
+
+What a summary/marker actually buys, per harness:
+- **Claude `--resume` / pi-goal-x `before_agent_start`:** resume from **dead** session where history is gone (or compacted to `branch_summary`). There the summary *is* the context — without it the new session has no objective. Not relevant to a live ongoing turn.
+- **pi-goal-x `goalPrompt` at `before_agent_start`:** not a summary of ongoing chat; it's the *current* bounded state (objective ≤3k + pending ≤10 + contract) re-injected into the cached system prompt each turn. That's the authority copy the model should obey; the followUp marker (`[GOAL CHECKPOINT]`) carries no state.
+- **GLLA `buildPostCompactResync()` (`goal-continuation.ts:1239`):** only needed **after** `session_compact` where `cache-stats.js` resets `prev=undefined` and history is summarized away. Then a 200-char resync (`Goal ${id} — status ${status} — Next: ${task}`) *does* gain correctness — it re-anchors after loss. Today GLLA prepends that resync to the same 21k full prompt, so the gain is drowned in duplicate.
+
+**So for a live idle wakeup with no state change (no task completed, no audit, no compaction), the correct payload is just the wake-up:** `'[GOAL CHECKPOINT goalId=…]'` (45 chars, `marker` at `goal-continuation.ts:1087`) — zero new state, history already holds it, and `agent_end → agent_settled → queueContinuation(50ms)` already proved the session is idle. Resending full state there is pure cost: extra `cacheWrite`, history bloat, and `DYNAMIC_DIRECTIVES` instability that actually *lowers* prefix hit.
+
+**When to actually send state:**
+- `postCompactResyncPending` true → send `buildPostCompactResync()` only (not full prompt).
+- Task list mutated (`complete_task`/`update_task_status` changed `revision`) → send delta: `Next pending: ${id}` + maybe `AUDITOR DISAPPROVAL` report when present, not full `LONG_RUNNING_JUDGMENT_POLICY` + `ACTIVE_EXECUTION_QUESTION_GUIDANCE` (those are static and already in history's T0 prompt).
+- Auditor disapproval / recovery notice → send that directive alone (already handled as `DYNAMIC_DIRECTIVES` but today bundled with the 17k static `EXECUTION DISCIPLINE` block).
+- Otherwise: marker only.
+
+That is why the revised A2 is *paired + conditional + delta-only*: teach `before_agent_start` to own the cached current state (like pi-goal-x), then steady-state followUps shrink to marker. No summary needed for ongoing — summary is only for **resumed/compacted** sessions. Until that pairing is measured (`§6` gate), the cheapest correct thing today is simply keep the status quo rather than summarize each turn.
+
 — Addendum 2026-09-03, read-only, no code.
