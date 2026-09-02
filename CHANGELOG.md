@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.2 — thinking selected with model, remove standalone rows (2026-09-02)
+
+### Changed
+  `Drafter thinking` and `Auditor thinking` standalone rows removed from `/glla` — thinking is now selected **with** the model pick (the existing `Drafter agent` / `Auditor agent` flows already prompt for thinking immediately after the model, and that ladder is model-aware via `auditorThinkingLevels`). Main had no standalone thinking row; Drafter/Auditor now match it. Stored `drafterThinkingLevel` / `auditorThinkingLevel` keys remain read for fallback-chain rendering (`modelThinkingText`) and for the model-pick ladder, but there is no separate editor — re-pick the model to change thinking. Prevents stale thinking selection and the "Main has no selector, others do" inconsistency.
+
 ## 0.38.1 — drafter/auditor fallback parity with Main (2026-09-02)
 
 ### Fixed
