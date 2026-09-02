@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.38.1 — drafter/auditor fallback parity with Main (2026-09-02)
+
+### Fixed
+  Drafter model selection now emits the same `model_fallback_select` ledger as Main (`scope: drafter`) for every forbidden/unregistered skip, so `forbiddenModels` edits mid-interview are honored even when the user edits settings while the interview is open.
+
+  Drafter recovery after a provider failure now walks the dedicated 0-10 chain via `ModelSelector` with the bounded ladder (`5s → base*2^(n-1) cap 5h`, base `mainModelRetryMinutes` default 15) and `forbiddenModels` re-check, instead of an immediate unbounded loop over the lease candidates. Same-model pin (drafter pinned to the session model) remains a same-model retry and is preserved.
+
+  Auditor `model_fallback_select` ledger (`scope: auditor`) now fires for both the settings-time `resolveAuditorModel` walk and the detached audit fallback (`runAuditorFallbackWithPolicy` via `runDetachedCompletionWithFallback`), closing the gap where detached retries skipped forbidden/unregistered refs silently. `forbiddenRefs` and `retryBaseMinutes` were already wired; `onSelection` is now forwarded.
+
+### Changed
+  `Drafter fallback agents` menu row → `Drafter fallback models (up to 10)` with count prefix `N/10 · 1. ref → 2. ref` and the shared `ordered and deselectable: current drafter → fallback 1 → fallback 2…` description, matching Main and Auditor rows. Prompt title and notification strings updated to `models` vocabulary. Watchdog budgets (`auditorToolTimeoutMs 5m`, `auditorStallMs 10m` x2 cap 4x) remain independent of the ladder and unchanged.
+
 ## 0.38.0 — event-driven supervision and drafting discipline (2026-09-02)
 
 ### Fixed
