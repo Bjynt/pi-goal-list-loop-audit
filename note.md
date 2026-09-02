@@ -1,18 +1,10 @@
 
 # Now
 
-##
-
-looks stuck 
-/home/dracon/Pictures/Screenshots/Screenshot_20260902_030205.png 
-
-## we need to keep checking instead of waiting for tasks that take a while
-
-so we might guess x task 10 minutes but mgiht takes only 10 seconds, but would we pick up work after 10 seconds?
-
-## we need ot cut down on questions mid execution ideally none jsut finish the objetive unless critical 
-
-we can compensave by asking more questions up front 
+*Closed 2026-09-02 — shipped in v0.38.0–v0.38.2 (1815 pass):*
+- `looks stuck` (Screenshot_20260902_030205) — addressed: `👁 MONITORING` vs `⏳ QUEUED` visuals + display-only monitor badge in v0.37.2/v0.38.0
+- `keep checking instead of waiting` — addressed: event-driven `ContinuousSupervisor` 250ms→15s adaptive fallback polls every plane in v0.38.0 (deprecated `GLLA_MONITOR_INTERVAL_MS`)
+- `cut down on questions mid-execution` — addressed: drafting batches 2–4 upfront in one `ask_user_question` via `buildSeedGrillMessage` + `LONG_RUNNING_JUDGMENT_POLICY` zero mid-run in v0.38.0, thinking now with model pick in v0.38.2
 
 # Next
 
