@@ -322,12 +322,12 @@ export function buildSettingsRows(
     {
       id: "drafterModelFallbacks",
       section: "drafter",
-      label: "Drafter fallback agents",
+      label: `Drafter fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
       valueText: settings.drafterModelFallbacks?.length
-        ? modelChainText(settings.drafterModelFallbacks, drafterThinking, subagent)
-        : "none (session last resort)",
+        ? `${settings.drafterModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${settings.drafterModelFallbacks.map((ref, index) => `${index + 1}. ${modelThinkingText(ref, drafterThinking, subagent)}`).join(" → ")}`
+        : `0/${MAX_MAIN_MODEL_FALLBACKS} · ${sessionRef} · ${drafterThinking} (last resort)`,
       sourceText: src("drafterModelFallbacks"),
-      description: "ordered drafting-only fallback agents; each shows its effective/requested thinking level when the model registry exposes capabilities",
+      description: "ordered and deselectable: current drafter → fallback 1 → fallback 2…; every recoverable provider failure switches one eligible fallback at a time",
     },
   );
 

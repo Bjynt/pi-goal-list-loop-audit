@@ -7,7 +7,7 @@
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { isForbiddenModel } from "./goal-loop-core.js";
+import { appendLedger, isForbiddenModel } from "./goal-loop-core.js";
 import { MAX_MAIN_MODEL_FALLBACKS, modelRef, normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { ModelSelector } from "./model-selector.js";
 import type { Settings } from "./goal-settings.js";
@@ -63,15 +63,22 @@ export function resolveDrafterModel(ctx: ExtensionContext, settings: Pick<Settin
     getChain: () => configuredRefs,
     resolve: (ref) => resolveDrafterModelRef(ctx, ref),
     isForbidden: forbidden,
+    record: (event) => {
+      appendLedger(ctx.cwd, "model_fallback_select", {
+        scope: event.scope.kind,
+        fromRef: event.fromRef,
+        toRef: event.toRef,
+        reason: event.reason,
+      });
+    },
   });
   const attempted: string[] = [];
   const candidates: DrafterModelCandidate[] = [];
 
-  // ModelSelector deliberately skips the current model so the main recovery
-  // walker never selects the model that just failed. Drafting is different:
-  // its configured primary may intentionally be the current session model,
-  // and that primary still needs a lease so its later fallbacks remain
-  // available if the first drafting turn fails.
+  // KEEP: drafting intentionally leases the current model when pinned (unlike
+  // Main which skips `current` via nextUntriedModelRef because it just failed).
+  // Align ledger to Main but keep this lease gate — removing it would force a
+  // needless setModel when the user pinned the drafter to the session model.
   const configuredPrimary = configuredRefs[0];
   if (
     configuredPrimary &&
