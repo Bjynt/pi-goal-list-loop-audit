@@ -554,9 +554,13 @@ export function resolveAuditorModel(
     resolve: (candidate) => tryRef(candidate).model,
     isForbidden: forbidden,
     record: (event) => {
+      appendLedger(ctx.cwd, "model_fallback_select", {
+        scope: "auditor",
+        fromRef: event.fromRef,
+        toRef: event.toRef,
+        reason: event.reason,
+      });
       if (event.reason === "forbidden" && event.toRef) {
-        // Forbidden is an explicit user gate, not an unavailable-model
-        // warning. Keep the forensic ledger entry but do not nudge the UI.
         appendLedger(ctx.cwd, "auditor_model_fallback", { configured: event.toRef, reason: "forbidden" });
         return;
       }
@@ -1222,13 +1226,13 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const current = normalizeMainModelFallbackRefs(global.drafterModelFallbacks);
       const refs = await promptModelRefs(
         ctx,
-        `Drafter fallback agents — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS}; the session agent is the last resort; forbidden models are hidden`,
+        `Drafter fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS}) — ordered; the session model is the last resort; forbidden models are hidden`,
         current,
         { excludeRefs: normalizeModelRefs(loadSettings(ctx.cwd).forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
       );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { drafterModelFallbacks: refs.length ? refs : undefined });
-      ctx.ui.notify(refs.length ? `Drafter fallback agents saved: ${refs.join(" → ")}.` : "Drafter fallback agents cleared — the session model remains the last resort.", "info");
+      ctx.ui.notify(refs.length ? `Drafter fallback models saved: ${refs.join(" → ")}.` : "Drafter fallback models cleared — the session model remains the last resort.", "info");
       return;
     }
     case "forbiddenModels": {

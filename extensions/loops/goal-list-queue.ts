@@ -371,6 +371,7 @@ import {
   resolveDrafterModel,
   type DrafterModelCandidate,
 } from "../drafter-model.js";
+import { ModelSelector } from "../model-selector.js";
 import {
   assessSuspiciousObjective,
   deriveObjectiveFromContract,
@@ -553,25 +554,57 @@ async function restoreDrafterModel(): Promise<void> {
 }
 
 /**
- * Generic drafting recovery: walk the dedicated chain after any provider
- * error and replay a continuation of the existing interview. No error text
- * is classified and the main-model recovery chain is never consulted.
+ * Generic drafting recovery: walk the dedicated chain via ModelSelector so
+ * forbidden/unregistered refs are skipped with the same ledger as Main,
+ * and provider retries use the bounded ladder (5s → base*2^(n-1) cap 5h).
+ * The session model remains the last resort; same-model lease is preserved.
  */
-async function handleDrafterModelFailure(ctx: ExtensionContext): Promise<boolean> {
+async function handleDrafterModelFailure(ctx: ExtensionContext, error?: string): Promise<boolean> {
   const lease = draftingModelLease;
   if (!lease || draftingTarget === null || lease.generation !== sessionGeneration || !extensionApi) return false;
-  for (const candidate of lease.candidates) {
-    if (lease.attempted.some((ref) => ref.toLowerCase() === candidate.ref.toLowerCase())) continue;
-    lease.attempted.push(candidate.ref);
+  const settings = loadSettings(ctx.cwd);
+  const failure = classifyMainModelFailure(error);
+  if (failure.kind === "non-recoverable") return false;
+  const configuredRefs = lease.candidates.filter((candidate) => candidate.via === "configured").map((candidate) => candidate.ref);
+  const selector = new ModelSelector({
+    getChain: () => configuredRefs,
+    resolve: (ref) => lease.candidates.find((candidate) => candidate.ref.toLowerCase() === ref.toLowerCase())?.model,
+    isForbidden: (ref) => isForbiddenModel(ref, settings.forbiddenModels),
+    record: (event) =>
+      appendLedger(ctx.cwd, "model_fallback_select", {
+        scope: "drafter",
+        fromRef: event.fromRef,
+        toRef: event.toRef,
+        reason: event.reason,
+      }),
+  });
+  let attempt = lease.attempted.length;
+  for (;;) {
+    const pick = selector.selectNextValid({ kind: "drafter" }, lease.activeRef, lease.attempted);
+    for (const visited of selector.lastVisitedRefs) {
+      if (!lease.attempted.some((ref) => ref.toLowerCase() === visited.toLowerCase())) lease.attempted.push(visited);
+    }
+    if (!("model" in pick)) break;
+    const delayMs = mainModelFailureDelayMs(failure, ++attempt, (settings as any).mainModelRetryMinutes ?? 15);
+    if (delayMs > 5_000) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
     let switched = false;
-    try { switched = await extensionApi.setModel(candidate.model); } catch { switched = false; }
-    const alreadyActive = candidate.ref.toLowerCase() === lease.activeRef.toLowerCase();
+    try {
+      switched = await extensionApi.setModel(pick.model);
+    } catch {
+      switched = false;
+    }
+    const alreadyActive = pick.ref.toLowerCase() === lease.activeRef.toLowerCase();
     if (!switched && !alreadyActive) continue;
     const previous = lease.activeRef;
-    lease.activeRef = candidate.ref;
+    lease.activeRef = pick.ref;
     lease.activeThinkingLevel = applyDrafterThinkingLevel(ctx, lease.requestedThinkingLevel);
-    appendLedger(ctx.cwd, alreadyActive ? "drafter_model_retry" : "drafter_model_fallback", { from: previous, to: candidate.ref, attempted: lease.attempted });
-    ctx.ui.notify(`Drafting provider failed; retrying the existing interview on ${candidate.ref}.`, "warning");
+    appendLedger(ctx.cwd, alreadyActive ? "drafter_model_retry" : "drafter_model_fallback", {
+      from: previous,
+      to: pick.ref,
+      attempted: lease.attempted.slice(),
+      delayMs,
+    });
+    ctx.ui.notify(`Drafting provider failed; retrying the existing interview on ${pick.ref} after ${Math.round(delayMs / 1000)}s.`, "warning");
     const safeSteer = (globalThis as any).safeSteerUser as ((context: ExtensionContext, text: string) => boolean) | undefined;
     if (!safeSteer || !safeSteer(ctx, DRAFTER_RECOVERY_PROMPT)) return false;
     draftingSeedInFlight = true;
