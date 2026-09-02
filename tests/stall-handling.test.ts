@@ -468,7 +468,8 @@ test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one"
 test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hellhunter list-transition wedge)", () => {
   const g = readGoalRuntimeSource();
   assert.match(CONT, /const CONTINUATION_START_TIMEOUT_MS = Number\(process\.env\.GLLA_CONTINUATION_START_TIMEOUT_MS \?\? 30_000\);/, "bounded start-proof timeout (v0.34.88: 30s first window, was 150s; decomposition step 5: moved)");
-  assert.match(CONT, /const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;/, "single auto-retry backoff after the first window (decomposition step 5: moved)");
+  assert.match(CONT, /const NO_TURN_START_RETRY_BACKOFF_MS = Number\(/, "single auto-retry backoff after the first window, env-configurable (decomposition step 5: moved)");
+  assert.match(CONT, /GLLA_CONTINUATION_RETRY_BACKOFF_MS/, "retry backoff env var (issue #40 secondary)");
   assert.match(CONT, /if \(!record\.retryCount && retryContinuationDispatch\(current, record\)\) return;/, "exactly ONE automatic retry before unacknowledged (decomposition step 5: moved)");
   assert.match(g, /const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;/, "legacy re-alert throttle remains documented");
   // Disarm signal: real activity (agent_end/tool_call via noteActivity(true)) AFTER the last send.

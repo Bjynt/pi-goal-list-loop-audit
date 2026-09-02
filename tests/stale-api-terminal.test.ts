@@ -123,7 +123,13 @@ test("v0.35.72: pause and low-level activity cannot settle unrelated automatic d
   assert.match(stall, /if \(supervisorPaused\(state\)\) return;/);
   assert.match(length, /if \(supervisorPaused\(state\)\) return;/);
   assert.match(ack, /pending\.phase !== "accepted"/);
-  assert.match(ack, /source !== "before_agent_start" \|\| !dispatchPromptMatches\(record, prompt\)/);
+  // v0.37.3 (issue #40): pi >=0.84 does not emit before_agent_start for
+  // followUp continuations, so the start proof accepts agent_start/
+  // turn_start as fallback — owner/generation/foreign still fence it —
+  // while before_agent_start must still carry the exact dispatch marker.
+  assert.match(ack, /source === "before_agent_start"/);
+  assert.match(ack, /!dispatchPromptMatches\(record, prompt\)/);
+  assert.match(ack, /source === "agent_start" \|\| source === "turn_start"/);
 });
 
 test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not restart-from-scratch)", () => {

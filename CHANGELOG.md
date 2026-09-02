@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.37.3 — pi 0.84 loop stall fix — agent_start fallback for continuation start proof (2026-09-02)
+
+### Fixed
+  `continuation_start_unacknowledged` stall on every `/loop` iteration under pi >=0.84 — `before_agent_start` is not emitted for `sendMessage({ deliverAs: "followUp" })` continuations, so the start proof never arrived (10/10 `loop_turn_sent` unacknowledged in issue #40). `dispatchStartAcknowledged` now accepts `agent_start`/`turn_start` as fallback while keeping `before_agent_start`+marker as primary; owner/generation/foreign fences still apply so only an unrelated manual turn in the same session could falsely settle — strictly better than 0% success. Ledger records `startProofSource` as `agent_start`/`turn_start` when fallback fires.
+
+  Hardcoded 60s retry backoff after the first 30s start-proof window is now env-configurable (`GLLA_CONTINUATION_RETRY_BACKOFF_MS`, legacy `GLLA_CONTINUATION_START_RETRY_BACKOFF_MS`) independent of `GLLA_CONTINUATION_START_TIMEOUT_MS`, so slow local models can extend both windows (observed 5m + 60s hard cap in issue #40 secondary).
+
+### Added
+  Regression pins for the fallback path and env var (`tests/loop-start-proof-fallback.test.ts`, `tests/stale-api-terminal.test.ts`, `tests/stall-handling.test.ts`).
+
 ## 0.37.2 — queued vs monitoring visuals and long-running daemon handling (2026-09-01)
 
 ### Added

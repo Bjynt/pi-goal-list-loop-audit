@@ -204,7 +204,11 @@ export function createGoalContinuation(flagsArg: ContinuationFlags, d: Continuat
 // self-heal; only the second window failure declares unacknowledged (the
 // explicit /list|/goal|/loop resume fallback for genuine provider stalls).
 const CONTINUATION_START_TIMEOUT_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 30_000);
-const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;
+const NO_TURN_START_RETRY_BACKOFF_MS = Number(
+  process.env.GLLA_CONTINUATION_RETRY_BACKOFF_MS ??
+  process.env.GLLA_CONTINUATION_START_RETRY_BACKOFF_MS ??
+  60_000,
+);
 let continuationStartTimeoutOverrideMs: number | null = null;
 let continuationRetryBackoffOverrideMs: number | null = null;
 function continuationStartTimeoutMs(): number {
@@ -568,21 +572,43 @@ export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string,
   }
   // A dispatch has one accepted window and one start proof. Once a start was
   // recorded, later low-level events must not re-settle it; before that,
-  // events without the exact before_agent_start marker are unrelated manual
-  // activity and cannot clear the watchdog.
+  // only a marker-carrying before_agent_start or the pi>=0.84 fallback
+  // (agent_start/turn_start without a prompt) may clear the watchdog.
   const pending = pendingContinuationDispatch;
   if (!pending || pending.phase !== "accepted") return false;
-  if (source !== "before_agent_start" && !pending.startProofSource) return false;
+  // v0.37.3 (issue #40): pi >=0.84 does not emit before_agent_start for
+  // followUp continuations (sendMessage { deliverAs: "followUp" }) — the
+  // only delivery path for continuations. Gate on the strongest proof when
+  // available, but accept agent_start/turn_start as fallback so the
+  // continuation is not stuck at 0% success. Owner/generation/foreign
+  // checks below still fence the fallback to the same session/generation.
+  if (
+    source !== "before_agent_start" &&
+    source !== "agent_start" &&
+    source !== "turn_start" &&
+    !pending.startProofSource
+  )
+    return false;
   const record = pendingContinuationDispatch;
   if (!record || flags.sessionHandoffPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
   if (record.generation !== flags.sessionGeneration || isForeignCtx(ctx)) return false;
   if (!dispatchMatchesOwner(record, flags.sessionGeneration, sessionManagerId(ctx))) return false;
   if ((record.kind === "goal" || record.kind === "stall") && (!state.goal || state.goal.id !== record.goalId || state.goal.status !== "active")) return false;
-  // before_agent_start is the required proof: it must carry this exact
-  // dispatch marker. Older low-level events without a prompt are liveness
-  // signals only; accepting them would let an unrelated manual turn settle
-  // this dispatch and suppress its recovery watchdog.
-  if (source !== "before_agent_start" || !dispatchPromptMatches(record, prompt)) return false;
+  // before_agent_start must carry this exact dispatch marker. The fallback
+  // (agent_start/turn_start) carries no prompt in pi >=0.84 for followUp
+  // turns — owner/generation/foreign above already fence it to the same
+  // session, so an unrelated manual turn in the same session is the only
+  // remaining false-positive, strictly better than never acknowledging.
+  if (source === "before_agent_start") {
+    if (!dispatchPromptMatches(record, prompt)) return false;
+  } else if (source === "agent_start" || source === "turn_start") {
+    // fallback — no prompt to match
+  } else {
+    // message_update / agent_end / other liveness signals cannot settle
+    // without an existing proof, and pending.phase !== "accepted" already
+    // blocks re-settlement after the first proof.
+    return false;
+  }
   const settledAt = Date.now();
   const started: ContinuationDispatch = {
     ...transitionDispatch(record, "started"),
