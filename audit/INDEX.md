@@ -13,7 +13,10 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-09-01):**
+**Most recent (2026-09-02):**
+- `AVO-DEEP-DIVE-2026-09-02.md` — full paper+blog read of NVIDIA AVO (2603.24517 + 2026-08-21 ARC-AGI-3): Vary(Pt)=Agent(Pt,K,f), 40 versions/500 dirs in 7d B200, supervisor = conditional trajectory review, MHA+3.5%/FA4+10.5% → GQA 30-min transfer, vs PR #22/#36 map
+
+**2026-09-01:**
 - `PR-AVO-DISPOSITION-2026-09-01.md` — read-only disposition of PRs #22/#36; neither merge as-is, selective stagnation/zombie ports only
 - `CROSS-HARNESS-REVIEW-2026-09-01.md` — cross-harness review (pi-goal-x / dgoal / until-done / codex-goal / pi-goal / better-goal + Codex/Claude/DeepSeek hosts; 9 GLLA-owned deltas, 6 now / 4 defer)
 - `SUBAGENT-PACKAGE-SELECTION-2026-09-01.md` — power-max audit of five subagent/orchestration packages; pin `pi-subagents@0.62.0` for GLLA
