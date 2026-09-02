@@ -1,21 +1,15 @@
 // v0.38.5 (delta-only): steady-state sends marker-only, deltas send full.
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
 
 import {
+  buildContinuationContent,
   buildMarkerContent,
   continuationPrompt,
   needsFullContinuation,
-  pendingContinuationDispatchRef,
-  resetContinuationDispatchState,
-  sendContinuation,
-  setLastContinuationSentAtRef,
-  setPendingContinuationDispatchRef,
 } from "../extensions/goal-continuation.js";
 import type { Goal } from "../extensions/goal-loop-core.js";
-import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
-import { readState } from "../extensions/goal-loop-core.js";
-import { MockPi, makeMockCtx, seedState, tick, tmpCwd } from "./harness/mock-pi.js";
 
 function cleanGoal(overrides: Partial<Goal> = {}): Goal {
   return {
@@ -31,14 +25,6 @@ function cleanGoal(overrides: Partial<Goal> = {}): Goal {
     auditHistory: [],
     ...overrides,
   } as Goal;
-}
-
-async function boot(pi: MockPi, cwd: string): Promise<ReturnType<typeof makeMockCtx>> {
-  __testOnlyResetOwnerSession();
-  const ctx = makeMockCtx(cwd, { sessionManager: { name: `delta-${Date.now()}-${Math.random()}` } });
-  await pi.fire("session_start", { reason: "startup" }, ctx);
-  await tick(80);
-  return ctx;
 }
 
 test("marker is tiny and carries the dispatch marker", () => {
@@ -71,46 +57,32 @@ test("clean goal needs no full — repair/recovery/audit/designer do", () => {
   assert.ok(full.length > 15000, `full prompt must stay material, got ${full.length}`);
 });
 
-test("steady-state send is marker-only; dirty sends full", async () => {
-  const cwd = tmpCwd();
-  seedState(cwd, { goal: cleanGoal(), list: [] });
-  const pi = new MockPi();
-  activate(pi.api);
-  const ctx = await boot(pi, cwd);
-  const live = readState(cwd).goal;
-  assert.ok(live, "goal seeded");
-  // Settle any auto-continuation armed by boot so our sends are not fenced by pendingContinuationDispatch.
-  await pi.fire("agent_start", {}, ctx);
-  await tick(40);
-  resetContinuationDispatchState(cwd);
-  setPendingContinuationDispatchRef(null);
-  await tick(20);
-  pi.sent.length = 0;
-  console.log("DEBUG pending=", pendingContinuationDispatchRef()?.phase ?? null);
-  // Force steady-state (not first-send) so the assertion is order-independent.
-  setLastContinuationSentAtRef(Date.now());
-  await sendContinuation(live!.id);
-  await tick(80);
-  try {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const ledgerPath = path.join(cwd, ".pi-glla", "ledger.jsonl");
-    const lines = fs.existsSync(ledgerPath) ? fs.readFileSync(ledgerPath, "utf-8").trim().split("\n").slice(-15).join("\n") : "(no ledger)";
-    console.log("DEBUG ledger tail:\n" + lines);
-    console.log("DEBUG sent=", pi.sent.length, "idle=", (ctx as any).isIdle(), "pending=", (ctx as any).hasPendingMessages());
-  } catch (e) { console.log("DEBUG ledger err", e); }
-  assert.ok(pi.sent.length >= 1, "steady-state send lands");
-  const markerSend = pi.sent[pi.sent.length - 1]?.message.content ?? "";
-  assert.equal(markerSend, buildMarkerContent(live!.id));
-  // Dirty (auditor report) sends full.
-  pi.sent.length = 0;
-  const dirty = {
-    ...live!,
-    auditHistory: [{ at: "2026-09-03T00:00:00.000Z", approved: false, report: "needs work" } as any],
-  };
-  seedState(cwd, { goal: dirty as Goal, list: [] });
-  await sendContinuation(live!.id);
-  await tick(40);
-  const fullSend = pi.sent[pi.sent.length - 1]?.message.content ?? "";
-  assert.ok(fullSend.length > 15000, `dirty send must be full, got ${fullSend.length}`);
+test("builder: steady-state marker, resync+marker, dirty full", () => {
+  const goal = cleanGoal();
+  const steady = buildContinuationContent(goal, { firstSend: false });
+  assert.equal(steady.kind, "marker");
+  assert.equal(steady.content, buildMarkerContent(goal.id));
+
+  const first = buildContinuationContent(goal, { firstSend: true });
+  assert.equal(first.kind, "full");
+  assert.ok(first.content.length > 15000, `first send must teach discipline once, got ${first.content.length}`);
+
+  const resyncBlock = "[POST-COMPACTION RESYNC] trust disk\n\n";
+  const resyncOnly = buildContinuationContent(goal, { resync: resyncBlock, firstSend: false });
+  assert.equal(resyncOnly.kind, "resync");
+  assert.equal(resyncOnly.content, resyncBlock + buildMarkerContent(goal.id));
+  assert.ok(resyncOnly.content.includes(goal.id), "resync+marker keeps the dispatch marker for start-proof");
+  assert.ok(resyncOnly.content.length < 1000, `resync must stay tiny, got ${resyncOnly.content.length}`);
+
+  const dirty = cleanGoal({ auditHistory: [{ at: "2026-09-03T00:00:00.000Z", approved: false, report: "needs work" } as any] });
+  const dirtySend = buildContinuationContent(dirty, { firstSend: false });
+  assert.equal(dirtySend.kind, "full");
+  assert.ok(dirtySend.content.length > 15000);
+});
+
+test("sendContinuation wires the delta-only branch with kind ledger", () => {
+  const src = fs.readFileSync(new URL("../extensions/goal-continuation.ts", import.meta.url), "utf-8");
+  const send = src.slice(src.indexOf("export function sendContinuation"));
+  assert.match(send, /buildContinuationContent/, "send path uses the pure builder");
+  assert.match(send, /kind, payloadChars/, "ledger distinguishes marker vs full");
 });

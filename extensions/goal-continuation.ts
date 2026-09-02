@@ -1091,6 +1091,15 @@ export function needsFullContinuation(goal: Goal): boolean {
   return false;
 }
 
+export function buildContinuationContent(goal: Goal, opts: { resync?: string; firstSend?: boolean } = {}): { content: string; kind: string } {
+  const resync = opts.resync ?? "";
+  const marker = buildMarkerContent(goal.id);
+  const needsFull = (opts.firstSend ?? false) || needsFullContinuation(goal);
+  if (needsFull) return { content: resync + continuationPrompt(goal), kind: resync ? "full+resync" : "full" };
+  if (resync) return { content: resync + marker, kind: "resync" };
+  return { content: marker, kind: "marker" };
+}
+
 export function sendContinuation(goalId: string): void {
   // v0.35.15: `/glla pause` — a continuation timer armed BEFORE the pause
   // must not fire into the frozen window. scheduleContinuation already
@@ -1163,21 +1172,7 @@ export function sendContinuation(goalId: string): void {
     // start-proof matching keeps working; fallback agent_start/turn_start
     // needs no prompt at all.
     const goalForSend = state.goal!;
-    const marker = buildMarkerContent(goalId);
-    const firstSend = lastContinuationSentAt === 0;
-    const needsFull = firstSend || needsFullContinuation(goalForSend);
-    let content: string;
-    let kind: string;
-    if (needsFull) {
-      content = resync + continuationPrompt(goalForSend);
-      kind = resync ? "full+resync" : "full";
-    } else if (resync) {
-      content = resync + marker;
-      kind = "resync";
-    } else {
-      content = marker;
-      kind = "marker";
-    }
+    const { content, kind } = buildContinuationContent(goalForSend, { resync, firstSend: lastContinuationSentAt === 0 });
     flags.extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
       content,
