@@ -231,6 +231,11 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress, type ModelProvenanceDisplay } from "../goal-loop-display.js";
+// v0.38.3 (goal 20260902085243-uzf6mx): expandable auditor transcript —
+// the user accepted the simpler inline path over a separate window/tab.
+// The toggle is process-global because the underlying audit state is
+// also process-global; only one detached audit is in flight at a time.
+import { loadAuditorTranscript, transcriptHint } from "../auditor-transcript.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -482,6 +487,10 @@ function isSupervising(): boolean {
 
 let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
+// v0.38.3: transcript toggle. Flipped by the `Ctrl+Shift+A` shortcut
+// registered in registerGoalRuntime (goal-activation.ts); the widget reads it
+// on every uiTicker repaint.
+let auditorTranscriptOpen = false;
 let deferredUIRefresh: NodeJS.Timeout | null = null;
 const UI_REFRESH_SETTLE_MS = 50;
 // v0.36.2: the live card is a display aid, not a heartbeat. A one-second
@@ -527,6 +536,9 @@ function publishDetachedAuditProgress(
     // which model actually handled the audit.
     model: latestAuditProgress?.model,
     via: latestAuditProgress?.via,
+    // v0.38.3: attach the attemptId so the widget can read the per-attempt
+    // scratch dir (.pi-glla/audit-jobs/<id>/) for the expandable transcript.
+    attemptId,
     currentTool: progress.currentTool,
     currentToolArgs: progress.currentToolArgs,
     currentToolStartedAt: progress.currentToolStartedAt,
@@ -559,6 +571,15 @@ function clearDetachedAuditProgress(generation: number, goalId: string, attemptI
   latestAuditProgress = null;
 }
 
+/** v0.38.3: flip the transcript toggle and force a repaint. Called from
+ * the `Ctrl+Shift+A` shortcut handler in registerGoalRuntime.
+ * Returns the new state
+ * so callers can chain (e.g. log it). */
+export function toggleAuditorTranscript(): boolean {
+  auditorTranscriptOpen = !auditorTranscriptOpen;
+  if (lastUIRenderContext && lastUIRenderContext.hasUI) refreshUI(lastUIRenderContext, true);
+  return auditorTranscriptOpen;
+}
 
 // v0.33.0: slim widget "last action" feed — a tiny ring of finished tool
 // calls {name, arg, ms, ok} captured from the tool_call/tool_result stream.
@@ -812,6 +833,21 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
       turnPending: pendingContinuationDispatchRef() !== null,
       auditorSilent: settings.auditorSilent !== false,
       auditorProgressSignals: settings.auditorProgressSignals !== false,
+      // v0.38.3: pass the transcript-toggle state to the widget so the
+      // auditing branch in buildWidgetLines can splice the expandable
+      // transcript block under the audit card. cwd is the PROJECT root
+      // (pi may be launched from any directory); the affordance hint is
+      // only computed while the block is closed — two tiny JSON reads per
+      // repaint, cheap next to the parent's 250ms progress poll.
+      auditorTranscriptOpen: auditorTranscriptOpen,
+      cwd: ctx.cwd,
+      ...(() => {
+        const cur = latestAuditProgress;
+        if (auditorTranscriptOpen || !cur?.attemptId) return {};
+        return {
+          auditorTranscriptHint: transcriptHint(loadAuditorTranscript(ctx.cwd, cur.attemptId)),
+        };
+      })(),
       mainModelFallbacks: fallbackRefs,
       modelProvenance,
       ...(durableDeferRecommendation ? { durableDeferRecommendation } : {}),

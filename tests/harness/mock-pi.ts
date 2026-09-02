@@ -49,6 +49,8 @@ export interface SentMessage {
 export class MockPi {
   tools = new Map<string, { name: string; execute: (...args: never[]) => Promise<unknown> }>();
   commands = new Map<string, (args: string, ctx: unknown) => Promise<void>>();
+  /** v0.38.3: registered keyboard shortcuts (Key.ctrlShift("a") → spec). */
+  shortcuts = new Map<string, { description?: string; handler: (ctx: unknown) => Promise<void> | void }>();
   handlers = new Map<string, (...args: never[]) => Promise<void>>();
   sent: SentMessage[] = [];
   userMessages: Array<{ message: string; options: unknown }> = [];
@@ -82,6 +84,9 @@ export class MockPi {
       },
       registerCommand(name: string, spec: { handler: (args: string, ctx: unknown) => Promise<void> }): void {
         self.commands.set(name, spec.handler);
+      },
+      registerShortcut(shortcut: string, spec: { description?: string; handler: (ctx: unknown) => Promise<void> | void }): void {
+        self.shortcuts.set(shortcut, spec);
       },
       on(event: string, handler: (...args: never[]) => Promise<void>): void {
         self.handlers.set(event, handler);

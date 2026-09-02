@@ -14,6 +14,10 @@ import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth 
 
 import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
 import { buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+// v0.38.3: loadAuditorTranscript + transcriptHint power the expandable
+// transcript block (goal 20260902085243-uzf6mx). The pure module does the
+// I/O; this display layer only renders.
+import { loadAuditorTranscript, renderAuditorTranscriptLines } from "./auditor-transcript.js";
 
 export { isMonitorGoal };
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
@@ -155,6 +159,19 @@ export interface WidgetExtras {
    * never persisted). The footer shows "silent Xm then resumed" while it is
    * fresh so a silence the user missed stays visible afterwards. */
   auditorQuietStretch?: { ms: number; endedAt: number };
+  /** v0.38.3: when true, the widget renders the expandable auditor
+   * transcript block below the existing audit card. Toggled at runtime
+   * by `Ctrl+Shift+A`; the renderer reads the same per-attempt
+   * `.pi-glla/audit-jobs/<id>/` scratch the worker writes. */
+  auditorTranscriptOpen?: boolean;
+  /** v0.38.3: the project root (ctx.cwd). The worker writes its job dir
+   * under the PROJECT root, not wherever pi was launched, so the
+   * transcript loader must use this, never process.cwd(). */
+  cwd?: string;
+  /** v0.38.3: one-line affordance shown while the transcript block is
+   * CLOSED ("transcript: N events — Ctrl+Shift+A"). Computed by
+   * refreshUI via transcriptHint(); undefined while the block is open. */
+  auditorTranscriptHint?: string;
 }
 
 /**
@@ -513,6 +530,10 @@ export interface AuditDisplayProgress {
    * (after adaptive escalation). Lets the card render "tool: X · 4m /
    * 20m budget" and exempts an in-budget long tool from the quiet phase. */
   toolTimeoutMs?: number;
+  /** v0.38.3: the worker's attempt id. Lets the widget locate the
+   * per-attempt scratch dir (.pi-glla/audit-jobs/<id>/) for the
+   * expandable transcript surfaced by the `Ctrl+Shift+A` shortcut. */
+  attemptId?: string;
 }
 
 type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaiting-verdict";
@@ -563,6 +584,49 @@ function auditorElapsedMs(audit: AuditDisplayProgress | null | undefined, now: n
     return Math.max(elapsed, now - startedAt);
   }
   return elapsed;
+}
+
+/** v0.38.3 (goal 20260902085243-uzf6mx): render the expandable transcript
+ * block that the user opens with `Ctrl+Shift+A`. The block lives under
+ * the existing audit card; the renderer re-reads the per-attempt
+ * `.pi-glla/audit-jobs/<id>/progress.json` and `result.json` on every
+ * uiTicker repaint via the existing display pipeline — no new timer, no
+ * new retention policy. The job dir is reaped
+ * `AUDIT_JOB_CLEANUP_MIN_AGE_MS` after the worker dies; a reaped attempt
+ * renders a single line instead of crashing the widget. */
+function buildAuditorTranscriptWidgetLines(
+  audit: AuditDisplayProgress,
+  cwd: string | undefined,
+  theme: DisplayTheme | undefined,
+  width: number | undefined,
+): string[] {
+  const out: string[] = [];
+  // The worker writes under the PROJECT root (threaded as extras.cwd from
+  // ctx.cwd); process.cwd() is only the test fallback.
+  const loaded = loadAuditorTranscript(cwd ?? process.cwd(), audit.attemptId);
+  if (loaded.kind !== "events") {
+    const msg =
+      loaded.kind === "reaped"
+        ? "transcript reaped — directory cleaned; Ctrl+Shift+A to dismiss"
+        : loaded.kind === "empty"
+          ? "transcript empty — worker has not written any events yet"
+          : "no detached audit in flight";
+    out.push(`├─ ${paint(theme, "dim", msg)}`);
+    return out;
+  }
+  // Reuse the pure tested renderer (extensions/auditor-transcript.ts)
+  // instead of duplicating the projection — only the tree prefix and
+  // theme differ here. Event lines already carry their `│ ` prefix.
+  const model = loaded.model ? truncate(loaded.model, 30) : undefined;
+  const lines = renderAuditorTranscriptLines(loaded.events, {
+    width,
+    phaseLabel: loaded.terminal ? undefined : (audit.phase ?? "running"),
+    model,
+    terminal: loaded.terminal,
+  });
+  out.push(`├─ ${paint(theme, "accent", lines[0] ?? "")}`);
+  for (const l of lines.slice(1)) out.push(paint(theme, "dim", l));
+  return out;
 }
 
 function auditorNextTransition(phase: AuditorDisplayPhase): string {
@@ -1516,6 +1580,20 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       } else {
         lines.push(`└─ ${paint(theme, "dim", `detached worker, audit tools${last || " · waiting for first worker event"}`)}`);
       }
+    }
+    // v0.38.3: expandable auditor transcript (goal 20260902085243-uzf6mx).
+    // The user accepted the inline path over a separate window/tab, so the
+    // block lives under the existing audit card. Toggled by `Ctrl+Shift+A`
+    // (registered in extensions/loops/goal.ts); the renderer re-reads the
+    // job dir on every widget repaint via the existing uiTicker, so no new
+    // timer or retention policy is introduced.
+    if (extras?.auditorTranscriptOpen && audit?.attemptId) {
+      const tLines = buildAuditorTranscriptWidgetLines(audit, extras?.cwd, theme, width);
+      for (const tl of tLines) lines.push(tl);
+    } else if (!extras?.auditorTranscriptOpen && extras?.auditorTranscriptHint && audit?.attemptId) {
+      // Toggle off — one dim affordance line so the surface stays
+      // discoverable without opening the block.
+      lines.push(`├─ ${paint(theme, "dim", extras.auditorTranscriptHint)}`);
     }
     return lines;
   }
