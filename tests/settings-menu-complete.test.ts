@@ -142,7 +142,7 @@ test("role rows show each selected model with requested/effective thinking", () 
   assert.equal(byId.get("drafterModel")?.valueText, "provider/primary · max");
   assert.equal(
     byId.get("drafterModelFallbacks")?.valueText,
-    "provider/no-max · high (requested max) → provider/also-max · max",
+    "2/10 · 1. provider/no-max · high (requested max) → 2. provider/also-max · max",
   );
   assert.equal(byId.get("auditorModelFallbacks")?.valueText, "1/10 · 1. provider/auditor-fallback · low (requested high)");
 });
