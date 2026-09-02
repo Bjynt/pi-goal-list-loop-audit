@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.38.0 — event-driven supervision and drafting discipline (2026-09-02)
+
+### Fixed
+  Keep-checking supervision: scheduling is now event-driven for every plane (including `isMonitorGoal` daemons) — lifecycle/durable/child-progress signals via `ContinuousSupervisor` plus 250ms→15s adaptive fallback poll, not a guessed task-duration wait. The 120s `GLLA_MONITOR_INTERVAL_MS` throttle that made a 10s task wait up to 120s is deprecated (`void MONITOR_CHECK_INTERVAL_MS`) and kept only for display parity (`👁 MONITORING` badge). A 10s task is now picked up after ~10s even when guessed at 10m.
+
+  Pinned context-growth fixtures (`tests/context-growth-measurement.test.ts`, `tests/context-checkpoint.test.ts`) refreshed for the larger continuation prompt (23015 chars, 23123 bytes) so `npm run test:all` stays green.
+
+### Changed
+  Drafting-batches zero mid-execution questions: `buildSeedGrillMessage` now batches 2-4 sharp, seed-specific questions up front in one `ask_user_question` picker with recommended defaults per question. `LONG_RUNNING_JUDGMENT_POLICY` and `ACTIVE_EXECUTION_QUESTION_GUIDANCE` plus `prompts/goal-loop-continuation.md` enforce drafting as the only place to gather scope/acceptance — active execution targets zero further clarification unless irreversible/destructive, missing permission, or comparable-cost, picking the safest contract-preserving default otherwise and deferring preferences to the completion summary.
+
+  `docs/DESIGN-long-running-supervision.md` now documents both Now requirements and the display-only monitor contract.
+
 ## 0.37.3 — pi 0.84 loop stall fix — agent_start fallback for continuation start proof (2026-09-02)
 
 ### Fixed
