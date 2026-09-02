@@ -1,5 +1,7 @@
 # Antigravity + Codex + Claude + pi-goal-x vs GLLA — can we learn anything (2026-09-03)
 
+> **Errata 2026-09-03 — cache-critical addendum:** `audit/CACHE-CRITICAL-ADDENDUM-2026-09-03.md` downgrades §6 A2 from BORROW #2 to **CONDITIONAL — paired systemPrompt injection + tiny marker, measured**. A naked ≤160-char followUp marker without `before_agent_start` systemPrompt authority (how pi-goal-x/Claude actually work) breaks correctness after compaction and does not improve prefix cache — see addendum for measured prompt sizes (GLLA 21–40k vs pi-goal-x ≤10k vs marker 45) and pi-ai `system.cache_control` + `lastBlock.cache_control` mechanics.
+
 **Goal:** `20260902185448-7watuo` — read-only comparison of Antigravity, Codex (pi-codex-goal + real Codex CLI), Claude Code, and pi-goal-x vs GLLA v0.38.4 to answer "can we learn anything", especially Antigravity's "doesn't wait, just keeps checking" vs GLLA's ContinuousSupervisor.
 
 **Sources fetched 2026-09-03:** 4 parallel scouts + local reads:
@@ -84,7 +86,7 @@ The table answers the seed directly:
 Ranked by leverage, all **Later** items (not implemented here):
 
 1. **A8 Heartbeat→diagnostic coalesce (high leverage, low risk)** — keep `silent_handle_death` as ledger forensic, but don't park the goal as terminal (`interruptedAt` terminal → warning). Let next `agent_end` re-arm continuation. `.research/comparison.md` proves 53× park is self-inflicted; 6/7 peers never gate. Surgical.
-2. **A2 Bounded marker (measure first)** — GLLA resends full prompt each follow-up; pi-goal-x/Claude summary-resume suggests ≤160-char marker once at `before_agent_start` + checkpoint id, keeping generation/owner/consent gates. Measure `context-growth-measurement.test.ts` growth on long lists before spec.
+2. **A2 Bounded marker — CONDITIONAL, paired only (see addendum)** — GLLA today carries context as a large followUp user message (21–40k rendered vs pi-goal-x ≤10k, marker 45). pi-goal-x/Claude tiny markers work only because `before_agent_start` re-injects the full bounded state into `systemPrompt` (cached via `system.cache_control`) — the marker is just a wake-up. A naked marker without that system injection breaks after compaction (objective lost) and is not a cache win. Borrow only as atomic pair (system injection + checkpoint marker) with `context-growth-measurement.test.ts` + `cache-stats.js` measurement gate — see `CACHE-CRITICAL-ADDENDUM-2026-09-03.md`.
 3. **A1 Payload escaping + terminal-line verdict** — copy `goal-auditor.ts:50 escapePromptPayload` and last-line verdict (GLLA currently interpolates `<goal>` blocks raw; `tests/audit-verdict.test.ts` last-block check). Verify whether Unreleased "payload blocks now escape" already covers it.
 4. **Codex compact continuation + idle gate (opt-in smooth mode)** — when `policy: goal` + no subagents + budget active, skip heartbeat wedging (Codex-like path) but keep `ContinuousSupervisor`.
 5. **A4 Typed mutation service** — `GoalService.apply` reconcile→lock→revision+1→write→ledger→commit ordering, no format transplant. Architectural candidate, explicit goal required.
@@ -108,7 +110,7 @@ Ranked by leverage, all **Later** items (not implemented here):
 This goal closes as **read-only evidence** (no staged code outside audit/). Follow-ups if desired (each a separate `/goal` or `/list` item with its own contract):
 
 - `/goal` A8 heartbeat coalesce — fix the 53× park without losing ledger signal.
-- `/goal` A2 marker measurement + spec — pin growth before shrinking prompt.
+- `/goal` A2 marker — **conditional paired** systemPrompt injection + checkpoint marker — measure growth + cache waste first per `CACHE-CRITICAL-ADDENDUM-2026-09-03.md` §6 gate before spec (never marker alone).
 - `/list` item per borrow above (A1, Codex smooth mode, A4, A5, A6) — ordered by §6 rank.
 
 Goal `20260902185448-7watuo` done when this doc + `audit/INDEX.md` Most recent updated + `npm run check` green (contract above).

@@ -14,7 +14,8 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-03):**
-- `ANTIGRAVITY-CODEX-CLAUDE-PI-GOAL-X-2026-09-03.md` — 4-harness keep-checking comparison vs GLLA ContinuousSupervisor 250ms→15s: Antigravity poll-only already ported, Codex smooth (compact prompt + 50ms idle gate, no heartbeat/auditor), Claude transcript + branch/plan lessons, pi-goal-x contender typed-revision/marker brevity — unified table + §6 borrow ranking (A8→A2→A1)
+- `CACHE-CRITICAL-ADDENDUM-2026-09-03.md` — cache-critical addendum: why a naked ≤160-char followUp marker would break GLLA (no `before_agent_start` systemPrompt authority) vs pi-goal-x `system.cache_control` + marker (45 chars vs GLLA 21–40k); A2 downgraded to CONDITIONAL paired, measured gate
+- `ANTIGRAVITY-CODEX-CLAUDE-PI-GOAL-X-2026-09-03.md` — 4-harness keep-checking comparison vs GLLA ContinuousSupervisor 250ms→15s: Antigravity poll-only already ported, Codex smooth (compact prompt + 50ms idle gate, no heartbeat/auditor), Claude transcript + branch/plan lessons, pi-goal-x contender typed-revision/marker brevity — unified table + §6 borrow ranking (A8→A2→A1) — **errata: A2 now conditional per addendum**
 
 **Most recent (2026-09-02):**
 - `AVO-DEEP-DIVE-2026-09-02.md` — full paper+blog read of NVIDIA AVO (2603.24517 + 2026-08-21 ARC-AGI-3): Vary(Pt)=Agent(Pt,K,f), 40 versions/500 dirs in 7d B200, supervisor = conditional trajectory review, MHA+3.5%/FA4+10.5% → GQA 30-min transfer, vs PR #22/#36 map
