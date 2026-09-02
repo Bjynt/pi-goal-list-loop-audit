@@ -1,22 +1,14 @@
 # Now
 
-## more visual queued cause i mistook it for stuck 
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260901_190127.png 
-
-## pi did not start turn, continuation accepted
-
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260901_193438.png 
-/home/dracon/Pictures/Screenshots/Screenshot_20260901_193529.png 
-
-also we may need to have a better way of handling long running tasks we just need to check on 
+## we need to keep checking instead of waiting for tasks that take a while
 
 # Next
 
-# Later
+## we need ot cut down on questions mid execution ideally none jsut finish the objetive unless critical 
 
-## weneed to keep checking instead of waiting for tasks that take a while
+we can compensave by asking more questions up front 
+
+# Later
 
 ## Review NVIDIA AVO
 
