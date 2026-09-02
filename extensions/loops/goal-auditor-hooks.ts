@@ -904,6 +904,7 @@ export async function runDetachedCompletionWithFallback(
     onFallback?: (from: AuditorModelCandidate, to: AuditorModelCandidate, error: string) => void;
     forbiddenRefs?: readonly string[];
     retryBaseMinutes?: number;
+    onSelection?: (event: { scope: { kind: string }; fromRef?: string; toRef?: string; reason: string }) => void;
   } = {},
 ): Promise<{ result: DetachedAuditResult; retriedOnce: boolean; fallbackUsed: boolean; via: string }> {
   return runAuditorFallbackWithPolicy(candidates, run, {
@@ -911,6 +912,7 @@ export async function runDetachedCompletionWithFallback(
     shouldRetry: opts.shouldRetry,
     sleep: opts.sleep,
     retryBaseMinutes: opts.retryBaseMinutes,
+    onSelection: opts.onSelection,
     resumeCandidateRef: opts.resumeCandidateRef,
     attemptedRefs: opts.attemptedRefs,
     retryCandidateRef: opts.retryCandidateRef,
@@ -1101,6 +1103,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
         forbiddenRefs: settings.forbiddenModels,
         retryBaseMinutes: settings.mainModelRetryMinutes,
+        onSelection: (event) => appendLedger(liveCtx.cwd, "model_fallback_select", { scope: "auditor", fromRef: event.fromRef, toRef: event.toRef, reason: event.reason }),
         resumeCandidateRef: persistedAuditorCandidateRef,
         attemptedRefs: persistedAuditorAttemptedRefs,
         retryCandidateRef: persistedAuditorRetryCandidateRef,

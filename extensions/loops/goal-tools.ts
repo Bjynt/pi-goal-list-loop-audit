@@ -889,6 +889,7 @@ function registerAgentTools(pi: any): void {
             shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
             forbiddenRefs: settings.forbiddenModels,
             retryBaseMinutes: settings.mainModelRetryMinutes,
+            onSelection: (event) => appendLedger(ctx.cwd, "model_fallback_select", { scope: "auditor", fromRef: event.fromRef, toRef: event.toRef, reason: event.reason }),
             resumeCandidateRef: persistedAuditorCandidateRef,
             attemptedRefs: persistedAuditorAttemptedRefs,
             retryCandidateRef: persistedAuditorRetryCandidateRef,
