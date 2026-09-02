@@ -31,9 +31,11 @@ test("long-running judgment policy is default-decide and bans band-aid-vs-proper
   assert.match(LONG_RUNNING_JUDGMENT_POLICY, /NEVER a question/);
   assert.match(LONG_RUNNING_JUDGMENT_POLICY, /decide it and proceed/);
   assert.match(LONG_RUNNING_JUDGMENT_POLICY, /DECIDE question/);
+  assert.match(LONG_RUNNING_JUDGMENT_POLICY, /Compensate for zero mid-run questions by asking MORE up front/);
   const seeded = buildSeedGrillMessage("[DRAFT]", "ship the plugin", "propose_goal_draft");
   assert.match(seeded, /LONG-RUNNING JUDGMENT POLICY/);
   assert.match(seeded, /irreversible\/destructive external action/);
+  assert.match(seeded, /2[–-]4 sharp, seed-specific questions UP FRONT/);
 });
 
 test("drafting gathers constraints upfront and active execution defers local choices", () => {
@@ -42,11 +44,15 @@ test("drafting gathers constraints upfront and active execution defers local cho
   assert.match(seeded, /scope boundaries/);
   assert.match(seeded, /constraints/);
   assert.match(seeded, /priorities/);
+  assert.match(seeded, /2[–-]4 sharp, seed-specific questions UP FRONT/);
+  assert.match(seeded, /eliminates mid-execution interruptions/);
 
-  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /Drafting is the default place/);
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /Drafting is the ONLY place/);
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /zero mid-execution questions/);
   assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /reversible implementation choices/);
-  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /irreversible or destructive external boundary/);
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /irreversible[\/ ]+(or )?destructive external boundary/i);
   assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /recommended default/);
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /batch 2-4 sharp questions up front/);
 
   const active = continuationPrompt({
     id: "question-discipline",
@@ -60,8 +66,8 @@ test("drafting gathers constraints upfront and active execution defers local cho
   });
   assert.equal((active.match(/LONG-RUNNING JUDGMENT POLICY/g) ?? []).length, 1, "stable policy is not duplicated per continuation");
   assert.equal((active.match(/ACTIVE-EXECUTION QUESTION DISCIPLINE/g) ?? []).length, 1, "active question guidance appears once");
-  assert.match(active, /do not ask about reversible implementation choices/);
-  assert.match(active, /Never ask a vague progress or "what next\?" question/);
+  assert.match(active, /do not ask about reversible implementation choices/i);
+  assert.match(active, /Never ask a vague progress or "what next\?" question/i);
 });
 
 test("explicit Designer declarations are consumed without changing ordinary design prose", () => {

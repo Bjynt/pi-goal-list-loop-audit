@@ -39,6 +39,27 @@ The shared checker covers all GLLA-owned work planes: ordinary goals, list
 items and their queue, metric/spec/audit loops, detached completion auditors,
 tracked subagents, provider recovery, and lifecycle/session transitions.
 
+Two Now requirements are enforced alongside the checker:
+
+- **Keep checking, not waiting.** The checker is the primary reason to inspect
+  work; a guessed task duration is never a wait. A 10 s task is picked up
+  within the 250 ms → 15 s adaptive fallback, not after a 10 m estimate.
+  `isMonitorGoal` (daemon / old-goal name or age > 1 h) remains shared for
+  display parity (the dim 👁 MONITORING badge), but scheduling is event-driven
+  for every plane — the legacy 120 s monitor throttle (`GLLA_MONITOR_INTERVAL_MS`)
+  is retired and kept only as deprecated env-var compatibility (the checker
+  already backs off to 15 s when idle).
+- **Zero mid-execution questions — compensate up front.** Drafting batches 2–4
+  sharp scope/acceptance questions with recommended defaults via a single
+  `ask_user_question` invocation, so active execution needs no further
+  clarification. During `active` execution the target is zero questions unless
+  proceeding would cross an irreversible/destructive external boundary, require
+  a missing permission/credential, or face two genuinely comparable options
+  with materially different outcomes. `LONG_RUNNING_JUDGMENT_POLICY` encodes the
+  durable-fix default; `ACTIVE_EXECUTION_QUESTION_GUIDANCE` encodes the
+  drafting-only discipline; `buildSeedGrillMessage` enforces the floor
+  (propose is blocked until the user has replied).
+
 ## Aggressive automation
 
 Aggressive mode is the default effective keep-going policy unless the user
