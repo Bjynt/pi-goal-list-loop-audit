@@ -2024,7 +2024,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // otherwise a drafting failure would silently consume main-model backups.
     if (lastA?.stopReason === "error" && draftingTarget !== null) {
       const retryDrafting = (globalThis as any).handleDrafterModelFailure as ((context: ExtensionContext, error?: string) => Promise<boolean>) | undefined;
-      if (retryDrafting) await retryDrafting(ctx, lastA.error as string | undefined);
+      if (retryDrafting) await retryDrafting(ctx, (rawLastA as any)?.errorMessage ?? (rawLastA as any)?.error ?? lastA.text);
       // Whether a configured fallback was available or not, drafting owns
       // this error. Leave the interview open for an explicit user retry and
       // never pass the same failure into main-goal recovery.
