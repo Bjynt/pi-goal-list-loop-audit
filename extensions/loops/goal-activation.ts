@@ -182,6 +182,7 @@ import {
 } from "../length-continue.js";
 import { isSubagentProviderFailure } from "../quota-retry.js";
 import { captureProviderTokenUsage } from "../context-growth.js";
+import { refreshOwnerHeartbeat } from "../state-root-owner.js";
 import {
   classifyInBandProviderFailure,
   classifyMainModelFailure,
@@ -1212,7 +1213,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
     if (!claimProcessOwner(ctx.cwd)) {
       processOwnerDeniedCwd = ctx.cwd;
-      ctx.ui.notify("glla: another live pi process owns this working-directory state root — this session is read-only to prevent competing goal/loop writes. Close the other host or select sessionDir, then start a fresh session.", "warning");
+      ctx.ui.notify("glla: another live pi process owns this working-directory state root — this session is read-only to prevent competing goal/loop writes. /glla owner inspects the holder; /glla takeover resolves it with confirmation. (Or close the other host or select sessionDir, then start a fresh session.)", "warning");
       return;
     }
     processOwnerDeniedCwd = null;
@@ -1927,6 +1928,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // continuation loop.
     if (isForeignCtx(ctx)) return;
     noteActivity(true);
+    refreshOwnerHeartbeat(ctx.cwd); // v0.38.11: throttled (60s) claim refresh so /glla owner shows real idle
     dispatchStartAcknowledged(ctx, "agent_end");
     lastStreamActivityAt = Date.now();
     streamActivityObserved = true;
