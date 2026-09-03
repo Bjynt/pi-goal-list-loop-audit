@@ -136,7 +136,7 @@ test("reload with a held goal paints the recovery banner from disk", async () =>
   await tick(120);
   const banner = ctx.ui.matching("recovered from disk");
   assert.equal(banner.length, 1, "exactly one banner per fresh hold");
-  const text = banner[0].message;
+  const text = banner[0]?.message ?? "";
   assert.match(text, /Recover me after reload/);
   assert.match(text, /next: First pending task/, "skips the completed task");
   assert.match(text, /1 disapproved/);
