@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.10 — emergency compactor handoff (2026-09-03)
+
+### Added
+  Emergency-only compactor: on starvation-refuse engage (one shot per episode) resolve a handoff model via the new `compactorModel` + `compactorModelFallbacks` 0-10 chain (Main/drafter/auditor parity, new Compactor settings tab), then registry plan B (verified free-only, contextWindow >= measured need, unknown metadata disqualified, stuck model excluded, max 2 attempts, rationale ledgered), then skip with ledger. A tool-less `pi -p` worker compresses a bounded disk-state packet into a ~2k handoff brief; resync + recovery banner quote it (warm `/new` + resume); a desktop page fires alongside (`notifyCmd: "off"` respected). Runbook in `audit/COMPACTOR-HANDOFF-2026-09-03.md`.
+
+### Fixed
+  Walked-away-stuck sessions no longer sit mute at 101%: refuse now pages the user and preserves a narrative handoff. `/goal` draft-to-trigger gap closed (goal `20260903175837-9lag0s` triggered via the extension's own writers after the Confirm dialog proved unreachable from a tool-less session).
+
 ## 0.38.9 — over-cap strategy stated and pinned (2026-09-03)
 
 ### Added

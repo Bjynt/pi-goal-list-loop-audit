@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-03):**
+- `COMPACTOR-HANDOFF-2026-09-03.md` — v0.38.10 shipped: emergency-only compactor (chain → verified-free plan B → skip), prompt-in/text-out worker, warm handoff in resync+banner, desktop page on refuse
 - `OVERCAP-STRATEGY-2026-09-03.md` — v0.38.9 shipped: the three rungs stated in order (trim always-on, guarded rotation, /new backstop) + viability ranking; ladder skips stale /compact retry; behavioral chain pins
 - `TUI-DENSITY-2026-09-03.md` — v0.38.8 shipped: widget audits row, paused-status tally, ladder reflow, settings tab counts; before/after captures + 80-col pin
 - `SESSION-VISIBILITY-2026-09-03.md` — v0.38.7 shipped: load-hold recovery banner (objective + next task + tally + resume from disk) + durable verdict tally on status line and /goal status; reload sessions answer "are we progressing?"
