@@ -79,11 +79,11 @@ test("every row carries every required column field", () => {
 
 test("role-specific tabs keep each agent's model, thinking, and fallback controls together", () => {
   const ids = SETTINGS_SECTIONS.map((s) => s.id);
-  assert.deepEqual(ids, ["keep-going", "main-agent", "drafter", "auditor", "subagents", "stall-brakes", "other"]);
+  assert.deepEqual(ids, ["keep-going", "main-agent", "drafter", "compactor", "auditor", "subagents", "stall-brakes", "other"]);
   assert.ok(SETTINGS_SECTIONS.every((s) => typeof s.label === "string" && s.label.length > 0));
 });
 
-test("every row's section is one of the 7 known section ids (no orphans)", () => {
+test("every row's section is one of the 8 known section ids (no orphans)", () => {
   const validSections = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id));
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   for (const r of rows) {
