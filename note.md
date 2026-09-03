@@ -1,8 +1,8 @@
 # Now
 
-## TUI information-density pass (active → v0.38.8)
+## TUI information-density pass (shipped v0.38.8, npm live)
 
-Whole TUI, more signal per glance, layout allowed. Widget + status line + notify cards + settings menu. Before/after captures + pins.
+Widget audits row, paused-status tally, ladder reflow, settings tab counts. See `audit/TUI-DENSITY-2026-09-03.md`.
 
 # Next
 
