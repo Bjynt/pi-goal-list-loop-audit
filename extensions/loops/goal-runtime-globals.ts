@@ -317,7 +317,7 @@ interface GoalRuntimeDataTypes {
   lastContextStarvedAt: number;
   noteContextPercent: (pct: number | null | undefined) => void;
   shouldCompactFirstNudge: (percent: number | null | undefined) => boolean;
-  buildStarvationLadderMessage: (input?: { percent?: number | null; streak?: number }) => string;
+  buildStarvationLadderMessage: (input?: { percent?: number | null; streak?: number; recentCompact?: boolean }) => string;
   COMPACT_FIRST_NUDGE_PERCENT: number;
   lastContextPercent: number | null;
   postCompactResumeOwed: boolean;
