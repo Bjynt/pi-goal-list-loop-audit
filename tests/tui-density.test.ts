@@ -47,7 +47,7 @@ test("widget carries the audits row only with history", () => {
 });
 
 test("widget fits 80 columns at width 80", () => {
-  const lines = buildWidgetLines({ goal: goalWithHistory(), list: [] } as any, null, NOW, undefined, 80)!;
+  const lines = buildWidgetLines({ goal: goalWithHistory(), list: [] } as any, null, NOW, undefined, 80) ?? [];
   assert.ok(lines.length > 0);
   for (const line of lines) {
     assert.ok(line.length <= 80, `line fits 80 cols (${line.length}): ${line.slice(0, 60)}…`);
@@ -67,15 +67,16 @@ test("paused status carries the tally", () => {
 test("ladder is one recovery per line", () => {
   const msg = buildStarvationLadderMessage({ percent: 124.5, streak: 3 });
   const lines = msg.split("\n");
+  const ln = (i: number): string => lines[i] ?? "";
   assert.equal(lines.length, 6);
-  assert.match(lines[0], /context starvation/);
-  assert.match(lines[1], /in order/);
-  assert.match(lines[2], /^\(1\) run \/compact again/);
-  assert.match(lines[3], /^\(2\) switch to a larger-context model/);
-  assert.match(lines[4], /^\(3\) \/new, then \/goal resume/);
-  assert.match(lines[4], /durable on disk/);
-  assert.match(lines[4], /no summarization needed/);
-  assert.match(lines[5], /stay parked/);
+  assert.match(ln(0), /context starvation/);
+  assert.match(ln(1), /in order/);
+  assert.match(ln(2), /^\(1\) run \/compact again/);
+  assert.match(ln(3), /^\(2\) switch to a larger-context model/);
+  assert.match(ln(4), /^\(3\) \/new, then \/goal resume/);
+  assert.match(ln(4), /durable on disk/);
+  assert.match(ln(4), /no summarization needed/);
+  assert.match(ln(5), /stay parked/);
   for (const line of lines) {
     assert.ok(line.length <= 200, `banner line stays notifiable (${line.length})`);
   }
