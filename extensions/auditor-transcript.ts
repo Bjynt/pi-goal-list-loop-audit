@@ -250,5 +250,5 @@ export function transcriptHint(loaded: LoadResult): string | undefined {
   if (loaded.kind === "reaped") return "transcript reaped — directory cleaned";
   if (loaded.kind === "not-running") return undefined;
   if (loaded.kind === "empty") return "transcript empty";
-  return `transcript: ${loaded.events.length} event${loaded.events.length === 1 ? "" : "s"} — Ctrl+Shift+A`;
+  return `transcript: ${loaded.events.length} event${loaded.events.length === 1 ? "" : "s"} — Ctrl+Shift+E`;
 }

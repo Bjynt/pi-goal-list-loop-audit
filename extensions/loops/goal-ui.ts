@@ -487,7 +487,7 @@ function isSupervising(): boolean {
 
 let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
-// v0.38.3: transcript toggle. Flipped by the `Ctrl+Shift+A` shortcut
+// v0.38.3: transcript toggle. Flipped by the `Ctrl+Shift+E` shortcut
 // registered in registerGoalRuntime (goal-activation.ts); the widget reads it
 // on every uiTicker repaint.
 let auditorTranscriptOpen = false;
@@ -572,7 +572,7 @@ function clearDetachedAuditProgress(generation: number, goalId: string, attemptI
 }
 
 /** v0.38.3: flip the transcript toggle and force a repaint. Called from
- * the `Ctrl+Shift+A` shortcut handler in registerGoalRuntime.
+ * the `Ctrl+Shift+E` shortcut handler in registerGoalRuntime.
  * Returns the new state
  * so callers can chain (e.g. log it). */
 export function toggleAuditorTranscript(): boolean {

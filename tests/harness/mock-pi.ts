@@ -49,7 +49,7 @@ export interface SentMessage {
 export class MockPi {
   tools = new Map<string, { name: string; execute: (...args: never[]) => Promise<unknown> }>();
   commands = new Map<string, (args: string, ctx: unknown) => Promise<void>>();
-  /** v0.38.3: registered keyboard shortcuts (Key.ctrlShift("a") → spec). */
+  /** v0.38.3: registered keyboard shortcuts (Key.ctrlShift("e") → spec). */
   shortcuts = new Map<string, { description?: string; handler: (ctx: unknown) => Promise<void> | void }>();
   handlers = new Map<string, (...args: never[]) => Promise<void>>();
   sent: SentMessage[] = [];

@@ -275,7 +275,7 @@ test("transcriptHint: explicit text for reaped and empty", () => {
   assert.equal(transcriptHint({ kind: "empty" }), "transcript empty");
 });
 
-test("transcriptHint: events include the Ctrl+Shift+A invitation", () => {
+test("transcriptHint: events include the Ctrl+Shift+E invitation", () => {
   const loaded: LoadResult = {
     kind: "events",
     events: [{ kind: "tool_end", at: 1, name: "read", ok: true }],
@@ -283,6 +283,6 @@ test("transcriptHint: events include the Ctrl+Shift+A invitation", () => {
   };
   const hint = transcriptHint(loaded);
   assert.ok(hint);
-  assert.match(hint!, /Ctrl\+Shift\+A/);
+  assert.match(hint!, /Ctrl\+Shift\+E/);
   assert.match(hint!, /^transcript: 1 event/);
 });
