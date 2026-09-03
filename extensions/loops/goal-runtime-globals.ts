@@ -150,6 +150,11 @@ export const GOAL_RUNTIME_GLOBAL_NAMES = [
   "contextStarvedStreak",
   "lastContextStarvedAt",
   "noteContextStarvedYield",
+  "noteContextPercent",
+  "shouldCompactFirstNudge",
+  "buildStarvationLadderMessage",
+  "COMPACT_FIRST_NUDGE_PERCENT",
+  "lastContextPercent",
   "clearContextStarvedStreak",
   "onCompactionLanded",
   "isContextStarvedRefused",
@@ -310,6 +315,11 @@ interface GoalRuntimeDataTypes {
   CONTEXT_STARVATION_RECENT_WINDOW_MS: number;
   contextStarvedStreak: number;
   lastContextStarvedAt: number;
+  noteContextPercent: (pct: number | null | undefined) => void;
+  shouldCompactFirstNudge: (percent: number | null | undefined) => boolean;
+  buildStarvationLadderMessage: (input?: { percent?: number | null; streak?: number }) => string;
+  COMPACT_FIRST_NUDGE_PERCENT: number;
+  lastContextPercent: number | null;
   postCompactResumeOwed: boolean;
   postCompactResyncPending: boolean;
   COMPACTION_GRACE_MS: number;
@@ -487,6 +497,11 @@ declare global {
   var contextStarvedStreak: GoalRuntimeGlobals["contextStarvedStreak"];
   var lastContextStarvedAt: GoalRuntimeGlobals["lastContextStarvedAt"];
   var noteContextStarvedYield: GoalRuntimeGlobals["noteContextStarvedYield"];
+  var noteContextPercent: GoalRuntimeGlobals["noteContextPercent"];
+  var shouldCompactFirstNudge: GoalRuntimeGlobals["shouldCompactFirstNudge"];
+  var buildStarvationLadderMessage: GoalRuntimeGlobals["buildStarvationLadderMessage"];
+  var COMPACT_FIRST_NUDGE_PERCENT: GoalRuntimeGlobals["COMPACT_FIRST_NUDGE_PERCENT"];
+  var lastContextPercent: GoalRuntimeGlobals["lastContextPercent"];
   var clearContextStarvedStreak: GoalRuntimeGlobals["clearContextStarvedStreak"];
   var onCompactionLanded: GoalRuntimeGlobals["onCompactionLanded"];
   var isContextStarvedRefused: GoalRuntimeGlobals["isContextStarvedRefused"];

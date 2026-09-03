@@ -1953,6 +1953,17 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         } : null,
       });
     }
+    // v0.38.6: feed the sticky refuse gate + compact-first nudge with the
+    // live percent. Recording null clears a stale reading (host estimate
+    // gone) so the refuse can lapse instead of sticking forever.
+    noteContextPercent(typeof contextUsage?.percent === "number" ? contextUsage.percent : null);
+    if (shouldCompactFirstNudge(contextUsage?.percent)) {
+      appendLedger(ctx.cwd, "context_compact_first_nudge", {
+        goalId: state.goal?.id ?? null,
+        contextPercent: contextUsage?.percent ?? null,
+      });
+      ctx.ui.notify(`glla: context at ${contextUsage!.percent!.toFixed(1)}% — run /compact now while summarization still fits. Below 90% the compact succeeds; past it you get the over-cap ladder (retry /compact, larger model, or /new + resume).`, "info");
+    }
     const contextStarvedLength = isContextStarvedLengthStop(rawLastA, contextUsage);
     const lc = tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength);
     if (contextStarvedLength) {
@@ -1980,7 +1991,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           return;
         }
       }
-      ctx.ui.notify("glla: output-token stop was context starvation (tiny output at a nearly full context) — yielding to pi auto-compaction instead of re-sending.", "info");
+      // v0.38.6: the yield now carries the full over-cap ladder (retry
+      // /compact after GLLA's deterministic trim, larger-context model,
+      // /new + resume from durable state) instead of only the auto-compact
+      // pointer — field 2026-09-03: summarization itself was failing.
+      ctx.ui.notify(buildStarvationLadderMessage({ percent: typeof contextUsage?.percent === "number" ? contextUsage.percent : null, streak: starved.streak }), "info");
       return;
     }
     if (lc.giveUpNow) {

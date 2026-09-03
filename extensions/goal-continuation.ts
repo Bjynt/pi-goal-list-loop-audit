@@ -146,6 +146,7 @@ export interface ContinuationDeps {
   isForeignCtx(ctx: ExtensionContext): boolean;
   sessionManagerId(ctx: ExtensionContext): string;
   isActionableGoal(): boolean;
+  isContextStarvedRefused(): boolean;
   isSupervising(): boolean;
   goalNoun(): string;
   activeGoalSurfaceCommand(command: string): string;
@@ -170,6 +171,7 @@ let goStaleTerminal: ContinuationDeps["goStaleTerminal"];
 let isForeignCtx: ContinuationDeps["isForeignCtx"];
 let sessionManagerId: ContinuationDeps["sessionManagerId"];
 let isActionableGoal: ContinuationDeps["isActionableGoal"];
+let isContextStarvedRefused: ContinuationDeps["isContextStarvedRefused"];
 let isSupervising: ContinuationDeps["isSupervising"];
 let goalNoun: ContinuationDeps["goalNoun"];
 let activeGoalSurfaceCommand: ContinuationDeps["activeGoalSurfaceCommand"];
@@ -194,6 +196,7 @@ export function createGoalContinuation(flagsArg: ContinuationFlags, d: Continuat
   isForeignCtx = d.isForeignCtx;
   sessionManagerId = d.sessionManagerId;
   isActionableGoal = d.isActionableGoal;
+  isContextStarvedRefused = d.isContextStarvedRefused;
   isSupervising = d.isSupervising;
   goalNoun = d.goalNoun;
   activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
@@ -1138,6 +1141,15 @@ export function sendContinuation(goalId: string): void {
     // No live ctx — retry shortly; the next session event will refresh it.
     continuationScheduledFor = goalId;
     continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
+    return;
+  }
+  // v0.38.6: the starvation choke point — EVERY automatic send path funnels
+  // through here (agent_end, heartbeat rearm, loop tick, recovery). While
+  // the session is starved with no compaction, no turn can land, so refuse
+  // SILENTLY (ledger only): the heartbeat one-shot + agent_end yield ladder
+  // own user messaging, and a refused send must not rearm a timer spin.
+  if (isContextStarvedRefused()) {
+    appendLedger(ctx.cwd, "continuation_send_refused_context_starved", { goalId, generation: flags.sessionGeneration });
     return;
   }
   if (!guardGoalBeforeContinuation(ctx, "dispatch", goalId)) return;

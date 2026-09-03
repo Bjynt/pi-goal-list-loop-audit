@@ -288,6 +288,7 @@ const continuationDeps: ContinuationDeps = {
   isForeignCtx,
   sessionManagerId,
   isActionableGoal,
+  isContextStarvedRefused,
   isSupervising,
   goalNoun,
   activeGoalSurfaceCommand,
