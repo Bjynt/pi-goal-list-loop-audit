@@ -104,9 +104,10 @@ function cleanGoal(): Goal {
     autoContinue: true,
     createdAt: "2026-09-03T00:00:00.000Z",
     updatedAt: "2026-09-03T00:00:00.000Z",
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
     taskList: { tasks: [{ id: "t1", title: "Do the thing", status: "pending" }] },
     auditHistory: [],
-  } as Goal;
+  } as unknown as Goal;
 }
 
 test("starved boot refuses the automatic send instead of truncating", async () => {
