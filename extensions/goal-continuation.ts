@@ -78,6 +78,7 @@ const MONITOR_CHECK_INTERVAL_MS = Number.isFinite(configuredMonitorIntervalMs) &
   : DEFAULT_MONITOR_CHECK_INTERVAL_MS;
 void MONITOR_CHECK_INTERVAL_MS; // deprecated throttle — scheduling is now event-driven
 import { VISION_ASSIST_GUIDANCE } from "./vision-assist.js";
+import { readHandoffBriefExcerpt } from "./goal-compactor.js";
 import { loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, isLoopActive } from "./goal-loop.js";
 import { attemptFreshSessionRecovery, mainModelRecoveryActive, recoverMainModelFromSendStorm } from "./goal-recovery.js";
@@ -1166,7 +1167,7 @@ export function sendContinuation(goalId: string): void {
     let resync = "";
     // v0.33.1: a builder throw (corrupt restored state) must not masquerade
     // as a transport failure — send without the block instead.
-    if (flags.postCompactResyncPending) { try { resync = buildPostCompactResync(); } catch { resync = ""; } }
+    if (flags.postCompactResyncPending) { try { resync = buildPostCompactResync(readHandoffBriefExcerpt(ctx.cwd)); } catch { resync = ""; } }
     const attempt = dispatchPrepare(ctx, {
       generation: flags.sessionGeneration,
       ownerSessionId: sessionManagerId(ctx),
@@ -1316,6 +1317,7 @@ export function buildPostCompactResync(briefExcerpt?: string): string {
     if (next) lines.push(`Next pending task: \`${next.id}\` — ${next.title}`);
     const lastAudit = state.goal.auditHistory?.[state.goal.auditHistory.length - 1];
     if (lastAudit && !auditorSurfaceSuppressed()) lines.push(`Last audit: ${auditVerdictLabel(lastAudit).toUpperCase()} (${lastAudit.at})`);
+    if (briefExcerpt?.trim()) lines.push(`Handoff brief: ${briefExcerpt.trim().slice(0, 600)}`);
   } else if (state.loop?.active) {
     lines.push(`Loop: ${state.loop.target.slice(0, 160)} — iteration ${state.loop.iteration}`);
   }

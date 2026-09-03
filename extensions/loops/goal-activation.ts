@@ -136,7 +136,7 @@ import {
   transitionDispatch,
   type ContinuationDispatch,
 } from "../goal-loop-dispatch.js";
-import { runEmergencyCompactorIfDue } from "../goal-compactor.js";
+import { readHandoffBriefExcerpt, runEmergencyCompactorIfDue } from "../goal-compactor.js";
 import {
   createGoalContinuation,
   scheduleContinuation,
@@ -1884,6 +1884,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           tally,
           resumeCommand,
           listWaiting: state.goal?.policy === "list" ? undefined : state.list?.length ?? 0,
+          // v0.38.10: the emergency compactor's handoff, when one exists —
+          // the /new + resume path lands warm instead of cold.
+          briefExcerpt: readHandoffBriefExcerpt(ctx.cwd),
         });
         appendLedger(ctx.cwd, "load_hold_recovery_banner", {
           goalId: state.goal?.id ?? null,

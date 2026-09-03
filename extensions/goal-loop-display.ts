@@ -482,7 +482,8 @@ export interface LoadHoldRecoverySummary {
   tally: AuditorVerdictTally;
   resumeCommand: string;
   listWaiting?: number;
-}
+  /** v0.38.10: emergency compactor handoff excerpt — appended when present. */
+  briefExcerpt?: string;
 export function buildLoadHoldRecoveryLines(s: LoadHoldRecoverySummary, now = Date.now()): string[] {
   const lines = [
     `glla: recovered from disk — "${truncate((s.objective ?? "").trim() || "(no objective recorded)", 120)}" (${s.status ?? "held"})`,
@@ -491,6 +492,7 @@ export function buildLoadHoldRecoveryLines(s: LoadHoldRecoverySummary, now = Dat
   const tally = formatVerdictTallySegment(s.tally, now);
   lines.push(tally ? `audits: ${tally}` : `audits: none yet`);
   if ((s.listWaiting ?? 0) > 0) lines.push(`list: ${s.listWaiting} waiting — /list to manage`);
+  if (s.briefExcerpt?.trim()) lines.push(`handoff: ${truncate(s.briefExcerpt.trim(), 300)}`);
   lines.push(`run ${s.resumeCommand} to continue`);
   return lines;
 }
