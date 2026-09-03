@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-03):**
+- `SESSION-VISIBILITY-2026-09-03.md` — v0.38.7 shipped: load-hold recovery banner (objective + next task + tally + resume from disk) + durable verdict tally on status line and /goal status; reload sessions answer "are we progressing?"
 - `STARVATION-LADDER-2026-09-03.md` — v0.38.6 shipped: compact-first nudge at 85%, over-cap ladder (/compact retry / larger model / /new+resume + no-LLM backstop), send choke-point refuse, sticky refuse while ≥90%; 5-path ladder answers the over-cap question
 - `DELTA-ONLY-CONTINUATION-2026-09-03.md` — v0.38.5 shipped: steady-state goal continuation is marker-only 45 chars (history holds state), resync+marker after compact, full 23k only on first-send/dirty (repair/recovery/audit); 1824 pass
 - `CACHE-CRITICAL-ADDENDUM-2026-09-03.md` — cache-critical addendum: why a naked ≤160-char followUp marker would break GLLA (no `before_agent_start` systemPrompt authority) vs pi-goal-x `system.cache_control` + marker (45 chars vs GLLA 21–40k); A2 downgraded to CONDITIONAL paired, measured gate

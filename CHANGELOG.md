@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.7 — session visibility: recovery banner + durable verdict tally (2026-09-03)
+
+### Added
+  Load-hold recovery banner: a consent-less cold load that engages the load hold now also paints objective + next pending task + verdict tally + resume command (`/goal`/`/list`/`/loop` by policy), all from durable disk state — the transcript is empty in exactly the sessions that need this. Fires once with the fresh hold; ledger `load_hold_recovery_banner`. Durable verdict tally (`auditorVerdictTally` via `auditVerdictLabel`): disapproval count + last-verdict age on the auditing status-line footer and the `/goal status` `Audits:` line, silent when history is empty — a reloaded session answers "are we progressing?" from stored verdicts.
+
+### Fixed
+  Reload invisibility: resumed-but-empty sessions no longer look goal-less, and capped/queued auditor sessions show stored-verdict evidence instead of a dead surface. Hold mechanics, hold text, auditor phase machine, and auditor card untouched. `tests/session-visibility.test.ts` (5 tests) pins tally classification, banner text, status-line tally, and a behavioral reload.
+
 ## 0.38.6 — over-cap starvation ladder: compact first, then 5 ordered recoveries (2026-09-03)
 
 ### Added
