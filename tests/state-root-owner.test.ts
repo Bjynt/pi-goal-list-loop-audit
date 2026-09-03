@@ -172,7 +172,7 @@ test("live owner without confirm returns needs-confirm and touches nothing", asy
   const cwd = tmpCwd();
   const child = spawnSleep();
   await new Promise((r) => setTimeout(r, 100));
-  writeOwner(cwd, { pid: child.pid, at: Date.now() - 1000 });
+  writeOwner(cwd, { pid: child.pid, at: Date.now() });
   const r = await takeoverOwnerRoot({ cwd, record: readOwnerFile(cwd), confirmed: false });
   assert.equal(r.outcome, "needs-confirm");
   assert.equal((r as any).owner.pid, child.pid);
@@ -184,7 +184,7 @@ test("confirmed takeover of a non-pi process is refused, survivor unclaimed", as
   const cwd = tmpCwd();
   const child = spawnSleep();
   await new Promise((r) => setTimeout(r, 100));
-  writeOwner(cwd, { pid: child.pid, at: Date.now() - 1000 });
+  writeOwner(cwd, { pid: child.pid, at: Date.now() });
   const r = await takeoverOwnerRoot({ cwd, record: readOwnerFile(cwd), confirmed: true });
   assert.equal(r.outcome, "refused");
   assert.equal((r as any).reason, "not-pi-process");
@@ -198,7 +198,7 @@ test("confirmed takeover SIGTERMs a pi-shaped owner, verifies exit, claims", asy
   const child = spawnPiShaped();
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(child.kill(0), true, "precondition: child alive");
-  writeOwner(cwd, { pid: child.pid, at: Date.now() - 1000 });
+  writeOwner(cwd, { pid: child.pid, at: Date.now() });
   const r = await takeoverOwnerRoot({ cwd, record: readOwnerFile(cwd), confirmed: true });
   assert.equal(r.outcome, "taken");
   assert.equal((r as any).signaled, true);
@@ -215,7 +215,7 @@ test("owner surviving SIGTERM is never claimed", async () => {
   const child = spawn("sh", ["-c", 'trap "" TERM; sleep 99992'], { stdio: "ignore" });
   children.push(child);
   await new Promise((r) => setTimeout(r, 200));
-  writeOwner(cwd, { pid: child.pid, at: Date.now() - 1000 });
+  writeOwner(cwd, { pid: child.pid, at: Date.now() });
   const r = await takeoverOwnerRoot({
     cwd,
     record: readOwnerFile(cwd),
@@ -298,7 +298,7 @@ test("/glla takeover aborts on dismissed confirm without signaling", async () =>
   const notes: string[] = [];
   const child = spawnSleep();
   await new Promise((r) => setTimeout(r, 100));
-  writeOwner(cwd, { pid: child.pid, at: Date.now() - 1000 });
+  writeOwner(cwd, { pid: child.pid, at: Date.now() });
   await cmdGllaTakeover(fakeCtx(cwd, false, notes));
   assert.match(notes.join("\n"), /aborted/);
   assert.equal(child.kill(0), true);

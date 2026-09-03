@@ -125,6 +125,13 @@ export type OwnerClass =
   | "recycled"
   | "live-foreign";
 
+/** Misclassifying a live owner as recycled manufactures two writers (we
+ * unlink + claim while it keeps running). Misclassifying a recycled pid
+ * as live merely asks the user. So the recycled verdict needs the
+ * occupant to be younger than the claim by a wide margin — clock skew
+ * (wall clock vs boot clock) can never fake 60s. */
+export const RECYCLED_MARGIN_MS = 60_000;
+
 /** Classify the record against this process. `startMs` is the current
  * occupant's process start (null = unknowable → never "recycled"). */
 export function classifyOwner(
@@ -139,7 +146,7 @@ export function classifyOwner(
   if (record.shutdownAt !== undefined || record.shutdownReason !== undefined) return "released";
   if (!occupant.alive) return "dead";
   const claimedAt = normalizeOwnerAt(record.at);
-  if (claimedAt !== null && occupant.startMs !== null && occupant.startMs > claimedAt) return "recycled";
+  if (claimedAt !== null && occupant.startMs !== null && occupant.startMs > claimedAt + RECYCLED_MARGIN_MS) return "recycled";
   return "live-foreign";
 }
 
