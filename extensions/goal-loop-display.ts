@@ -161,7 +161,7 @@ export interface WidgetExtras {
   auditorQuietStretch?: { ms: number; endedAt: number };
   /** v0.38.3: when true, the widget renders the expandable auditor
    * transcript block below the existing audit card. Toggled at runtime
-   * by `Ctrl+Shift+E`; the renderer reads the same per-attempt
+   * by `F9`; the renderer reads the same per-attempt
    * `.pi-glla/audit-jobs/<id>/` scratch the worker writes. */
   auditorTranscriptOpen?: boolean;
   /** v0.38.3: the project root (ctx.cwd). The worker writes its job dir
@@ -169,7 +169,7 @@ export interface WidgetExtras {
    * transcript loader must use this, never process.cwd(). */
   cwd?: string;
   /** v0.38.3: one-line affordance shown while the transcript block is
-   * CLOSED ("transcript: N events — Ctrl+Shift+E"). Computed by
+   * CLOSED ("transcript: N events — F9"). Computed by
    * refreshUI via transcriptHint(); undefined while the block is open. */
   auditorTranscriptHint?: string;
 }
@@ -532,7 +532,7 @@ export interface AuditDisplayProgress {
   toolTimeoutMs?: number;
   /** v0.38.3: the worker's attempt id. Lets the widget locate the
    * per-attempt scratch dir (.pi-glla/audit-jobs/<id>/) for the
-   * expandable transcript surfaced by the `Ctrl+Shift+E` shortcut. */
+   * expandable transcript surfaced by the `F9` shortcut. */
   attemptId?: string;
 }
 
@@ -587,7 +587,7 @@ function auditorElapsedMs(audit: AuditDisplayProgress | null | undefined, now: n
 }
 
 /** v0.38.3 (goal 20260902085243-uzf6mx): render the expandable transcript
- * block that the user opens with `Ctrl+Shift+E`. The block lives under
+ * block that the user opens with `F9`. The block lives under
  * the existing audit card; the renderer re-reads the per-attempt
  * `.pi-glla/audit-jobs/<id>/progress.json` and `result.json` on every
  * uiTicker repaint via the existing display pipeline — no new timer, no
@@ -607,7 +607,7 @@ function buildAuditorTranscriptWidgetLines(
   if (loaded.kind !== "events") {
     const msg =
       loaded.kind === "reaped"
-        ? "transcript reaped — directory cleaned; Ctrl+Shift+E to dismiss"
+        ? "transcript reaped — directory cleaned; F9 to dismiss"
         : loaded.kind === "empty"
           ? "transcript empty — worker has not written any events yet"
           : "no detached audit in flight";
@@ -653,7 +653,7 @@ function buildPostCompletionTranscriptLines(
     `${paint(theme, "accent", "auditor transcript — last audit")}`,
     `├─ ${paint(theme, "accent", lines[0] ?? "")}`,
     ...lines.slice(1).map((l) => paint(theme, "dim", l)),
-    `└─ ${paint(theme, "dim", "Ctrl+Shift+E closes · kept until the retention timer reaps the job dir")}`,
+    `└─ ${paint(theme, "dim", "F9 closes · kept until the retention timer reaps the job dir")}`,
   ];
 }
 
@@ -1629,7 +1629,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     }
     // v0.38.3: expandable auditor transcript (goal 20260902085243-uzf6mx).
     // The user accepted the inline path over a separate window/tab, so the
-    // block lives under the existing audit card. Toggled by `Ctrl+Shift+E`
+    // block lives under the existing audit card. Toggled by `F9`
     // (registered in extensions/loops/goal.ts); the renderer re-reads the
     // job dir on every widget repaint via the existing uiTicker, so no new
     // timer or retention policy is introduced.

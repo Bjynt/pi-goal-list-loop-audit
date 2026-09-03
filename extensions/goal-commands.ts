@@ -2322,7 +2322,7 @@ async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
 function cmdAudits(args: string, ctx: ExtensionContext): void {
   if (/\bhealth\b/.test(args)) {
     // v0.38.3: retention is a setting, not a constant — the review window
-    // for finished audit logs (Ctrl+Shift+E transcript) is user-configurable.
+    // for finished audit logs (F9 transcript) is user-configurable.
     const retentionMs = loadSettings(ctx.cwd).auditJobRetentionMs;
     const report = /\bcleanup\b/.test(args)
       ? cleanupDeadAuditJobs(ctx.cwd, retentionMs)

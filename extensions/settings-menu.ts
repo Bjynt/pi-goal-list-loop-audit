@@ -422,7 +422,7 @@ export function buildSettingsRows(
       valueText: `${fmtTimeoutMs(settings.auditJobRetentionMs)} dead-dir window`,
       sourceText: src("auditJobRetentionMs"),
       description:
-        "how long a finished audit's job dir (and its Ctrl+Shift+E transcript) survives after the worker dies, before `/glla audits health cleanup` reaps it — raise it to keep finished audit logs readable longer; 0 reaps immediately",
+        "how long a finished audit's job dir (and its F9 transcript) survives after the worker dies, before `/glla audits health cleanup` reaps it — raise it to keep finished audit logs readable longer; 0 reaps immediately",
     },
     {
       id: "auditCap",

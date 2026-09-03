@@ -2766,12 +2766,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     return {};
   });
 
-  // v0.38.3: Ctrl+Shift+E toggles the full detached-auditor transcript block
+  // v0.38.3: F9 toggles the full detached-auditor transcript block
   // under the goal card (extensions/auditor-transcript.ts). Registered here,
   // not in goal.ts, because the factory default export must stay
   // registration-only (`registerGoalRuntime(pi);` as its last statement —
   // pinned by tests/stale-api-terminal.test.ts).
-  pi.registerShortcut(Key.ctrlShift("e"), {
+  pi.registerShortcut(Key.f9, {
     description: "Toggle the full detached auditor session transcript on the goal card",
     handler: () => {
       toggleAuditorTranscript();

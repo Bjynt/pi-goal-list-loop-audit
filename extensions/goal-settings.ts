@@ -135,7 +135,7 @@ export interface Settings {
   auditorStallMs?: number;
   /** v0.38.3: how long a PROVEN-DEAD audit job dir (.pi-glla/audit-jobs/<id>/)
    * is kept before explicit cleanup reaps it — the retention window during
-   * which the finished audit's transcript stays readable (Ctrl+Shift+E).
+   * which the finished audit's transcript stays readable (F9).
    * Default 15m (the legacy hardcoded threshold); bounds 0–7d. Global-only:
    * disk hygiene is a machine characteristic, not a project one. */
   auditJobRetentionMs?: number;
