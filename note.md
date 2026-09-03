@@ -1,25 +1,19 @@
-
 # Now
 
-# Next still recorded 0.38.4
+## session visibility goal (drafted, awaiting confirm → v0.38.7)
 
-## objectives can be seemingly lost and next time we load the session we seemingly dont have any 
+Recovery banner + auditor-queue progress line.
 
-/home/dracon/Pictures/Screenshots/Screenshot_20260902_223042.png /home/dracon/Pictures/Screenshots/Screenshot_20260902_223001.png 
+- Recovery banner: resumed-but-empty session paints objective + next pending task + pending audits/verdicts + resume command from disk state
+  (evidence: Screenshot_20260902_223042.png, Screenshot_20260902_223001.png)
+- Queue progress line: auditor queued/running + disapproval count + last-verdict age + what unblocks, in status line and `/goal status`
+  (evidence: Screenshot_20260903_090025-1.png)
+- Closed: compaction proactivity done in v0.38.6 (85% nudge, ladder, send refuse, sticky refuse)
 
-## in some cases we are not compacting perhaps proactively enough and end up with a stuck state, but also can be bloated of unable to proceed
+# Next
 
-/home/dracon/Pictures/Screenshots/Screenshot_20260902_223213.png 
-/home/dracon/Pictures/Screenshots/Screenshot_20260903_081411.png 
-
-long monitor like task 
-/home/dracon/Pictures/Screenshots/Screenshot_20260903_081734.png 
-
-## are we progressing? we neeed to be clear about what is happening, visuals are not just looks but information
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260903_090025-1.png 
+Queue drained — recovery + progress are the Now goal above, compaction shipped in v0.38.6. Only unshaped candidate left is in Later.
 
 # Later
 
-## visual improvements ? 
-
+## visual improvements ?
