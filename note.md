@@ -16,4 +16,6 @@ Queue drained — recovery + progress are the Now goal above, compaction shipped
 
 # Later
 
+## we stil have the question that despite our efforts assume something goves over context how do we hadnle it
+
 ## visual improvements ?
