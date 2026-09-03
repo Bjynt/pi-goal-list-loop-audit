@@ -59,6 +59,15 @@ let compactorRefuseArmed = true;
 /** Test-only reset for the episode one-shot. */
 export function __testOnlyResetCompactor(): void {
   compactorRefuseArmed = true;
+  testSpawnWorker = undefined;
+}
+
+type SpawnWorkerFn = NonNullable<CompactorDeps["spawnWorker"]>;
+let testSpawnWorker: SpawnWorkerFn | undefined;
+
+/** Test-only spawn override: behavioral tests never fork a process. */
+export function __testOnlySetSpawnWorker(fn: SpawnWorkerFn | undefined): void {
+  testSpawnWorker = fn;
 }
 
 /** Claim the refuse transition. True exactly once per starvation episode. */
@@ -218,7 +227,7 @@ async function runEmergencyCompactor(
     return { fired: true };
   }
   const workerScript = path.resolve(__dirname, "..", "scripts", "goal-compactor-worker.mjs");
-  const spawnWorker = deps.spawnWorker ?? defaultSpawnWorker;
+  const spawnWorker = deps.spawnWorker ?? testSpawnWorker ?? defaultSpawnWorker;
   pruneOldJobDirs(ctx.cwd);
   const packet = buildPacketFromDisk(ctx.cwd);
   // Configured chain walks fully (0-10 parity); plan B gets at most two verified free swings.
