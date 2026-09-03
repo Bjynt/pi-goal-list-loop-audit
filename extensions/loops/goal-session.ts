@@ -592,6 +592,18 @@ function claimProcessOwner(cwd: string): boolean {
   return false;
 }
 
+/** v0.38.11: unlink the owner file. Only the consented takeover path
+ * (extensions/state-root-owner.ts, after its dead/recycled/live-verified
+ * guards) calls this — never call it to pre-empt a live owner. */
+function removeOwnerFile(cwd: string): boolean {
+  try {
+    fs.unlinkSync(ownerFilePath(cwd));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A stale probe is terminal only for ORPHANS. Returns true when the
  * stale sighting was absorbed (a rebind window is open, or a successor
  * instance owns this cwd and we stand down silently), false when the
