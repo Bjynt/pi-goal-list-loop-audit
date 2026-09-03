@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.9 — over-cap strategy stated and pinned (2026-09-03)
+
+### Added
+  Explicit rung order for over-cap + model-can't-compress: always-on checkpoint projection (trim), guarded fallback-chain rotation on compact failure, `/new` + resume from durable state as the backstop — with the viability ranking (switch when a bigger model exists, `/new` when none can compress). Runbook in `audit/OVERCAP-STRATEGY-2026-09-03.md`.
+
+### Fixed
+  Stale advice: the ladder no longer advises a `/compact` retry when one already failed inside the 90s grace window (`recentCompact` → step (1) points at (2)/(3)). `tests/overcap-strategy.test.ts` (3 tests) pins the skip shape and both behavioral chain branches (rotation with chain, honest ladder without).
+
 ## 0.38.8 — TUI information-density pass (2026-09-03)
 
 ### Added

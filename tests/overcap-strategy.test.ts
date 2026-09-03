@@ -47,7 +47,6 @@ async function starvedSession(opts: { fallbacks: string[]; recentCompact: boolea
   await tick(60);
   resetContinuationDispatchState(cwd);
   clearContinuationTimer();
-  G.__testOnlySetLastCompactionAt(opts.recentCompact ? Date.now() : null);
   await pi.fire("agent_end", {
     messages: [{ role: "assistant", content: [{ type: "text", text: "x" }], stopReason: "length", usage: { output: 1 } }],
   }, ctx);
