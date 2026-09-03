@@ -53,7 +53,9 @@ function readLedger(cwd: string): string {
 /** A child whose cmdline provably looks like pi (argv carries a pi- path). */
 function spawnPiShaped(): ChildProcess {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-owner-probe-"));
-  const script = path.join(dir, "probe.mjs");
+  // Basename carries "pi" so the default looksLikePi guard admits it —
+  // the same way a real pi host's argv does.
+  const script = path.join(dir, "pi-probe.mjs");
   fs.writeFileSync(script, "setInterval(() => {}, 1000);\n");
   const c = spawn(process.execPath, [script], { stdio: "ignore" });
   children.push(c);
@@ -87,9 +89,9 @@ test("normalizeOwnerAt tolerates number and ISO, rejects garbage", () => {
 
 test("looksLikePi admits pi hosts, refuses sleep, abstains on unknown", () => {
   assert.equal(looksLikePi("pi\0--agent\0"), true);
-  assert.equal(looksLikePi("/usr/bin/sleep\060\0"), false);
+  assert.equal(looksLikePi("/usr/bin/sleep\099991\0".replace("\\0", "\0")), false);
   assert.equal(looksLikePi(null), false);
-  assert.equal(cmdlineComm("/usr/bin/sleep\060\0"), "sleep");
+  assert.equal(cmdlineComm("/usr/bin/sleep\0" + "99991\0"), "sleep");
   assert.equal(cmdlineComm(null), "(unknown)");
 });
 
@@ -257,7 +259,7 @@ test("heartbeat refresh is throttled and owner-scoped", async () => {
   assert.equal(readOwnerFile(cwd)?.pid, child.pid, "heartbeat never steals a foreign root");
 });
 
-test("/glla owner reports unclaimed / self / live holder", () => {
+test("/glla owner reports unclaimed / self / live holder", async () => {
   const notes: string[] = [];
   const cwd = tmpCwd();
   cmdGllaOwner(fakeCtx(cwd, true, notes));
@@ -267,11 +269,19 @@ test("/glla owner reports unclaimed / self / live holder", () => {
   cmdGllaOwner(fakeCtx(cwd, true, notes));
   assert.match(notes.join("\n"), /YOU/);
   notes.length = 0;
-  writeOwner(cwd, { pid: 2 ** 30 + 9, at: "2026-09-03T18:48:21.983Z", ownerSessionId: "s-1" });
+  const holder = spawnSleep();
+  await new Promise((r) => setTimeout(r, 100));
+  writeOwner(cwd, { pid: holder.pid, at: "2026-09-03T18:48:21.983Z", ownerSessionId: "s-1" });
   cmdGllaOwner(fakeCtx(cwd, true, notes));
   const text = notes.join("\n");
   assert.match(text, /LIVE foreign owner/);
   assert.match(text, /\/glla takeover/);
+  assert.match(text, /sleep/);
+  notes.length = 0;
+  holder.kill("SIGKILL");
+  await new Promise((r) => setTimeout(r, 100));
+  cmdGllaOwner(fakeCtx(cwd, true, notes));
+  assert.match(notes.join("\n"), /owner process is DEAD/);
 });
 
 test("/glla takeover end to end reclaims a dead root via command", async () => {

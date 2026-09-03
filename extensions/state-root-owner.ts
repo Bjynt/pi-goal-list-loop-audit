@@ -74,7 +74,9 @@ export function procStartMs(pid: number): number | null {
     const rparen = stat.lastIndexOf(")");
     if (rparen < 0) return null;
     const fields = stat.slice(rparen + 2).split(" ");
-    const startTicks = Number(fields[20]);
+    // After stripping "pid (comm)", index 0 is field 3 (state), so field
+    // 22 (starttime) sits at index 19 — pinned by tests/state-root-owner.
+    const startTicks = Number(fields[19]);
     if (!Number.isFinite(startTicks)) return null;
     const btimeLine = fs.readFileSync("/proc/stat", "utf8").split("\n").find((l) => l.startsWith("btime "));
     const btime = btimeLine ? Number(btimeLine.split(/\s+/)[1]) * 1000 : NaN;
