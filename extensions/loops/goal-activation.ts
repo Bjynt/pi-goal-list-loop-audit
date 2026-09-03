@@ -770,6 +770,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       ["wipe", "Confirm-gated idempotent reset of all live goal/list/loop state"],
       ["stats", "show per-project ledger rollups"],
       ["audits", "browse the audit log"],
+      ["transcript", "open/close the detached-auditor transcript panel (bare form toggles; F9 also toggles it)"],
       ["agents", "show tracked subagents; --tail <id> reads a child transcript"],
       ["switchlog", "show the model-switch trail (model_switch / forbidden_model_switch)"],
       ["tooloverride", "configure agent-tool visibility"],
