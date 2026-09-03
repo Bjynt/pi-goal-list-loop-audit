@@ -1,8 +1,8 @@
 # Now
 
-## session visibility goal (drafted, awaiting confirm → v0.38.7)
+## session visibility goal (shipped v0.38.7)
 
-Recovery banner + auditor-queue progress line.
+Recovery banner + durable verdict tally. See `audit/SESSION-VISIBILITY-2026-09-03.md`.
 
 - Recovery banner: resumed-but-empty session paints objective + next pending task + pending audits/verdicts + resume command from disk state
   (evidence: Screenshot_20260902_223042.png, Screenshot_20260902_223001.png)
