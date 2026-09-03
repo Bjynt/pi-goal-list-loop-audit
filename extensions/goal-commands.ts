@@ -23,7 +23,7 @@ import {
 } from "./goal-loop-core.js";
 import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.js";
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
-import { fmtElapsed } from "./goal-loop-display.js";
+import { auditorVerdictTally, fmtElapsed, formatVerdictTallySegment } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
 import { buildLoopCompletionSummary, compactCompletionSummary, compactTerminalCompletionSummary } from "./completion-summary.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, rollupProject } from "./goal-loop-stats.js";
@@ -381,8 +381,12 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
     `Tokens: ${(g.usage?.tokensUsed ?? 0).toLocaleString()}${(g.usage?.tokensLimit ?? 0) > 0 ? ` / ${(g.usage!.tokensLimit).toLocaleString()}` : " (no cap — set Token limit in /glla settings)"}`, 
     ...formatMainModelRecoveryStatus(state.mainModelRecovery, normalizeMainModelFallbackRefs(loadSettings(ctx.cwd).mainModelFallbacks)),
   ];
-  if (g.auditHistory && g.auditHistory.length > 0) {
-    lines.push(`Audits: ${g.auditHistory.length} (${g.auditHistory.filter((v) => v.approved).length} approved)`);
+  // v0.38.7: /goal status names disapprovals + last-verdict age, not just
+  // the approval count — a capped/queued session must show what unblocks.
+  const statusTally = auditorVerdictTally(g.auditHistory);
+  if (statusTally.total > 0) {
+    const tallyText = formatVerdictTallySegment(statusTally);
+    lines.push(`Audits: ${tallyText} (${statusTally.approvals} approved)`);
   }
   if (g.status === "auditing") {
     lines.push(`Completion audit: ${isCompletionAuditRecoveryPending(g) ? `recovery pending — ${activeGoalSurfaceCommand("resume")} retries the stored claim` : flags.completionAuditInFlight && flags.latestAuditProgress?.label === "queued" ? "detached auditor queued" : flags.completionAuditInFlight ? "detached auditor running" : "awaiting lifecycle recovery"}`);
