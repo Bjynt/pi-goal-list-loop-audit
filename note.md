@@ -1,6 +1,6 @@
 # Now
 
-## session visibility goal (shipped v0.38.7)
+## session visibility goal (shipped v0.38.7, npm live)
 
 Recovery banner + durable verdict tally. See `audit/SESSION-VISIBILITY-2026-09-03.md`.
 
