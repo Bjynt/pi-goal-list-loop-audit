@@ -33,8 +33,10 @@ import {
 // v0.37.0: the auditor timeout bases/bounds live with the watchdogs that
 // consume them — the settings layer only defaults/clamps against them.
 import {
+  AUDIT_JOB_CLEANUP_MIN_AGE_MS,
   DEFAULT_AUDITOR_STALL_MS,
   DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
+  MAX_AUDIT_JOB_RETENTION_MS,
   MAX_AUDITOR_STALL_MS,
   MAX_AUDITOR_TOOL_TIMEOUT_MS,
   MIN_AUDITOR_STALL_MS,
@@ -131,6 +133,12 @@ export interface Settings {
    * text, running a tool) never counts as silent. Bounds: 1m–24h.
    * Global-only for the same reason as auditorToolTimeoutMs. */
   auditorStallMs?: number;
+  /** v0.38.3: how long a PROVEN-DEAD audit job dir (.pi-glla/audit-jobs/<id>/)
+   * is kept before explicit cleanup reaps it — the retention window during
+   * which the finished audit's transcript stays readable (Ctrl+Shift+E).
+   * Default 15m (the legacy hardcoded threshold); bounds 0–7d. Global-only:
+   * disk hygiene is a machine characteristic, not a project one. */
+  auditJobRetentionMs?: number;
   /** Global-only: when main-model recovery is parked, fire an extra retry at
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
@@ -260,6 +268,7 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "auditorModelFallbacks",
   "auditorToolTimeoutMs",
   "auditorStallMs",
+  "auditJobRetentionMs",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -309,6 +318,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // (×2 per retried attempt, cap 4×) applies on top of whatever base is set.
   auditorToolTimeoutMs: DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
   auditorStallMs: DEFAULT_AUDITOR_STALL_MS,
+  // v0.38.3: dead audit job dirs (and their transcripts) survive this long
+  // after the worker dies before `/glla audits health cleanup` reaps them.
+  auditJobRetentionMs: AUDIT_JOB_CLEANUP_MIN_AGE_MS,
   // v0.34.142: an extra blind retry at :00:30 after every hour starts.
   // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.
@@ -419,6 +431,19 @@ function normalizeLoadedSettings(settings: Settings): Settings {
       Math.max(MIN_AUDITOR_STALL_MS, Math.floor(settings.auditorStallMs)),
     );
   }
+  // v0.38.3: retention is a review window, not a watchdog budget — 0 means
+  // "reap proven-dead dirs immediately", so the floor is 0, not a minute.
+  if (
+    typeof settings.auditJobRetentionMs !== "number" ||
+    !Number.isFinite(settings.auditJobRetentionMs)
+  ) {
+    settings.auditJobRetentionMs = AUDIT_JOB_CLEANUP_MIN_AGE_MS;
+  } else {
+    settings.auditJobRetentionMs = Math.min(
+      MAX_AUDIT_JOB_RETENTION_MS,
+      Math.max(0, Math.floor(settings.auditJobRetentionMs)),
+    );
+  }
   // v0.34.142: these old policy knobs no longer control recovery. Drop
   // them from the effective object so stale files cannot resurrect the old
   // behavior or make the settings UI imply that quota inspection exists.
@@ -499,6 +524,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditorThinkingLevel",
   "auditorToolTimeoutMs",
   "auditorStallMs",
+  "auditJobRetentionMs",
   "notifyCmd",
   "tokenLimit",
   "wedgeAlertMinutes",

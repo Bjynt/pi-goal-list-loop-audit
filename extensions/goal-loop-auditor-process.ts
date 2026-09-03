@@ -776,8 +776,15 @@ export interface AuditJobHealthReport {
 
 /** A deliberately conservative threshold: an auditor that is merely slow is
  * not a stale directory. Explicit cleanup only considers older directories
- * whose worker PID is proven dead and whose lock advertises role=worker. */
+ * whose worker PID is proven dead and whose lock advertises role=worker.
+ * v0.38.3: this constant is the DEFAULT retention; the effective value is
+ * the `auditJobRetentionMs` setting (goal-settings.ts), threaded into
+ * inspectAuditJobHealth / cleanupDeadAuditJobs at the call site. */
 export const AUDIT_JOB_CLEANUP_MIN_AGE_MS = 15 * 60_000;
+/** v0.38.3: upper bound for the `auditJobRetentionMs` setting — 7 days.
+ * Retention is a review window for finished audit logs, not storage:
+ * anything older than a week is noise the reaper should take. */
+export const MAX_AUDIT_JOB_RETENTION_MS = 7 * 86_400_000;
 
 function auditJobDirectoryBytes(dir: string): number {
   let bytes = 0;
@@ -794,7 +801,11 @@ function auditJobDirectoryBytes(dir: string): number {
 
 /** Read-only project-wide audit-job inventory. It never signals a process and
  * never removes an ambiguous or unreadable directory. */
-export function inspectAuditJobHealth(cwd: string, nowMs = Date.now()): AuditJobHealthReport {
+export function inspectAuditJobHealth(
+  cwd: string,
+  nowMs = Date.now(),
+  maxAgeMs = AUDIT_JOB_CLEANUP_MIN_AGE_MS,
+): AuditJobHealthReport {
   const root = path.join(piGlaDir(cwd), "audit-jobs");
   const entries: AuditJobHealthEntry[] = [];
   let dirs: Array<{ name: string; isDirectory: () => boolean }> = [];
@@ -840,20 +851,20 @@ export function inspectAuditJobHealth(cwd: string, nowMs = Date.now()): AuditJob
   const dead = entries.filter((entry) => entry.status === "dead").length;
   const ambiguous = entries.filter((entry) => entry.status === "ambiguous").length;
   const bytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
-  const cleanupCandidates = entries.filter((entry) => entry.status === "dead" && entry.ageMs >= AUDIT_JOB_CLEANUP_MIN_AGE_MS).length;
+  const cleanupCandidates = entries.filter((entry) => entry.status === "dead" && entry.ageMs >= maxAgeMs).length;
   return { root, scannedAt: new Date(nowMs).toISOString(), total: entries.length, live, dead, ambiguous, bytes, cleanupCandidates, entries };
 }
 
 /** Explicit, age-bounded cleanup for only proven-dead worker identities.
  * Ambiguous locks are intentionally left for operator inspection. */
 export function cleanupDeadAuditJobs(cwd: string, maxAgeMs = AUDIT_JOB_CLEANUP_MIN_AGE_MS, nowMs = Date.now()): AuditJobHealthReport {
-  const report = inspectAuditJobHealth(cwd, nowMs);
+  const report = inspectAuditJobHealth(cwd, nowMs, maxAgeMs);
   for (const entry of report.entries) {
     if (entry.status !== "dead" || entry.ageMs < maxAgeMs || entry.pid === undefined) continue;
     if (processAlive(entry.pid) || workerProcessMatches(cwd, entry.pid, entry.dir)) continue;
     try { rmSync(entry.dir, { recursive: true, force: true }); } catch { /* preserve the next health report */ }
   }
-  return inspectAuditJobHealth(cwd, nowMs);
+  return inspectAuditJobHealth(cwd, nowMs, maxAgeMs);
 }
 
 /** Reap workers left behind when their owning pi host died. This is the

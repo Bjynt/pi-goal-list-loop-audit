@@ -36,7 +36,7 @@ import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
-import { cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
+import { AUDIT_JOB_CLEANUP_MIN_AGE_MS, cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
 import { inferStartFromSession, type StartContextInference } from "./start-context.js";
 
@@ -2321,9 +2321,12 @@ async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
 
 function cmdAudits(args: string, ctx: ExtensionContext): void {
   if (/\bhealth\b/.test(args)) {
+    // v0.38.3: retention is a setting, not a constant — the review window
+    // for finished audit logs (Ctrl+Shift+E transcript) is user-configurable.
+    const retentionMs = loadSettings(ctx.cwd).auditJobRetentionMs;
     const report = /\bcleanup\b/.test(args)
-      ? cleanupDeadAuditJobs(ctx.cwd)
-      : inspectAuditJobHealth(ctx.cwd);
+      ? cleanupDeadAuditJobs(ctx.cwd, retentionMs)
+      : inspectAuditJobHealth(ctx.cwd, Date.now(), retentionMs);
     const action = /\bcleanup\b/.test(args) ? "cleanup" : "health";
     ctx.ui.notify(
       `glla audit-job ${action}: ${report.total} director${report.total === 1 ? "y" : "ies"} · ${report.live} live · ${report.dead} proven dead · ${report.ambiguous} ambiguous · ${report.bytes} bytes${report.cleanupCandidates > 0 ? ` · ${report.cleanupCandidates} old dead candidate(s)` : ""}.` +
@@ -2692,6 +2695,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("auditorProgressSignals", "auditorProgressSignals"),
       `auditorToolTimeoutMs: ${((effectiveSettings.auditorToolTimeoutMs ?? DEFAULT_AUDITOR_TOOL_TIMEOUT_MS) / 60000).toString()}m  [${prov.auditorToolTimeoutMs?.source ?? "default"}]`,
       `auditorStallMs: ${((effectiveSettings.auditorStallMs ?? DEFAULT_AUDITOR_STALL_MS) / 60000).toString()}m  [${prov.auditorStallMs?.source ?? "default"}]`,
+      `auditJobRetentionMs: ${((effectiveSettings.auditJobRetentionMs ?? AUDIT_JOB_CLEANUP_MIN_AGE_MS) / 60000).toString()}m  [${prov.auditJobRetentionMs?.source ?? "default"}]`,
       fmt("hourlyRetryProbe", "hourlyRetryProbe"),
       fmt("subagentModelStrategy", "subagentModelStrategy"),
       fmt("subagentModelOverrides", "subagentModelOverrides"),

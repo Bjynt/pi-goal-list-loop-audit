@@ -64,6 +64,38 @@ export function resolveAuditJobDir(cwd: string, attemptId: string): string | nul
   return best?.dir ?? null;
 }
 
+/** v0.38.3: the most recently modified job dir under the audit-jobs root,
+ * or null when the root is missing/empty. This is what makes the finished
+ * audit's transcript reachable AFTER completion: the live slot (and with it
+ * the claim's attemptId) is cleared the moment the verdict applies, so the
+ * only surviving pointer to "the last audit" is the newest dir on disk.
+ * Each launch gets a fresh unique suffix, so newest-mtime is unambiguous:
+ * the just-finished audit is always the newest dir until the next launch
+ * (or the reaper) changes that. */
+export function newestAuditJobDir(cwd: string): string | null {
+  const jobsRoot = join(cwd, ".pi-glla", "audit-jobs");
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(jobsRoot);
+  } catch {
+    return null;
+  }
+  let best: { dir: string; mtimeMs: number } | null = null;
+  for (const name of entries) {
+    let isDir = false;
+    try {
+      isDir = statSync(join(jobsRoot, name)).isDirectory();
+    } catch {
+      continue;
+    }
+    if (!isDir) continue;
+    const dir = join(jobsRoot, name);
+    const mtimeMs = dirMtimeMs(dir);
+    if (best === null || mtimeMs > best.mtimeMs) best = { dir, mtimeMs };
+  }
+  return best?.dir ?? null;
+}
+
 /** Newest observable mtime inside a job dir — progress.json while live,
  * result.json once terminal, the dir itself as fallback. */
 function dirMtimeMs(dir: string): number {
@@ -142,9 +174,13 @@ interface RawResultFile {
  * function is synchronous because the widget already runs on the UI
  * ticker — adding async would mean a second re-paint and a stale reading.
  * Synchronous read of a 1-2 KB JSON file is cheap. */
-export function loadAuditorTranscript(cwd: string, attemptId: string | undefined): LoadResult {
-  if (!attemptId) return { kind: "not-running" };
-  const dir = resolveAuditJobDir(cwd, attemptId);
+export function loadAuditorTranscript(cwd: string, attemptId?: string): LoadResult {
+  // v0.38.3: an absent attemptId means "whatever the most recent audit was"
+  // — the post-completion surface, where the claim (and its attemptId) is
+  // already gone but the job dir still exists inside the retention window.
+  const dir = attemptId
+    ? resolveAuditJobDir(cwd, attemptId)
+    : newestAuditJobDir(cwd);
   if (!dir) return { kind: "reaped" };
 
   const progressPath = join(dir, "progress.json");

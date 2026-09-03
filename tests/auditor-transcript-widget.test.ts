@@ -6,7 +6,7 @@
 // synthesized JSON fixtures and the renderer is a pure projection of the
 // resulting events. Covers:
 //
-//   * loadAuditorTranscript: reaped / not-running / empty / events
+//   * loadAuditorTranscript: reaped / empty / events (+ newest-dir resolve)
 //   * renderAuditorTranscriptLines: header + bounded line projection
 //   * detectVerdict (via the loader): all three verdict shapes
 //   * terminal marker: ok vs error / infrastructureClass
@@ -20,6 +20,7 @@ import { join } from "node:path";
 
 import {
   loadAuditorTranscript,
+  newestAuditJobDir,
   renderAuditorTranscriptLines,
   resolveAuditJobDir,
   transcriptHint,
@@ -51,8 +52,67 @@ test("auditJobDir: joins .pi-glla/audit-jobs/<id> under root", () => {
   assert.equal(auditJobDir("/tmp/proj", "abc-123"), "/tmp/proj/.pi-glla/audit-jobs/abc-123");
 });
 
-test("loadAuditorTranscript: not-running when attemptId is undefined", () => {
-  assert.deepEqual(loadAuditorTranscript("/tmp/whatever", undefined), { kind: "not-running" });
+// v0.38.3: an absent attemptId means "the most recent audit" (the
+// post-completion surface, where the claim is already gone). With no job
+// dirs at all there is nothing to show — reaped, so the card hides.
+test("loadAuditorTranscript: undefined attemptId with no job dirs is reaped", () => {
+  assert.deepEqual(loadAuditorTranscript("/tmp/whatever-nonexistent-glla-root", undefined), { kind: "reaped" });
+});
+
+test("newestAuditJobDir: picks the most recently modified dir, ignores stray files", () => {
+  withTempDir((root) => {
+    const older = join(root, ".pi-glla", "audit-jobs", "audit-old-a1-aaaaaaaa");
+    const newer = join(root, ".pi-glla", "audit-jobs", "audit-new-b2-bbbbbbbb");
+    writeJob(root, "audit-old-a1-aaaaaaaa", { protocolVersion: 1, phase: "running", elapsedMs: 0 });
+    writeJob(root, "audit-new-b2-bbbbbbbb", { protocolVersion: 1, phase: "running", elapsedMs: 0 });
+    // A stray FILE in the jobs root must never be mistaken for a job dir.
+    writeFileSync(join(root, ".pi-glla", "audit-jobs", "stray.lock"), "{}" );
+    const base = Date.now() - 120_000;
+    utimesSync(join(older, "progress.json"), new Date(base), new Date(base));
+    utimesSync(join(newer, "progress.json"), new Date(base + 60_000), new Date(base + 60_000));
+    assert.equal(newestAuditJobDir(root), newer);
+  });
+});
+
+test("newestAuditJobDir: null when the root is missing or empty", () => {
+  withTempDir((root) => {
+    assert.equal(newestAuditJobDir(root), null, "no .pi-glla/audit-jobs at all");
+    mkdirSync(join(root, ".pi-glla", "audit-jobs"), { recursive: true });
+    assert.equal(newestAuditJobDir(root), null, "empty root");
+  });
+});
+
+test("loadAuditorTranscript: undefined attemptId reads the newest finished audit", () => {
+  withTempDir((root) => {
+    // Two finished audits; the newest dir's result must win — this is what
+    // makes the just-completed audit readable after the slot is cleared.
+    const older = writeJob(
+      root,
+      "audit-old-a1-aaaaaaaa",
+      { protocolVersion: 1, phase: "complete", elapsedMs: 1000, toolCalls: [{ name: "read", argsPrefix: "old.txt", finishedAt: 1, ok: true }] },
+      { protocolVersion: 1, ok: true, output: "work <approved/> done", model: "provider/old" },
+    );
+    const newer = writeJob(
+      root,
+      "audit-new-b2-bbbbbbbb",
+      { protocolVersion: 1, phase: "complete", elapsedMs: 2000, toolCalls: [{ name: "bash", argsPrefix: "npm test", finishedAt: 1, ok: true }] },
+      { protocolVersion: 1, ok: true, output: "work <approved/> done", model: "provider/new" },
+    );
+    const base = Date.now() - 120_000;
+    // dirMtimeMs prefers progress.json — stamp BOTH files per dir.
+    for (const f of ["progress.json", "result.json"]) {
+      utimesSync(join(older, f), new Date(base), new Date(base));
+      utimesSync(join(newer, f), new Date(base + 60_000), new Date(base + 60_000));
+    }
+
+    const loaded = loadAuditorTranscript(root, undefined);
+    assert.equal(loaded.kind, "events");
+    if (loaded.kind !== "events") return;
+    assert.equal(loaded.model, "provider/new");
+    assert.equal(loaded.terminal, true);
+    const tools = loaded.events.filter((e) => e.kind === "tool_end").map((e) => (e as { name: string }).name);
+    assert.deepEqual(tools, ["bash"], "only the newest audit's tool calls surface");
+  });
 });
 
 test("loadAuditorTranscript: reaped when the job dir does not exist", () => {

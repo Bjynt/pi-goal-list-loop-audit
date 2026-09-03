@@ -629,6 +629,34 @@ function buildAuditorTranscriptWidgetLines(
   return out;
 }
 
+/** v0.38.3: standalone card for the FINISHED audit's transcript — rendered
+ * when the live slot is already cleared (or holds a terminal goal) but the
+ * job dir is still inside the retention window. Resolves the newest job
+ * dir (no attemptId needed — the claim is gone), so it also survives a pi
+ * restart. Returns undefined when there is nothing to show: the caller then
+ * falls through to the normal no-goal render. */
+function buildPostCompletionTranscriptLines(
+  cwd: string,
+  theme: DisplayTheme | undefined,
+  width: number | undefined,
+): string[] | undefined {
+  const loaded = loadAuditorTranscript(cwd, undefined);
+  if (loaded.kind !== "events") return undefined;
+  const model = loaded.model ? truncate(loaded.model, 30) : undefined;
+  const lines = renderAuditorTranscriptLines(loaded.events, {
+    width,
+    phaseLabel: loaded.terminal ? undefined : "running",
+    model,
+    terminal: loaded.terminal,
+  });
+  return [
+    `${paint(theme, "accent", "auditor transcript — last audit")}`,
+    `├─ ${paint(theme, "accent", lines[0] ?? "")}`,
+    ...lines.slice(1).map((l) => paint(theme, "dim", l)),
+    `└─ ${paint(theme, "dim", "Ctrl+Shift+E closes · kept until the retention timer reaps the job dir")}`,
+  ];
+}
+
 function auditorNextTransition(phase: AuditorDisplayPhase): string {
   switch (phase) {
     case "queued": return "detached worker start";
@@ -1291,6 +1319,16 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
   const g = state.goal;
   const held = heldLoop(state);
   if (!g) {
+    // v0.38.3: post-completion transcript — approval clears the live slot
+    // synchronously, so the finished audit's log is reachable only via the
+    // newest job dir, and only inside the retention window. The keypress
+    // is explicit and transient, so it outranks the passive cards below;
+    // toggling off restores them. Returns undefined when the dir is gone
+    // (reaped) or was never written — the block simply does not exist.
+    if (extras?.auditorTranscriptOpen && extras.cwd !== undefined) {
+      const t = buildPostCompletionTranscriptLines(extras.cwd, theme, width);
+      if (t) return t;
+    }
     // v0.28.17: no visible goal — the held loop gets its own card.
     if (held) return heldLoopLines(held, now, theme, width);
     // v0.35.61: a waiting-only list is live durable work even without an
@@ -1308,7 +1346,15 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
     // left no trace — note.md 2026-08-07). v0.34.89: that render is now a
     // single dim SUMMARY line (`─ done · <objective> · took X`), not a full
     // card — the old card read like an active item (Screenshot_20260807_231205).
-    return completedGoalLines(g, now, theme, width);
+    const doneLines = completedGoalLines(g, now, theme, width);
+    // v0.38.3: same post-completion transcript as the slot-cleared case —
+    // covers the crash-recovery / archive-failure windows where the
+    // terminal goal still occupies the slot.
+    if (extras?.auditorTranscriptOpen && extras.cwd !== undefined) {
+      const t = buildPostCompletionTranscriptLines(extras.cwd, theme, width);
+      if (t) doneLines.push(...t);
+    }
+    return doneLines;
   }
   const lines = goalLines(g, state, audit, now, theme, width, extras);
   // v0.28.17: a held loop rides the goal card as a trailing line.
