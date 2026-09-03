@@ -1220,7 +1220,7 @@ function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
  * and must NOT claim work started (S3's "created — starting now" lie). */
 function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   if (processOwnerDeniedCwd === ctx.cwd) {
-    ctx.ui.notify(`glla: another live pi process owns this working-directory state root — ${what} is refused here to prevent competing writes. Close the other host or select sessionDir, then start a fresh session.`, "warning");
+    ctx.ui.notify(`glla: another live pi process owns this working-directory state root — ${what} is refused here to prevent competing writes. /glla owner inspects the holder; /glla takeover resolves it with confirmation. (Or close the other host or select sessionDir, then start a fresh session.)`, "warning");
     return true;
   }
   if (!probeExtensionApiStale()) return false;
