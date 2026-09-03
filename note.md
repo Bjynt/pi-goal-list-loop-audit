@@ -11,7 +11,14 @@ as state root owner but this folder was only open in that session
 
 ##
 
+objective completion needs a good summary, not this
+/home/dracon/Pictures/Screenshots/Screenshot_20260903_204005.png /home/dracon/Pictures/Screenshots/Screenshot_20260903_204003.png 
+
+##
+
 use the other subagent extension ? that lead to more subagents being use
+
+
 
 # Later
 
