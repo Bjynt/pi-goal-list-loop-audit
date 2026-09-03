@@ -14,13 +14,14 @@
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   loadAuditorTranscript,
   renderAuditorTranscriptLines,
+  resolveAuditJobDir,
   transcriptHint,
   auditJobDir,
   type LoadResult,
@@ -58,6 +59,54 @@ test("loadAuditorTranscript: reaped when the job dir does not exist", () => {
   withTempDir((root) => {
     const loaded = loadAuditorTranscript(root, "missing-attempt");
     assert.equal(loaded.kind, "reaped");
+  });
+});
+
+// v0.38.3: launch dirs are named `<logicalAttemptId>-<launchTime36>-<rand8>`
+// (newDetachedAuditJobAttemptId), so the claim's stored attemptId never
+// equals the dir name. The reader resolves by prefix + newest mtime.
+test("resolves suffixed launch dirs and reads the newest one", () => {
+  withTempDir((root) => {
+    const logical = "audit-mtkq7q92-7fqw75";
+    const older = join(root, ".pi-glla", "audit-jobs", `${logical}-a1-aaaaaaaa`);
+    const newer = join(root, ".pi-glla", "audit-jobs", `${logical}-b2-bbbbbbbb`);
+    writeJob(
+      root,
+      `${logical}-a1-aaaaaaaa`,
+      { protocolVersion: 1, attemptId: `${logical}-a1-aaaaaaaa`, phase: "running", elapsedMs: 0, recentOutput: ["older launch line"] },
+    );
+    writeJob(
+      root,
+      `${logical}-b2-bbbbbbbb`,
+      { protocolVersion: 1, attemptId: `${logical}-b2-bbbbbbbb`, phase: "running", elapsedMs: 0, recentOutput: ["newer launch line"] },
+    );
+    const base = Date.now() - 60_000;
+    utimesSync(join(older, "progress.json"), new Date(base), new Date(base));
+    utimesSync(join(newer, "progress.json"), new Date(base + 30_000), new Date(base + 30_000));
+
+    assert.equal(resolveAuditJobDir(root, logical), newer);
+    const loaded = loadAuditorTranscript(root, logical);
+    assert.equal(loaded.kind, "events");
+    if (loaded.kind !== "events") return;
+    const streams = loaded.events.filter((e) => e.kind === "stream");
+    assert.deepEqual(streams.map((e) => (e as { line: string }).line), ["newer launch line"]);
+  });
+});
+
+test("resolveAuditJobDir: prefers the exact-name dir when it exists", () => {
+  withTempDir((root) => {
+    const id = "audit-exact-0000";
+    const dir = writeJob(root, id, { protocolVersion: 1, attemptId: id, phase: "running" });
+    assert.equal(resolveAuditJobDir(root, id), dir);
+  });
+});
+
+test("resolveAuditJobDir: never matches a different logical attempt", () => {
+  withTempDir((root) => {
+    // A dir whose name merely CONTAINS the id is not a prefix match.
+    writeJob(root, "x-audit-target-1111-a1-aaaaaaaa", { protocolVersion: 1, attemptId: "x-audit-target-1111-a1-aaaaaaaa" });
+    writeJob(root, "audit-other-9999-a1-aaaaaaaa", { protocolVersion: 1, attemptId: "audit-other-9999-a1-aaaaaaaa" });
+    assert.equal(resolveAuditJobDir(root, "audit-target-1111"), null);
   });
 });
 

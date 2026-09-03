@@ -12,6 +12,10 @@
 //   * terminal: `.pi-glla/audit-jobs/<attemptId>/result.json` once the worker
 //     exits (progress.json is also kept on disk for replay).
 //
+// Launch dirs are named `<attemptId>-<launchTime36>-<rand8>` (one unique
+// suffix per launch), so `resolveAuditJobDir` resolves the claim's logical
+// attemptId by prefix + newest mtime rather than exact name.
+//
 // The job dir is reaped `AUDIT_JOB_CLEANUP_MIN_AGE_MS` after the worker
 // dies, so a transcript request for a long-reaped attempt is graceful —
 // we render a single "transcript reaped" line instead of crashing the
@@ -21,7 +25,7 @@
 // exercise the renderer and the loader with synthesized JSONL without
 // spawning a worker.
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { truncate } from "./goal-loop-display.js";
@@ -29,6 +33,52 @@ import { truncate } from "./goal-loop-display.js";
 /** Where the parent writes per-attempt scratch for a detached audit. */
 export function auditJobDir(root: string, attemptId: string): string {
   return join(root, ".pi-glla", "audit-jobs", attemptId);
+}
+
+/** v0.38.3: resolve the on-disk job dir for a LOGICAL attempt id.
+ *
+ * The parent names each launch dir `<logicalAttemptId>-<launchTime36>-<rand8>`
+ * (`newDetachedAuditJobAttemptId`), so the claim's stored attemptId never
+ * equals the dir name. Try the exact name first (cheap, future-proof), else
+ * scan the bounded `audit-jobs/` root for dirs prefixed `<attemptId>-` and
+ * pick the most recently modified one (the live/latest launch wins). Returns
+ * null when nothing matches (reaped or never ran). */
+export function resolveAuditJobDir(cwd: string, attemptId: string): string | null {
+  const jobsRoot = join(cwd, ".pi-glla", "audit-jobs");
+  const exact = join(jobsRoot, attemptId);
+  if (existsSync(exact)) return exact;
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(jobsRoot);
+  } catch {
+    return null;
+  }
+  const prefix = `${attemptId}-`;
+  let best: { dir: string; mtimeMs: number } | null = null;
+  for (const name of entries) {
+    if (!name.startsWith(prefix)) continue;
+    const dir = join(jobsRoot, name);
+    const mtimeMs = dirMtimeMs(dir);
+    if (best === null || mtimeMs > best.mtimeMs) best = { dir, mtimeMs };
+  }
+  return best?.dir ?? null;
+}
+
+/** Newest observable mtime inside a job dir — progress.json while live,
+ * result.json once terminal, the dir itself as fallback. */
+function dirMtimeMs(dir: string): number {
+  for (const f of ["progress.json", "result.json"]) {
+    try {
+      return statSync(join(dir, f)).mtimeMs;
+    } catch {
+      // try next
+    }
+  }
+  try {
+    return statSync(dir).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 /** A single observable fact from the worker's session, in the order it was
@@ -94,8 +144,8 @@ interface RawResultFile {
  * Synchronous read of a 1-2 KB JSON file is cheap. */
 export function loadAuditorTranscript(cwd: string, attemptId: string | undefined): LoadResult {
   if (!attemptId) return { kind: "not-running" };
-  const dir = auditJobDir(cwd, attemptId);
-  if (!existsSync(dir)) return { kind: "reaped" };
+  const dir = resolveAuditJobDir(cwd, attemptId);
+  if (!dir) return { kind: "reaped" };
 
   const progressPath = join(dir, "progress.json");
   const resultPath = join(dir, "result.json");
@@ -215,7 +265,7 @@ function renderEvent(ev: TranscriptEvent, width: number): string {
     case "tool_end":
       return `${ev.ok ? "✓" : "✗"} ${truncate(ev.name, 20)}${ev.target ? ` → ${truncate(ev.target, TOOL_TARGET_MAX)}` : ""}`;
     case "stream":
-      return `… ${truncate(ev.line, width - 4)}`;
+      return `… ${truncate(ev.line, Math.min(width - 4, MAX_TRANSCRIPT_LINE_CHARS))}`;
     case "verdict":
       return `⟡ ${ev.verdict} · ${truncate(ev.line, width - 18)}`;
     case "terminal":
