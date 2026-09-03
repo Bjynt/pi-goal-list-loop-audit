@@ -2008,12 +2008,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           return;
         }
       }
-      // v0.38.6: the yield now carries the full over-cap ladder (retry
-      // /compact after GLLA's deterministic trim, larger-context model,
-      // /new + resume from durable state) instead of only the auto-compact
-      // pointer — field 2026-09-03: summarization itself was failing.
-      // v0.38.9: name the rung honestly — after a failed compact-and-retry
-      // inside the grace window, step (1) would be stale advice.
+      // Ladder banner (v0.38.6; v0.38.9 skips stale step 1 after a failed compact-and-retry).
       ctx.ui.notify(buildStarvationLadderMessage({ percent: typeof contextUsage?.percent === "number" ? contextUsage.percent : null, streak: starved.streak, recentCompact: sinceLastCompactMs < COMPACTION_GRACE_MS }), "info");
       return;
     }

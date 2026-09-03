@@ -994,14 +994,11 @@ export function shouldCompactFirstNudge(percent: number | null | undefined): boo
  * (retry /compact after GLLA's deterministic trim, larger-context model,
  * /new + resume from durable state) plus the no-LLM backstop: the
  * post-compact resync re-anchors a fresh session with no summarization.
- * v0.38.9: `recentCompact` skips the stale retry — when a compact already
- * failed inside the grace window, advising another /compact retry wastes
- * the turn; the ladder points straight at the model switch and /new. */
+ * `recentCompact` skips the stale retry (v0.38.9). */
 export function buildStarvationLadderMessage(input: { percent?: number | null; streak?: number; recentCompact?: boolean } = {}): string {
   const at = typeof input.percent === "number" && Number.isFinite(input.percent)
     ? `${input.percent.toFixed(1)}%` : "nearly full";
-  // v0.38.8: one recovery per line — the single-paragraph version buried
-  // the ladder. Same content, scannable shape.
+  // One recovery per line (v0.38.8) — same content, scannable shape.
   return [
     `glla: output-token stop was context starvation (tiny output at ${at} context) — yielding to pi auto-compaction instead of re-sending.`,
     `If compaction fails or context is already over cap, in order:`,
