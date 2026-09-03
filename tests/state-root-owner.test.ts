@@ -2,7 +2,7 @@
 // consented SIGTERM end-to-end against real child processes, heartbeat.
 import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -40,7 +40,7 @@ afterEach(async () => {
   for (const c of children.splice(0)) {
     try { c.kill("SIGKILL"); } catch { /* already gone */ }
   }
-  try { fs.execSync(`pkill -f 'sleep 9999[12]'`); } catch { /* none left */ }
+  try { execSync(`pkill -f 'sleep 9999[12]'`); } catch { /* none left */ }
 });
 
 function writeOwner(cwd: string, record: Record<string, unknown>): void {
@@ -208,9 +208,21 @@ test("confirmed takeover SIGTERMs a pi-shaped owner, verifies exit, claims", asy
   assert.equal(r.outcome, "taken");
   assert.equal((r as any).signaled, true);
   assert.equal((r as any).prevPid, child.pid);
-  let alive = true;
-  try { alive = child.kill(0); } catch { alive = false; }
-  assert.equal(alive, false, "owner exited after SIGTERM");
+  // Bounded exit poll, not an instant kill(0): under suite load libuv may
+  // briefly report a not-yet-reaped zombie as signalable. Kernel truth
+  // (raw kill ESRCH) with a deadline is deterministic either way.
+  const exitDeadline = Date.now() + 5000;
+  let exited = false;
+  while (Date.now() < exitDeadline) {
+    try {
+      process.kill(child.pid!, 0);
+    } catch {
+      exited = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(exited, true, "owner exited after SIGTERM");
   assert.equal(readOwnerFile(cwd)?.pid, process.pid, "claimed after verified exit");
   assert.match(readLedger(cwd), /"signaled":true/);
 });
@@ -276,7 +288,7 @@ test("/glla owner reports unclaimed / self / live holder", async () => {
   notes.length = 0;
   const holder = spawnSleep();
   await new Promise((r) => setTimeout(r, 100));
-  writeOwner(cwd, { pid: holder.pid, at: "2026-09-03T18:48:21.983Z", ownerSessionId: "s-1" });
+  writeOwner(cwd, { pid: holder.pid, at: new Date().toISOString(), ownerSessionId: "s-1" });
   cmdGllaOwner(fakeCtx(cwd, true, notes));
   const text = notes.join("\n");
   assert.match(text, /LIVE foreign owner/);

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.11 — state-root owner takeover (2026-09-03)
+
+### Added
+  `/glla owner` (read-only holder inspection: pid/comm/since/idle/session + verdict) and `/glla takeover` (consented steal). Dead/released/recycled owners reclaim without signaling; a live foreign owner is SIGTERMed only after explicit confirm, only when pi-shaped, and claimed only after verified exit — a survivor is never claimed. Owner heartbeat refreshes throttled on agent_end so idle is measurable. Both read-only warnings point at the new commands. Runbook in `audit/OWNER-TAKEOVER-2026-09-03.md`.
+
 ## 0.38.10 — emergency compactor handoff (2026-09-03)
 
 ### Added
