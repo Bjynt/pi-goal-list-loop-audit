@@ -136,6 +136,7 @@ import {
   transitionDispatch,
   type ContinuationDispatch,
 } from "../goal-loop-dispatch.js";
+import { runEmergencyCompactorIfDue } from "../goal-compactor.js";
 import {
   createGoalContinuation,
   scheduleContinuation,
@@ -2010,6 +2011,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }
       // Ladder banner (v0.38.6; v0.38.9 skips stale step 1 after a failed compact-and-retry).
       ctx.ui.notify(buildStarvationLadderMessage({ percent: typeof contextUsage?.percent === "number" ? contextUsage.percent : null, streak: starved.streak, recentCompact: sinceLastCompactMs < COMPACTION_GRACE_MS }), "info");
+      // v0.38.10: emergency compactor, one shot per episode (fire-and-forget).
+      void runEmergencyCompactorIfDue(ctx, starved.shouldRefuse, {
+        notify: (message) => ctx.ui.notify(message, "info"),
+        page: (message) => notifyExternal(ctx, message),
+      });
       return;
     }
     if (lc.giveUpNow) {

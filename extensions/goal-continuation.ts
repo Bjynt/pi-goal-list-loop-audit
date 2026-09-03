@@ -1302,8 +1302,10 @@ export function sendLengthContinue(ctx: ExtensionContext, consecutive: number): 
 /* ------------------------------------------------------------------ */
 
 /** v0.32.1: deterministic post-compaction re-anchor (pi-goal-x's #5) —
- * prepended to the first continuation/loop message after a compact. */
-export function buildPostCompactResync(): string {
+ * prepended to the first continuation/loop message after a compact.
+ * v0.38.10: optional brief excerpt — the emergency compactor's handoff,
+ * when one exists, rides the resync so a fresh session lands warm. */
+export function buildPostCompactResync(briefExcerpt?: string): string {
   const lines: string[] = [
     "[POST-COMPACTION RESYNC] The transcript was just compacted. Trust the artifacts on disk and .pi-glla/ state — NOT your memory of the prior chat. Re-read files before editing them.",
   ];
