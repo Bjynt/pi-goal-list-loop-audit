@@ -116,6 +116,11 @@ test("classifyOwner covers the full matrix", () => {
     "live-foreign",
     "unknowable start time never recycles — it stays live-foreign",
   );
+  assert.equal(
+    classifyOwner({ pid: 2, at: now - 3600_000 } as any, 1, occ(true, now - 3570_000), now),
+    "live-foreign",
+    "30s younger than the claim is inside the skew margin — stays live-foreign",
+  );
 });
 
 test("describeOwner returns null for self, shape for foreign", () => {
