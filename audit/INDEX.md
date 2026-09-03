@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-03):**
+- `DELTA-ONLY-CONTINUATION-2026-09-03.md` — v0.38.5 shipped: steady-state goal continuation is marker-only 45 chars (history holds state), resync+marker after compact, full 23k only on first-send/dirty (repair/recovery/audit); 1824 pass
 - `CACHE-CRITICAL-ADDENDUM-2026-09-03.md` — cache-critical addendum: why a naked ≤160-char followUp marker would break GLLA (no `before_agent_start` systemPrompt authority) vs pi-goal-x `system.cache_control` + marker (45 chars vs GLLA 21–40k); A2 downgraded to CONDITIONAL paired, measured gate
 - `ANTIGRAVITY-CODEX-CLAUDE-PI-GOAL-X-2026-09-03.md` — 4-harness keep-checking comparison vs GLLA ContinuousSupervisor 250ms→15s: Antigravity poll-only already ported, Codex smooth (compact prompt + 50ms idle gate, no heartbeat/auditor), Claude transcript + branch/plan lessons, pi-goal-x contender typed-revision/marker brevity — unified table + §6 borrow ranking (A8→A2→A1) — **errata: A2 now conditional per addendum**
 

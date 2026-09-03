@@ -1,7 +1,9 @@
 
 # Now
 
-## analyze antigravity and codex and cladue and pi goal x see if we can learn something
+## v0.38.5 shipped — delta-only goal continuation (marker-only steady-state)
+
+Steady-state turns send `[GOAL CHECKPOINT goalId=…]` 45 chars; resync+marker after compact; full 23k only first-send/dirty. See `audit/DELTA-ONLY-CONTINUATION-2026-09-03.md`. 1824 pass.
 
 
 # Next

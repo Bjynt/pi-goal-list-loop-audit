@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.5 — delta-only goal continuation: marker-only steady-state (2026-09-03)
+
+### Fixed
+  Ongoing-conversation resend: steady-state goal turns now send the 45-char `[GOAL CHECKPOINT goalId=…]` marker only instead of the full ~23k continuation prompt every turn (history already holds T0 objective/contract/tasks + `complete_task` deltas). Post-compact sends `resync + marker` (~250 chars); full sends only on first-send per process or dynamic deltas (`repairTarget` / `autoResumedAt` / auditor TODOs / audit report / stale-approval mismatch / designer / full-audit). Marker still carries the dispatch marker so `before_agent_start` start-proof keeps matching; `agent_start`/`turn_start` fallback needs no prompt. Ledger `goal_continuation_sent` gains `kind` (`full`/`full+resync`/`resync`/`marker`) + `payloadChars`. Loop turns unchanged (per-iteration prompts vary). `extensions/goal-continuation.ts` (`buildMarkerContent` / `needsFullContinuation` / `buildContinuationContent`); `tests/delta-only-continuation.test.ts` pins the matrix.
+
 ## 0.38.4 — human-input zombie stand-down (PR #36 slice) + AVO close (2026-09-02)
 
 ### Fixed
