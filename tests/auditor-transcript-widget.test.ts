@@ -384,7 +384,7 @@ test("transcriptHint: explicit text for reaped and empty", () => {
   assert.equal(transcriptHint({ kind: "empty" }), "transcript empty");
 });
 
-test("transcriptHint: events include the F9 invitation", () => {
+test("transcriptHint: events include the /glla transcript invitation", () => {
   const loaded: LoadResult = {
     kind: "events",
     events: [{ kind: "tool_end", at: 1, name: "read", ok: true }],
@@ -392,6 +392,7 @@ test("transcriptHint: events include the F9 invitation", () => {
   };
   const hint = transcriptHint(loaded);
   assert.ok(hint);
+  assert.match(hint!, /\/glla transcript/);
   assert.match(hint!, /F9/);
   assert.match(hint!, /^transcript: 1 event/);
 });

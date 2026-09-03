@@ -571,14 +571,18 @@ function clearDetachedAuditProgress(generation: number, goalId: string, attemptI
   latestAuditProgress = null;
 }
 
-/** v0.38.3: flip the transcript toggle and force a repaint. Called from
- * the `F9` shortcut handler in registerGoalRuntime.
- * Returns the new state
- * so callers can chain (e.g. log it). */
-export function toggleAuditorTranscript(): boolean {
-  auditorTranscriptOpen = !auditorTranscriptOpen;
+/** v0.38.3: set the transcript toggle explicitly and force a repaint.
+ * Returns the new state so callers can chain (e.g. log it). */
+export function setAuditorTranscriptOpen(open: boolean): boolean {
+  auditorTranscriptOpen = open;
   if (lastUIRenderContext && lastUIRenderContext.hasUI) refreshUI(lastUIRenderContext, true);
   return auditorTranscriptOpen;
+}
+
+/** v0.38.3: flip the transcript toggle. Called from the `F9` shortcut
+ * handler in registerGoalRuntime and by `/glla transcript`. */
+export function toggleAuditorTranscript(): boolean {
+  return setAuditorTranscriptOpen(!auditorTranscriptOpen);
 }
 
 // v0.33.0: slim widget "last action" feed — a tiny ring of finished tool

@@ -169,7 +169,7 @@ export interface WidgetExtras {
    * transcript loader must use this, never process.cwd(). */
   cwd?: string;
   /** v0.38.3: one-line affordance shown while the transcript block is
-   * CLOSED ("transcript: N events — F9"). Computed by
+   * CLOSED ("transcript: N events — /glla transcript · F9"). Computed by
    * refreshUI via transcriptHint(); undefined while the block is open. */
   auditorTranscriptHint?: string;
 }
@@ -607,7 +607,7 @@ function buildAuditorTranscriptWidgetLines(
   if (loaded.kind !== "events") {
     const msg =
       loaded.kind === "reaped"
-        ? "transcript reaped — directory cleaned; F9 to dismiss"
+        ? "transcript reaped — directory cleaned; /glla transcript or F9 to dismiss"
         : loaded.kind === "empty"
           ? "transcript empty — worker has not written any events yet"
           : "no detached audit in flight";
@@ -653,7 +653,7 @@ function buildPostCompletionTranscriptLines(
     `${paint(theme, "accent", "auditor transcript — last audit")}`,
     `├─ ${paint(theme, "accent", lines[0] ?? "")}`,
     ...lines.slice(1).map((l) => paint(theme, "dim", l)),
-    `└─ ${paint(theme, "dim", "F9 closes · kept until the retention timer reaps the job dir")}`,
+    `└─ ${paint(theme, "dim", "/glla transcript or F9 closes · kept until the retention timer reaps the job dir")}`,
   ];
 }
 

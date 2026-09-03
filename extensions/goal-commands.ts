@@ -38,6 +38,8 @@ import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-confli
 import { formatGllaVersion } from "./glla-version.js";
 import { AUDIT_JOB_CLEANUP_MIN_AGE_MS, cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
+import { loadAuditorTranscript, transcriptHint } from "./auditor-transcript.js";
+import { setAuditorTranscriptOpen, toggleAuditorTranscript } from "./loops/goal-ui.js";
 import { inferStartFromSession, type StartContextInference } from "./start-context.js";
 
 /** Child pi sessions live under the shared session store, munged by cwd
@@ -2319,6 +2321,19 @@ async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
   ctx.ui.notify("Nothing to cancel — no active/paused goal/list-item, no loop. Queued list items: /list cancel; everything: /glla wipe.", "info");
 }
 
+/** v0.38.3: /glla transcript [open|close] — the visible menu option for the
+ * detached-auditor transcript panel. Bare form toggles; an explicit
+ * open/close argument sets the state. F9 remains the keyboard path. The
+ * notification carries the one-line transcript summary so the menu option
+ * doubles as a peek without opening the panel. */
+function cmdTranscript(args: string, ctx: ExtensionContext): void {
+  const explicit = args === "open" || args === "close" ? args : null;
+  const open = explicit ? explicit === "open" : toggleAuditorTranscript();
+  if (explicit) setAuditorTranscriptOpen(open);
+  const hint = transcriptHint(loadAuditorTranscript(ctx.cwd));
+  ctx.ui.notify(`glla transcript: ${open ? "opened" : "closed"}${hint ? ` — ${hint}` : ""}.`, "info");
+}
+
 function cmdAudits(args: string, ctx: ExtensionContext): void {
   if (/\bhealth\b/.test(args)) {
     // v0.38.3: retention is a setting, not a constant — the review window
@@ -2520,7 +2535,7 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
   if (g?.status === "paused" && g.pauseKind === "decision" && g.pauseOptions?.length) {
     lines.push(`decision pending (${g.pauseOptions.length} options) — ${activeGoalSurfaceCommand("decide")}`);
   }
-  lines.push("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log");
+  lines.push("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla transcript · /glla log");
   ctx.ui.notify(`glla status\n${lines.join("\n")}`, "info");
 }
 
@@ -2554,6 +2569,12 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^audits(?:\s|$)/.test(trimmed)) {
     cmdAudits(trimmed.slice("audits".length).trim(), ctx);
+    return;
+  }
+  // v0.38.3: /glla transcript [open|close] — the visible menu option for the
+  // detached-auditor transcript panel (F9 stays registered for keyboard).
+  if (/^transcript(?:\s|$)/.test(trimmed)) {
+    cmdTranscript(trimmed.slice("transcript".length).trim().toLowerCase(), ctx);
     return;
   }
   // v0.35.29 (issue #15): tracked-subagent panel — read-only, stale-safe.
