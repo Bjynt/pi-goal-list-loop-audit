@@ -1204,8 +1204,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     case "compactorModel": {
       const pick = await promptModelRef(ctx, "Compactor agent — emergency handoff brief only", "provider/model-id — empty keeps registry plan B (verified free big-context model)");
       if (pick === undefined) return;
-      const pickedModel = resolvePickedModel(ctx, pick);
-      void pickedModel;
       saveSettings("global", ctx.cwd, { compactorModel: pick.kind === "session" ? undefined : pick.ref });
       ctx.ui.notify(
         pick.kind === "session"
@@ -1238,6 +1236,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const fallbackRefs = [
         ...normalizeMainModelFallbackRefs(settings.mainModelFallbacks),
         ...normalizeMainModelFallbackRefs(settings.drafterModelFallbacks),
+        ...normalizeMainModelFallbackRefs(settings.compactorModelFallbacks),
+        ...(settings.compactorModel?.trim() ? [settings.compactorModel.trim()] : []),
         ...normalizeMainModelFallbackRefs(settings.auditorModelFallbacks),
         ...Object.values(settings.subagentFallbacks ?? {}).flatMap((chain) => normalizeModelRefs(chain)),
       ];

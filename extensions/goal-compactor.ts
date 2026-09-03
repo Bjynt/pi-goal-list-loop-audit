@@ -208,7 +208,8 @@ async function runEmergencyCompactor(
   const settings = deps.settings ?? loadGlobalSettings();
   let usageTokens: number | undefined;
   try {
-    usageTokens = ctx.getContextUsage?.()?.tokens;
+    const tokens = ctx.getContextUsage?.()?.tokens;
+    if (typeof tokens === "number") usageTokens = tokens;
   } catch { /* usage best effort */ }
   const need = deps.needTokens ?? (typeof usageTokens === "number" && usageTokens > 0 ? Math.ceil(usageTokens * 1.25) : PLAN_B_FALLBACK_NEED);
   const { candidates } = resolveCompactorModel(ctx as ExtensionContext, settings, need);

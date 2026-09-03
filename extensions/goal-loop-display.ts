@@ -484,6 +484,7 @@ export interface LoadHoldRecoverySummary {
   listWaiting?: number;
   /** v0.38.10: emergency compactor handoff excerpt — appended when present. */
   briefExcerpt?: string;
+}
 export function buildLoadHoldRecoveryLines(s: LoadHoldRecoverySummary, now = Date.now()): string[] {
   const lines = [
     `glla: recovered from disk — "${truncate((s.objective ?? "").trim() || "(no objective recorded)", 120)}" (${s.status ?? "held"})`,
