@@ -766,11 +766,15 @@ export class SettingsMenuComponent implements Component {
 
     // v0.28.19: color-only tabs (user call: "dropping the brackets") —
     // active = accent + bold, inactive = dim. No bracket chrome.
+    // v0.38.8: per-tab row counts — the menu holds 7 sections and the
+    // count says where the settings live at a glance.
+    const tabLabel = (s: { id: SettingsSectionId; label: string }): string =>
+      settingsTabLabel(s.label, this.rows.filter((r) => r.section === s.id).length);
     lines.push(
       SETTINGS_SECTIONS.map((s, i) =>
         i === this.activeSectionIdx
-          ? this.theme.fg("accent", this.theme.bold(s.label))
-          : this.theme.fg("dim", s.label),
+          ? this.theme.fg("accent", this.theme.bold(tabLabel(s)))
+          : this.theme.fg("dim", tabLabel(s)),
       ).join("  "),
     );
 

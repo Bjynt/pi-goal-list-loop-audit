@@ -997,11 +997,16 @@ export function shouldCompactFirstNudge(percent: number | null | undefined): boo
 export function buildStarvationLadderMessage(input: { percent?: number | null; streak?: number } = {}): string {
   const at = typeof input.percent === "number" && Number.isFinite(input.percent)
     ? `${input.percent.toFixed(1)}%` : "nearly full";
-  return `glla: output-token stop was context starvation (tiny output at ${at} context) — yielding to pi auto-compaction instead of re-sending. ` +
-    `If compaction fails or context is already over cap, in order: (1) run /compact again — GLLA already trimmed repeat payloads to a checkpoint, so the retry may now fit; ` +
-    `(2) switch to a larger-context model, then /compact (GLLA auto-rotates its fallback chain after a failed compact-and-retry); ` +
-    `(3) /new, then /goal resume — the goal, tasks, ledger and audits are durable on disk, and the post-compact resync re-anchors the fresh session with no summarization needed. ` +
-    `Automatic turns stay parked until a real compaction lands.`;
+  // v0.38.8: one recovery per line — the single-paragraph version buried
+  // the ladder. Same content, scannable shape.
+  return [
+    `glla: output-token stop was context starvation (tiny output at ${at} context) — yielding to pi auto-compaction instead of re-sending.`,
+    `If compaction fails or context is already over cap, in order:`,
+    `(1) run /compact again — GLLA already trimmed repeat payloads to a checkpoint, so the retry may now fit;`,
+    `(2) switch to a larger-context model, then /compact (GLLA auto-rotates its fallback chain after a failed compact-and-retry);`,
+    `(3) /new, then /goal resume — the goal, tasks, ledger and audits are durable on disk, and the post-compact resync re-anchors the fresh session with no summarization needed.`,
+    `Automatic turns stay parked until a real compaction lands.`,
+  ].join("\n");
 }
 function noteContextStarvedYield(): { streak: number; shouldRefuse: boolean } {
   const now = Date.now();

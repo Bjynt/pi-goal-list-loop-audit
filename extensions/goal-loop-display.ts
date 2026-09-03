@@ -923,10 +923,14 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
   const queueLabel = (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "queue empty";
   const lifecycleText = lifecycle.replace(/^lifecycle: /, "");
   const repair = g.repairTarget ? ` · replan required: ${truncate(g.repairTarget.objective.replace(/\s+/g, " "), 100)}` : "";
+  // v0.38.8: parked goals carry their verdict tally — a paused session
+  // with 2 disapprovals reads as "waiting with history", not dead.
+  const tallyText = formatVerdictTallySegment(auditorVerdictTally(g.auditHistory, now), now);
+  const verdict = tallyText ? ` · ${tallyText}` : "";
   if (queueFirst) {
-    return ` · ${queueLabel} · ${lifecycleText.replace(` · ${queueLabel}`, "")} · ${transition}${repair}`;
+    return ` · ${queueLabel} · ${lifecycleText.replace(` · ${queueLabel}`, "")} · ${transition}${repair}${verdict}`;
   }
-  return ` · ${lifecycleText} · ${transition}${repair}`;
+  return ` · ${lifecycleText} · ${transition}${repair}${verdict}`;
 }
 
 /**
@@ -1424,6 +1428,13 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     : 48;
   const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
+  // v0.38.8: durable verdict tally as a first-class card row — the widget
+  // is the glance surface, and stored verdicts are the progress evidence
+  // when no auditor is live. Silent when history is empty.
+  const headTally = formatVerdictTallySegment(auditorVerdictTally(g.auditHistory, now), now);
+  if (headTally) {
+    lines.push(`├─ ${paint(theme, "dim", `audits: ${truncate(headTally, Math.max(20, (width ?? 80) - 12))}`)}`);
+  }
   if (g.repairTarget) {
     lines.push(`├─ ${paint(theme, "warning", `REPLAN REQUIRED · original target: ${truncate(g.repairTarget.objective.replace(/\s+/g, " "), Math.max(30, (width ?? 80) - 28))}`)}`);
     const repairStep = g.repairTarget.replanPromptedAt
