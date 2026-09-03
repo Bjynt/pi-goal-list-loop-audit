@@ -38,12 +38,14 @@ import {
 /** Identifies which fallback chain the selector is consulting. Session is
  * the main-loop recovery; subagent chains are per-type (scout, worker,
  * reviewer, and the other current pi-subagents roles) and live in
- * goal-loop-subagents.ts. */
+ * goal-loop-subagents.ts. Compactor is the emergency handoff brief (never
+ * the session model — it is the stuck one). */
 export type ModelScope =
   | { kind: "session" }
   | { kind: "subagent"; agentName: string }
   | { kind: "drafter" }
-  | { kind: "auditor" };
+  | { kind: "auditor" }
+  | { kind: "compactor" };
 
 export interface ModelSelectorDeps {
   /** Read the fallback chain for a scope (returns the configured list of

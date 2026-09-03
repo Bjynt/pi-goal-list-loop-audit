@@ -77,6 +77,10 @@ export interface Settings {
   drafterThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Global-only ordered drafting fallback agents; the current session model is the final fallback. */
   drafterModelFallbacks?: string[];
+  /** Global-only primary model for the emergency compactor handoff brief. Unset → registry plan B. Never the session model (it is the stuck one). */
+  compactorModel?: string;
+  /** Global-only ordered emergency-compactor fallback agents; walked exactly like Main/drafter/auditor. No session last resort. */
+  compactorModelFallbacks?: string[];
   /** v0.34.115: per-subagent fallback chains. Keyed by current pi-subagents
    * role name (scout, researcher, worker, reviewer, oracle, delegate, …). When set, the subagent sync uses
    * the FIRST eligible ref in the chain via ModelSelector.selectNextValid;
@@ -257,6 +261,8 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "drafterModel",
   "drafterThinkingLevel",
   "drafterModelFallbacks",
+  "compactorModel",
+  "compactorModelFallbacks",
   "auditorModelFallbacks",
   "auditorToolTimeoutMs",
   "auditorStallMs",
@@ -353,6 +359,7 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
   settings.drafterModelFallbacks = normalizeMainModelFallbackRefs(settings.drafterModelFallbacks);
+  settings.compactorModelFallbacks = normalizeMainModelFallbackRefs(settings.compactorModelFallbacks);
   settings.auditorModelFallbacks = normalizeMainModelFallbackRefs(settings.auditorModelFallbacks);
   // v0.35.115 parity: subagent fallback chains use the same bounded,
   // case-insensitive dedup as the main chain so ordering/fallback
@@ -486,6 +493,8 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "drafterModel",
   "drafterThinkingLevel",
   "drafterModelFallbacks",
+  "compactorModel",
+  "compactorModelFallbacks",
   "mainModelRetryMinutes",
   "mainModelFailback",
   "mainModelPrimaryProbeMinutes",
@@ -626,7 +635,7 @@ export function saveSettings(scope: "global" | "project", cwd: string, patch: Pa
         continue;
       }
       if (v === undefined) delete next[k]; // key=unset removes the key
-      else if (k === "mainModelFallbacks" || k === "drafterModelFallbacks" || k === "auditorModelFallbacks") next[k] = normalizeMainModelFallbackRefs(v);
+      else if (k === "mainModelFallbacks" || k === "drafterModelFallbacks" || k === "compactorModelFallbacks" || k === "auditorModelFallbacks") next[k] = normalizeMainModelFallbackRefs(v);
       else if (k === "subagentFallbacks" && v && typeof v === "object") {
         const normalized: Record<string, string[]> = {};
         for (const [agent, chain] of Object.entries(v as Record<string, unknown>)) {
