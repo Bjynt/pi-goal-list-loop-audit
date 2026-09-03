@@ -1,7 +1,11 @@
 
 # Now
 
-# Next sitll recorded 0.38.4
+## over-cap starvation ladder — compact first, 5 ordered recoveries (shipped v0.38.6)
+
+85% compact-first nudge, ladder message, send choke-point refuse, sticky refuse while ≥90%. See `audit/STARVATION-LADDER-2026-09-03.md`.
+
+# Next still recorded 0.38.4
 
 ## objectives can be seemingly lost and next time we load the session we seemingly dont have any 
 

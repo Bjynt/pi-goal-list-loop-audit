@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.6 — over-cap starvation ladder: compact first, then 5 ordered recoveries (2026-09-03)
+
+### Added
+  Compact-first nudge: at 85% context (below the 90% starvation line) a one-shot-per-episode notify to run `/compact` while summarization still fits (episode resets below 80% or on compaction; ledger `context_compact_first_nudge`). The agent_end starvation yield notify now carries the full over-cap ladder — `/compact` retry after GLLA's deterministic trim, larger-context model (GLLA already auto-rotates its fallback chain after a failed compact-and-retry, v0.34.116), `/new` + `/goal resume` from durable disk state with no summarization needed — and states that automatic turns stay parked.
+
+### Fixed
+  Over-cap spin: `sendContinuation` now refuses while `isContextStarvedRefused()` — the single choke point every automatic path funnels through — so a 119–243% session stops queueing truncating turns (ledger `continuation_send_refused_context_starved`, silent; heartbeat one-shot + yield ladder own messaging). The refuse stays sticky while the last-known percent is ≥90% instead of lapsing 90s after the last yield. Heartbeat refuse branch/ledger/text unchanged (pinned). `tests/starvation-ladder.test.ts` (6 tests) pins band, ladder text, nudge episodes, sticky matrix, wiring, and a behavioral starved boot.
+
 ## 0.38.5 — delta-only goal continuation: marker-only steady-state (2026-09-03)
 
 ### Fixed
