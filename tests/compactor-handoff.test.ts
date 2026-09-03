@@ -284,7 +284,7 @@ test("no model anywhere skips silently with ledger, ladder still paints", async 
     assert.equal(spawned, 0, "nothing to spawn");
     const ledger = fs.readFileSync((ctx as any).cwd + "/.pi-glla/active.jsonl", "utf8");
     assert.match(ledger, /"compactor_skipped_no_model"/);
-    assert.equal(ctx.ui.matching("/new, then /goal resume").length, 1, "ladder covers the skip");
+    assert.equal(ctx.ui.matching("/new, then /goal resume").length, 2, "one ladder per engage; the skip never suppresses it");
   } finally {
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
@@ -306,6 +306,35 @@ test("notifyCmd off keeps the brief, drops the page", async () => {
     await waitFor(() => fs.existsSync(path.join(cwd, ".pi-glla", "handoff-brief.md")));
     assert.equal(execs.length, 0, "notifyCmd off means no page");
     assert.equal(ctx.ui.matching("handoff brief ready").length, 1, "in-session banner still paints");
+  } finally {
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
+test("reload with a brief on disk quotes the handoff in the banner", async () => {
+  const cwd = tmpCwd();
+  setGlobalSettings({ aggressiveMode: false });
+  seedState(cwd, { goal: {
+    id: "20260903000000-cmp01",
+    objective: "Stuck goal with a saver brief",
+    status: "paused",
+    policy: "goal",
+    autoContinue: false,
+    taskList: { tasks: [{ id: "t1", title: "Pending after rescue", status: "pending" }] },
+    auditHistory: [],
+  }, list: [] });
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "handoff-brief.md"), "Objective: saver saw it.\nNext task: t1.\n");
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd, { sessionManager: { name: `cmpbn-${Date.now()}-${Math.random()}` } });
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick(120);
+  try {
+    const banner = ctx.ui.matching("recovered from disk");
+    assert.equal(banner.length, 1);
+    assert.match(banner[0]?.message ?? "", /handoff: Objective: saver saw it\./, "warm handoff, not cold restart");
   } finally {
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }

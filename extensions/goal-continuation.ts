@@ -1323,9 +1323,6 @@ export function buildPostCompactResync(briefExcerpt?: string): string {
   // Goal-independent: the brief may outlive the goal record (or arrive
   // before one exists) — the fresh session needs it either way.
   if (briefExcerpt?.trim()) lines.push(`Handoff brief: ${briefExcerpt.trim().slice(0, 600)}`);
-  } else if (state.loop?.active) {
-    lines.push(`Loop: ${state.loop.target.slice(0, 160)} — iteration ${state.loop.iteration}`);
-  }
   return lines.join("\n") + "\n\n";
 }
 
