@@ -36,6 +36,7 @@ import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
+import { cmdGllaOwner, cmdGllaTakeover } from "./state-root-owner.js";
 import { cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
 import { inferStartFromSession, type StartContextInference } from "./start-context.js";
@@ -2617,6 +2618,14 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^cancel(?:\s|$)/.test(trimmed)) {
     await cmdGllaCancel(ctx);
+    return;
+  }
+  if (/^owner(?:\s|$)/.test(trimmed)) {
+    cmdGllaOwner(ctx);
+    return;
+  }
+  if (/^takeover(?:\s|$)/.test(trimmed)) {
+    await cmdGllaTakeover(ctx);
     return;
   }
   if (/^reviewer(?:\s|$)/.test(trimmed)) {
