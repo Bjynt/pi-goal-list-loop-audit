@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+  Post-completion transcript actually survives completion: the detached-auditor parent removed the job dir (and its worker lock) the moment it consumed result.json, and the archive-time cancel reaped it again — so the finished audit's transcript was gone before any verdict applied, defeating the retention window. Now a run that produced a result keeps its dir AND the worker lock: the lock makes `inspectAuditJobHealth` classify the finished dir as `dead` (reapable once aged past `auditJobRetentionMs` by `/glla audits health cleanup`) instead of `ambiguous` (which cleanup never touches). Incomplete runs (no result.json) are still removed immediately so kill-and-restart loops don't accumulate empty dirs, and `reapDurableWorkers`/cancel skip any dir holding result.json.
+
 ### Added
   Auditor transcript surface: an expandable block under the existing audit card, toggled by F9 (`Key.f9`) or the visible menu option `/glla transcript [open|close]`, renders the detached auditor's session — tool calls, streamed report lines, verdict marker, and terminal ok/error status — by re-reading `.pi-glla/audit-jobs/<attemptId>/progress.json` (live) and `result.json` (terminal) on the existing uiTicker repaint. No new timer, no separate window/tab. The loader (`extensions/auditor-transcript.ts:loadAuditorTranscript`) handles reaped job dirs, missing attemptId, and parse failures gracefully — each renders a single explanatory line instead of crashing the widget. Each launch gets a uniquely-suffixed dir name (`<attemptId>-<launchTime36>-<rand8>`), so the reader resolves the claim's logical attemptId by prefix + newest mtime (`resolveAuditJobDir`) rather than exact dir name. Bounded to 30 events, 100-char line cap, model + phase header line.
 

@@ -750,6 +750,18 @@ function durableWorkerPids(cwd: string, logicalAttemptId: string): Array<{ pid: 
   return out;
 }
 
+/** v0.38.3: a finished audit leaves a readable transcript behind — a job dir
+ * holding result.json belongs to the retention policy (/glla audits health
+ * cleanup + auditJobRetentionMs), not to any kill/reap path. */
+function auditDirHasResult(dir: string): boolean {
+  try {
+    statSync(path.join(dir, "result.json"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export type AuditJobHealthStatus = "live" | "dead" | "ambiguous";
 
 export interface AuditJobHealthEntry {
@@ -881,7 +893,11 @@ function reapDurableWorkers(cwd: string, logicalAttemptId: string): boolean {
       // PowerShell/CIM is unavailable). Keep the scratch directory until the
       // process is proven gone; deleting it here could strand a live worker.
       if (!processAlive(pid)) {
-        try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+        // A finished audit's dir holds the post-completion transcript —
+        // retention owns its lifetime, never an immediate reap.
+        if (!auditDirHasResult(dir)) {
+          try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+        }
       }
       continue;
     }
@@ -904,6 +920,7 @@ function reapDurableWorkers(cwd: string, logicalAttemptId: string): boolean {
       // remove it while the process may still write protocol files.
       const cleanup = setTimeout(() => {
         if (workerProcessMatches(cwd, pid, dir) || processAlive(pid)) return;
+        if (auditDirHasResult(dir)) return; // finished transcript → retention
         try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
       }, WORKER_SHUTDOWN_GRACE_MS + WORKER_FORCE_SETTLE_MS + 500);
       cleanup.unref?.();
@@ -1635,11 +1652,20 @@ export async function runDetachedGoalCompletionAuditor(args: {
   } finally {
     if (child && childAlive(child)) await terminateWorker(child).catch(() => {});
     activeChildren.delete(childKey(args.cwd, attemptId));
-    if (lockHeld) await fs.unlink(lockPath).catch(() => {});
-    // request/progress/result are transport scratch files. Do not retain one
-    // directory per retry, and never remove a colliding directory we did not
-    // successfully create and therefore do not own.
-    if (jobDirCreated) await removeAuditJobDirectory(jobDir);
+    if (jobDirCreated) {
+      if (auditDirHasResult(jobDir)) {
+        // v0.38.3: a finished audit's dir is the post-completion transcript.
+        // Keep the worker lock so health classifies the dir 'dead' (reaped
+        // once aged past auditJobRetentionMs by /glla audits health cleanup)
+        // instead of 'ambiguous' (which cleanup never touches).
+      } else {
+        // No verdict: incomplete transport scratch — remove it so kill-and-
+        // restart loops do not accumulate empty dirs. Never remove a colliding
+        // directory we did not successfully create and therefore do not own.
+        if (lockHeld) await fs.unlink(lockPath).catch(() => {});
+        await removeAuditJobDirectory(jobDir);
+      }
+    }
   }
 }
 
