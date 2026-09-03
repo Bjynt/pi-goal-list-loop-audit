@@ -1953,17 +1953,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         } : null,
       });
     }
-    // v0.38.6: feed the sticky refuse gate + compact-first nudge with the
-    // live percent. Recording null clears a stale reading (host estimate
-    // gone) so the refuse can lapse instead of sticking forever.
-    noteContextPercent(typeof contextUsage?.percent === "number" ? contextUsage.percent : null);
-    if (shouldCompactFirstNudge(contextUsage?.percent)) {
-      appendLedger(ctx.cwd, "context_compact_first_nudge", {
-        goalId: state.goal?.id ?? null,
-        contextPercent: contextUsage?.percent ?? null,
-      });
-      ctx.ui.notify(`glla: context at ${contextUsage!.percent!.toFixed(1)}% — run /compact now while summarization still fits. Below 90% the compact succeeds; past it you get the over-cap ladder (retry /compact, larger model, or /new + resume).`, "info");
-    }
     const contextStarvedLength = isContextStarvedLengthStop(rawLastA, contextUsage);
     const lc = tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength);
     if (contextStarvedLength) {
@@ -2202,6 +2191,20 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (!state.goal) return;
     if (state.goal.status !== "active") return;
     clearContinuationTimer();
+    // v0.38.6: feed the sticky refuse gate + compact-first nudge with the
+    // live percent. Placed AFTER the goal gate: the length-continue order
+    // pin requires the length path first, and starved sessions already
+    // returned via the yield ladder above. Recording null clears a stale
+    // reading (host estimate gone) so the refuse can lapse instead of
+    // sticking forever.
+    noteContextPercent(typeof contextUsage?.percent === "number" ? contextUsage.percent : null);
+    if (shouldCompactFirstNudge(contextUsage?.percent)) {
+      appendLedger(ctx.cwd, "context_compact_first_nudge", {
+        goalId: state.goal?.id ?? null,
+        contextPercent: contextUsage?.percent ?? null,
+      });
+      ctx.ui.notify(`glla: context at ${contextUsage!.percent!.toFixed(1)}% — run /compact now while summarization still fits. Below 90% the compact succeeds; past it you get the over-cap ladder (retry /compact, larger model, or /new + resume).`, "info");
+    }
 
     const last = [...(event.messages as any[])].reverse().find((m) => m.role === "assistant");
     const text = last && Array.isArray(last.content) ? last.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n") : "";
