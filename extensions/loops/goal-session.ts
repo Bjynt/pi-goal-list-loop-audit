@@ -1916,3 +1916,17 @@ defineGoalRuntimeGlobal("draftingTarget", { get: () => draftingTarget, set: (v) 
 defineGoalRuntimeGlobal("draftingUserReplies", { get: () => draftingUserReplies, set: (v) => { draftingUserReplies = v as any; } });
 defineGoalRuntimeGlobal("draftingBlockedProposals", { get: () => draftingBlockedProposals, set: (v) => { draftingBlockedProposals = v as any; } });
 defineGoalRuntimeGlobal("draftingSeedInFlight", { get: () => draftingSeedInFlight, set: (v) => { draftingSeedInFlight = v as any; } });
+
+// v0.38.11: state-root owner inspection + consented takeover live in
+// extensions/state-root-owner.ts. These lifetime/ownership helpers are
+// exported additively for it — no behavior change in this file.
+export {
+  sessionManagerId,
+  ownerFilePath,
+  writeOwnerFile,
+  readOwnerFile,
+  isProcessAlive,
+  claimProcessOwner,
+  removeOwnerFile,
+  type SessionOwnerRecord,
+};
