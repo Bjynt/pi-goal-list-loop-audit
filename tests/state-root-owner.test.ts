@@ -89,7 +89,7 @@ test("normalizeOwnerAt tolerates number and ISO, rejects garbage", () => {
 
 test("looksLikePi admits pi hosts, refuses sleep, abstains on unknown", () => {
   assert.equal(looksLikePi("pi\0--agent\0"), true);
-  assert.equal(looksLikePi("/usr/bin/sleep\099991\0".replace("\\0", "\0")), false);
+  assert.equal(looksLikePi("/usr/bin/sleep\0" + "99991\0"), false);
   assert.equal(looksLikePi(null), false);
   assert.equal(cmdlineComm("/usr/bin/sleep\0" + "99991\0"), "sleep");
   assert.equal(cmdlineComm(null), "(unknown)");
