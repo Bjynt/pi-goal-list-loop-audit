@@ -993,8 +993,11 @@ export function shouldCompactFirstNudge(percent: number | null | undefined): boo
 /** v0.38.6: the over-cap ladder, user-facing. Three recoveries in order
  * (retry /compact after GLLA's deterministic trim, larger-context model,
  * /new + resume from durable state) plus the no-LLM backstop: the
- * post-compact resync re-anchors a fresh session with no summarization. */
-export function buildStarvationLadderMessage(input: { percent?: number | null; streak?: number } = {}): string {
+ * post-compact resync re-anchors a fresh session with no summarization.
+ * v0.38.9: `recentCompact` skips the stale retry — when a compact already
+ * failed inside the grace window, advising another /compact retry wastes
+ * the turn; the ladder points straight at the model switch and /new. */
+export function buildStarvationLadderMessage(input: { percent?: number | null; streak?: number; recentCompact?: boolean } = {}): string {
   const at = typeof input.percent === "number" && Number.isFinite(input.percent)
     ? `${input.percent.toFixed(1)}%` : "nearly full";
   // v0.38.8: one recovery per line — the single-paragraph version buried
@@ -1002,7 +1005,9 @@ export function buildStarvationLadderMessage(input: { percent?: number | null; s
   return [
     `glla: output-token stop was context starvation (tiny output at ${at} context) — yielding to pi auto-compaction instead of re-sending.`,
     `If compaction fails or context is already over cap, in order:`,
-    `(1) run /compact again — GLLA already trimmed repeat payloads to a checkpoint, so the retry may now fit;`,
+    input.recentCompact === true
+      ? `(1) skip the /compact retry — one already failed within the last 90s; the trim below already ran, so go straight to (2)/(3);`
+      : `(1) run /compact again — GLLA already trimmed repeat payloads to a checkpoint, so the retry may now fit;`,
     `(2) switch to a larger-context model, then /compact (GLLA auto-rotates its fallback chain after a failed compact-and-retry);`,
     `(3) /new, then /goal resume — the goal, tasks, ledger and audits are durable on disk, and the post-compact resync re-anchors the fresh session with no summarization needed.`,
     `Automatic turns stay parked until a real compaction lands.`,

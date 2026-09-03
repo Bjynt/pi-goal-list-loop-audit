@@ -2012,7 +2012,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // /compact after GLLA's deterministic trim, larger-context model,
       // /new + resume from durable state) instead of only the auto-compact
       // pointer — field 2026-09-03: summarization itself was failing.
-      ctx.ui.notify(buildStarvationLadderMessage({ percent: typeof contextUsage?.percent === "number" ? contextUsage.percent : null, streak: starved.streak }), "info");
+      // v0.38.9: name the rung honestly — after a failed compact-and-retry
+      // inside the grace window, step (1) would be stale advice.
+      ctx.ui.notify(buildStarvationLadderMessage({ percent: typeof contextUsage?.percent === "number" ? contextUsage.percent : null, streak: starved.streak, recentCompact: sinceLastCompactMs < COMPACTION_GRACE_MS }), "info");
       return;
     }
     if (lc.giveUpNow) {
