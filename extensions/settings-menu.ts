@@ -58,6 +58,10 @@ export type SettingsSectionId =
   | "stall-brakes"
   | "other";
 
+/** v0.38.8: tab label with its row count — pure so tests pin the shape. */
+export function settingsTabLabel(label: string, rowCount: number): string {
+  return rowCount > 0 ? `${label} (${rowCount})` : label;
+}
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
   { id: "keep-going", label: "Keep-going" },
   { id: "main-agent", label: "Main agent" },

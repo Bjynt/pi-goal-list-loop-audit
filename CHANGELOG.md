@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.8 — TUI information-density pass (2026-09-03)
+
+### Added
+  Widget `audits:` row (verdict tally, width-truncated, silent when empty); verdict tally suffix on all paused status lines via `pausedStatusSuffix`; per-tab row counts in the settings menu (`settingsTabLabel`, pure). Starvation ladder reflowed to one recovery per line, same content and phrases.
+
+### Fixed
+  Glance-density gaps: parked sessions read as waiting-with-history instead of dead; ladder recoveries scannable; settings tabs locate content. Display-only — no automation, hold, auditor, or menu-structure changes. `tests/tui-density.test.ts` (5 tests) pins all four surfaces plus an 80-column widget fit; before/after captures in `audit/TUI-DENSITY-2026-09-03.md`.
+
 ## 0.38.7 — session visibility: recovery banner + durable verdict tally (2026-09-03)
 
 ### Added
