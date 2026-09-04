@@ -118,6 +118,7 @@ isGoalRevisionCurrent,
   nextHourlyProbeMs,
   supervisorPaused,
   loadHoldActive,
+  appendAuditVerdict,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
@@ -165,6 +166,7 @@ import {
   setLastContinuationSentPayloadRef,
   setContinuationRearmStreak,
   setContinuationRearmSince,
+  sendTerminalCompletionNotice,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
@@ -240,7 +242,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, compactTerminalCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels, terminalHumanBrief } from "../completion-summary.js";
+import { buildApprovalChatLines, compactCompletionSummary, compactTerminalCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels, terminalHumanBrief, withoutStaleNext } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1037,6 +1039,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   let result: Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
   let retriedOnce = false;
   let fallbackUsed = false;
+  // v0.38.3: the live-inspection session path, captured from worker progress
+  // BEFORE the finally clears latestAuditProgress — the approval notify uses
+  // it to point the user at the kept resumable session.
+  let inspectionSessionPath: string | undefined;
   try {
     ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(
       auditorCandidates,
@@ -1068,6 +1074,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           // entries to install paths before hashing (see
           // goal-loop-auditor-process.ts).
           allowedExtensions: settings.auditorAllowedExtensions,
+          // v0.38.3: opt-in live inspection — persist the auditor's pi as a
+          // resumable session pinned inside the job dir (off = --no-session).
+          inspection: settings.auditorInspection === true,
           runtime: {
             attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!),
             logicalAttemptId: claim.attemptId!,
@@ -1087,6 +1096,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
             // toolTimeoutMs is a dispatch fact for the display layer: the
             // quiet watcher exempts an in-budget long tool from the 3m
             // warning, and the card renders "tool: X · 4m / 20m budget".
+            if (progress.sessionPath) inspectionSessionPath = progress.sessionPath;
             publishDetachedAuditProgress(generation, goalId, claim.attemptId!, { ...progress, toolTimeoutMs });
           },
           // v0.34.57: the parent-side heartbeat-without-progress watchdog
@@ -1349,12 +1359,14 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     return;
   }
 
-  // Record the run in history (same compact shape as the tool path).
+  // Record the run in history via the shared push path (scope transitions
+  // in appendAuditVerdict: a new disapproval retires older live rounds,
+  // a clean approval clears the objection pin).
   const auditorRan = result.output.trim().length > 0;
   const history = state.goal.auditHistory ?? [];
   if (auditorRan) {
     result.output = stripThinkBlocks(result.output);
-    history.push({
+    appendAuditVerdict(history, {
       at: nowIso(),
       approved: result.approved,
       disapproved: result.disapproved,
@@ -1370,8 +1382,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       // dispatch) — the revision-bound validity gate reads this.
       revision: result.goalRevision?.revision ?? state.goal.revision ?? 0,
       durationMs: Date.now() - auditStartMs,
-    } as any);
-    if (history.length > 20) history.splice(0, history.length - 20);
+    });
     const verdict: AuditLogEntry["verdict"] =
       result.error && !result.approved && !result.disapproved
         ? "error"
@@ -1423,6 +1434,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       archivePath: path.relative(liveCtx.cwd, archivedGoalPath(liveCtx.cwd, state.goal.id)) || archivedGoalPath(liveCtx.cwd, state.goal.id),
     }, state.goal.completionSummary);
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the provider retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
+    // v0.38.20: the chat record pointer. Computed pre-archive like the
+    // recap/brief above (archiveCurrentGoal clears state.goal).
+    const approvalRecord = `— record: ${path.relative(liveCtx.cwd, archivedGoalPath(liveCtx.cwd, state.goal.id)) || archivedGoalPath(liveCtx.cwd, state.goal.id)}`;
     const archived = archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     if (!archived) {
       // archiveCurrentGoal already preserved the live record and warned the
@@ -1440,9 +1454,38 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     }
     // v0.38.14: the chat notify is the human briefing — outcome first,
     // filler labels dropped — while the external notify keeps the compact
-    // single line (pager/sound safe).
-    liveCtx.ui.notify(`✓ done — ${brief.outcome}\n${[...brief.details, `— auditor ${result.model} approved${approvalVia}.`].join("\n")}`, "info");
+    // single line (pager/sound safe). v0.38.20: outcome + at most two
+    // details + approval + record pointer; the agent's pre-verdict `Next:`
+    // is stale the moment the verdict lands and never reaches the chat.
+    // PR #43: live inspection — the auditor's pi persisted a resumable
+    // session pinned inside the job dir. Point the user at it AFTER the
+    // audit (interactive attach only now; while running it was read-only).
+    liveCtx.ui.notify([...buildApprovalChatLines({
+      outcome: brief.outcome,
+      details: brief.details,
+      approval: `— auditor ${result.model} approved${approvalVia}.`,
+      record: approvalRecord,
+    }),
+      ...(inspectionSessionPath
+        ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
+        : []),
+    ].join("\n"), "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${recap}`);
+    // v0.38.18 (track 3): the toast above is ephemeral — without a
+    // transcript entry the session keeps narrating "waiting on the
+    // auditor's verdict" after the archive (junk-runner field). Deliver
+    // the brief into the conversation. Skipped for manual /goal verify:
+    // that runs inside a turn whose command output already closes the
+    // transcript. Fire-once fenced inside the sender.
+    if (origin !== "manual") {
+      sendTerminalCompletionNotice(liveCtx, {
+        goalId,
+        outcome: brief.outcome,
+        // v0.38.20: the transcript keeps the informing details, but the
+        // stale pre-verdict `Next:` is stripped here too.
+        details: [...withoutStaleNext(brief.details), `— auditor ${result.model} approved${approvalVia}.`],
+      });
+    }
     return;
   }
 

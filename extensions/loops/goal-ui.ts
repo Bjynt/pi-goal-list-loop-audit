@@ -548,6 +548,8 @@ function publishDetachedAuditProgress(
     // attempt; the quiet watcher and the "tool: X · 4m / 20m budget" line
     // consume it.
     toolTimeoutMs: progress.toolTimeoutMs,
+    // v0.38.3: live-inspection session file (undefined = --no-session spawn).
+    sessionPath: progress.sessionPath,
     lastEventAt: Date.now(),
     lastActivityAt: progress.lastActivityAt,
   };
@@ -1043,6 +1045,12 @@ function isContextStarvedRefused(): boolean {
  * the full session_compact plumbing. Pass null to clear. */
 export function __testOnlySetLastCompactionAt(at: number | null): void {
   lastCompactionAt = at ?? 0;
+}
+/** Test-only: set the real-stream clock directly so busy-silence scenarios
+ * (answered question, phantom-busy host, zero stream) are drivable without
+ * wall-clock waits. Exported through loops/goal.js like the other hooks. */
+export function __testOnlySetLastRealActivityAt(at: number): void {
+  lastRealActivityAt = at;
 }
 
 /** Test-only: expose the live activity projection without requiring a TUI

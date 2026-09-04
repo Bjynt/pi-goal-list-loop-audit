@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.38.21 — objection-attached retries + PR #43 auditor observability (2026-09-04)
+
+### Fixed
+- Objection-attached retries: disapproval rounds are now scoped, not just listed. A new disapproval supersedes older live rounds (`superseded` / `supersededBy: disapproval:<at>` on the verdict) and a clean approval clears the objection pin (`supersededBy: approval:<at>`); shield-blocked approvals clear too (the claim passed audit — only the evidence citation failed), while infra errors and impossibles never touch the flags. The continuation prompt argues the latest LIVE disapproval (`liveDisapproval`) instead of merely the last history entry, and names the settled rounds (`Settled rounds (superseded, do not relitigate)`) so retries argue only live objections. Both verdict push sites (detached + manual-verify) now share one `appendAuditVerdict` helper — the hand-rolled duplicates are gone — and the pin embeds report content already stored in `auditHistory`, never a path into a reaped job dir. Honest scope note: the full-report surfacing itself shipped in v0.35.x (`## LATEST AUDITOR`); this slice adds the missing round scoping. Coverage: `tests/objection-pinning.test.ts` (behavioral two-round MockPi drive with true fail-before + helper pins for approval/shield/error paths).
+- Merged PR #43 (Bjynt): detached-auditor observability — opt-in `auditorInspection` persistent sessions (`--session <jobDir>/session.jsonl`, tail/read-only live, resumable after; default off, byte-identical spawn when off), configurable `auditJobRetentionMs` (default 15m = legacy constant, bounds 0–7d), and the post-completion transcript survival fix (finished dirs keep dir+lock, classified `dead` instead of `ambiguous`). Merged with union resolution against v0.38.20's approval voice (inspection pointer appended after `buildApprovalChatLines`). Defaults kept as shipped (inspection off, 15m).
+
+## 0.38.20 — approval-notify cleanup (2026-09-04)
+
+### Fixed
+- Approval chat notify no longer reprints the agent's pre-verdict recap verbatim: the stale `Next: <verdict pending>` line (which read as complete-before-verify next to the approval trailer) is stripped on every approval surface, and the chat notify is outcome + at most two informing details + approval trailer + archive record pointer (`buildApprovalChatLines`, `withoutStaleNext`). The transcript notice keeps the informing details minus the stale Next. Applied to all three `✓ done` paths (detached approval, manual-verify approval, no-audit complete).
+- Field note: the 19:20 `...` cuts were v0.38.13 word-boundary `…` clips working as designed (every cut lands on a word boundary), not mid-word mangling — but five 120-char label lines still scan as soup, which the cap above addresses. The same session showed zero `terminal_completion_notice_*` events because the tab runs pre-v0.38.18 loaded code — `/reload` to pick up the notice path.
+
+## 0.38.19 — disapproval response: dispatch stall root-cause + state clear (2026-09-04)
+
+### Fixed
+- Track 2 root cause (post-answer stall): the wait-for-idle send gate deferred an owed continuation forever when the session went phantom-busy — busy, nothing pending, zero stream (neonbreak: 35 re-arms, zero sends, 45m to the zombie abort). A busy session with nothing pending and no real stream for `GLLA_BUSY_SILENT_SEND_MS` (default 5m) is wedged, not working: the marker is now sent into pi's followUp queue instead (`goal_continuation_send_busy_bypass`, `busyBypass` on the sent event). Genuinely working sessions and loaded queues keep the old wait path.
+- Track 3 state clear (stale waiting-verdict): `auditorDisplayPhase` projects `awaiting-verdict` only while the goal is still `auditing`. Closed goals (complete/aborted) and pre-archive snapshots carrying a stale running claim fall through to the quiet gate — no stale progress object can resurrect the wait after `goal_archived`.
+- Both fixes carry behavioral MockPi regression tests with empirical fail-before (old code fails the new assertions, guards pass throughout): `tests/answered-question-dispatch.test.ts` (3), `tests/closed-goal-clears-waiting.test.ts` (2).
+
+## 0.38.18 — completion/lifecycle field trilogy (2026-09-04)
+
+### Fixed
+- Track 1 (pipe-syntax): the mechanical pre-audit checker runs narrow `cmd 2>&1 | tail/head/grep` pipelines shell-free with pipefail-head semantics instead of 126-rejecting finished work (`parseMechanicalPipeline`, `runMechanicalPipeline`; `tee`/grep-file-flags still refused).
+- Track 2 (post-answer stall): a turn that never streamed parks on the first abort with no hot retry (`zombie_auto_retry_refused_never_streamed`, honest park copy), and the rearm milestone names an open-but-silent turn instead of claiming "no turn started".
+- Track 3 (stale waiting-verdict): the detached-approval branch delivers the `✓ done` brief into the conversation as a fire-once followUp turn (`sendTerminalCompletionNotice`), so the transcript records the archive instead of narrating "waiting" forever. Skipped for manual `/goal verify` (in-turn closure already exists).
+
 ## 0.38.17 — release-contract docs trail (2026-09-04)
 
 ### Fixed

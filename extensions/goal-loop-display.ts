@@ -578,6 +578,11 @@ export interface AuditDisplayProgress {
    * (after adaptive escalation). Lets the card render "tool: X · 4m /
    * 20m budget" and exempts an in-budget long tool from the quiet phase. */
   toolTimeoutMs?: number;
+  /** v0.38.3: live-inspection session file the auditor's pi writes inside
+   * the job dir (undefined = the original --no-session spawn). Lets the
+   * card point at the resumable session: tail -f it live, or attach with
+   * `pi --session <path>` / `pi --fork <path>` after the audit. */
+  sessionPath?: string;
 }
 
 type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaiting-verdict";
@@ -668,7 +673,15 @@ export function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null 
   const label = audit?.label?.toLowerCase() ?? "";
   if (label === "queued") return "queued";
   if (/infra|error|failed|blocked|no verdict/.test(label)) return "blocked";
-  if (audit?.phase === "complete") return "awaiting-verdict";
+  // v0.38.19 (track 3, auditor-required): awaiting-verdict is a LIVE claim
+  // — a worker done, its verdict not yet applied. A closed goal (complete /
+  // aborted, or anything past auditing) can never be waiting: the verdict
+  // landed or the claim died with the archive. A stale progress object
+  // handed in for a closed goal must not resurrect the wait (junk-runner:
+  // session narrating "waiting on the auditor's verdict" after
+  // goal_archived complete). Stale timestamps fall through to the quiet
+  // gate below, which is true — no worker will ever speak again.
+  if (audit?.phase === "complete" && g.status === "auditing") return "awaiting-verdict";
   const age = auditorActivityAge(audit, now);
   if (age !== undefined && age > AUDITOR_QUIET_MS) {
     // v0.37.0: progress-aware quiet gate. A tool that is still running INSIDE
@@ -691,7 +704,12 @@ export function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null 
       return "running";
     return "quiet";
   }
-  if (!audit && g.pendingCompletion?.phase === "running") return "awaiting-verdict";
+  // Same lifecycle scope as above: a stale goal snapshot that still
+  // carries a running pendingCompletion must not project a wait either.
+  // (The archive strips pendingCompletion; this guards pre-archive
+  // snapshots read after the close.)
+  if (!audit && g.status === "auditing" && g.pendingCompletion?.phase === "running") return "awaiting-verdict";
+  if (!audit && g.pendingCompletion?.phase === "running") return "quiet";
   return "running";
 }
 
@@ -1318,7 +1336,8 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
     // left no trace — note.md 2026-08-07). v0.34.89: that render is now a
     // single dim SUMMARY line (`─ done · <objective> · took X`), not a full
     // card — the old card read like an active item (Screenshot_20260807_231205).
-    return completedGoalLines(g, now, theme, width);
+    const doneLines = completedGoalLines(g, now, theme, width);
+    return doneLines;
   }
   const lines = goalLines(g, state, audit, now, theme, width, extras);
   // v0.28.17: a held loop rides the goal card as a trailing line.
@@ -1521,6 +1540,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // This is the difference between “the timer moved” and “I can see what
     // the detached worker last did.”
     const observations: string[] = [];
+    // v0.38.3: live inspection — the auditor's pi persists a resumable
+    // session pinned inside the job dir. Point the user at it: tail -f it
+    // read-only while the audit runs; attach interactively only after.
+    if (audit?.sessionPath) {
+      observations.push(`session: ${audit.sessionPath} — tail -f it live`);
+    }
     const stretch = extras?.auditorQuietStretch;
     if (stretch && Number.isFinite(stretch.ms) && stretch.ms >= AUDITOR_QUIET_MS
         && now - stretch.endedAt <= QUIET_STRETCH_VISIBLE_MS) {

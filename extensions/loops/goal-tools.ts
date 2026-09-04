@@ -122,6 +122,7 @@ import {
   modelSwitch,
   isForbiddenModel,
 isGoalRevisionCurrent,
+  appendAuditVerdict,
   nextHourlyPromptMs,
   nextHourlyProbeMs,
   type ModelSwitchRecord,
@@ -252,7 +253,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary, terminalHumanBrief } from "../completion-summary.js";
+import { buildApprovalChatLines, compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary, terminalHumanBrief, withoutStaleNext } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -805,6 +806,10 @@ function registerAgentTools(pi: any): void {
       };
       refreshUI(ctx, true);
       void (async () => {
+      // v0.38.3: live-inspection session path, captured from worker progress
+      // BEFORE the post-audit clear — the approval notify uses it to point
+      // the user at the kept resumable session.
+      let inspectionSessionPath: string | undefined;
       const runAudit = (candidate: AuditorModelCandidate) => {
         latestAuditProgress = {
           ...(latestAuditProgress ?? {}),
@@ -827,6 +832,9 @@ function registerAgentTools(pi: any): void {
           // context does not expose a thinking level.
           thinkingLevel: (settings.auditorThinkingLevel ?? ctx.thinkingLevel ?? "max") as any, // pi ≥0.83 understands max; dev-types predate it
           allowedExtensions: settings.auditorAllowedExtensions,
+          // v0.38.3: opt-in live inspection — persist the auditor's pi as a
+          // resumable session pinned inside the job dir (off = --no-session).
+          inspection: settings.auditorInspection === true,
           // The host tool's AbortSignal is the explicit user-stop boundary
           // for the detached audit. It lets the Esc escape hatch settle the
           // worker before offering the user the without-audit choice.
@@ -849,6 +857,7 @@ function registerAgentTools(pi: any): void {
             // toolTimeoutMs is a dispatch fact for the display layer: the
             // quiet watcher exempts an in-budget long tool from the 3m
             // warning, and the card renders "tool: X · 4m / 20m budget".
+            if (progress.sessionPath) inspectionSessionPath = progress.sessionPath;
             publishDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId, { ...progress, toolTimeoutMs });
           },
           // v0.34.57: the parent-side heartbeat-without-progress watchdog
@@ -1131,7 +1140,11 @@ function registerAgentTools(pi: any): void {
         // displays the report.
         const cleanOutput = stripThinkBlocks(result.output);
         result.output = cleanOutput;
-        history.push({
+        // Shared push path (same scope transitions as the detached site:
+        // new disapproval retires older live rounds, clean approval clears).
+        // The 20-cap lives inside the helper — 39 infra errors taught us
+        // unbounded growth is real.
+        appendAuditVerdict(history, {
           at: nowIso(),
           approved: result.approved,
           disapproved: result.disapproved,
@@ -1146,9 +1159,7 @@ function registerAgentTools(pi: any): void {
           // v0.34.60 (steal #3): the revision the worker audited.
           revision: result.goalRevision?.revision ?? state.goal.revision ?? 0,
           durationMs: auditDurationMs,
-        } as any);
-        // Cap history — 39 infra errors taught us unbounded growth is real.
-        if (history.length > 20) history.splice(0, history.length - 20);
+        });
         // v0.25.4: durable append-only audit log — survives state-snapshot
         // rotation; the review surface for "where are we weak".
         const verdict: AuditLogEntry["verdict"] =
@@ -1224,8 +1235,16 @@ function registerAgentTools(pi: any): void {
             stopReason: terminalReason,
             archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id),
           });
-          const briefBlock = [...brief.details, `— completed without audit (your choice).`].join("\n");
-          ctx.ui.notify(`✓ done — ${brief.outcome}\n${briefBlock}`, "info");
+          // v0.38.20: the command output keeps the informing details (stale
+          // `Next:` stripped); the chat notify is outcome + approval +
+          // record pointer like every other approval path.
+          const briefBlock = [...withoutStaleNext(brief.details), `— completed without audit (your choice).`].join("\n");
+          ctx.ui.notify(buildApprovalChatLines({
+            outcome: brief.outcome,
+            details: brief.details,
+            approval: `— completed without audit (your choice).`,
+            record: `— record: ${path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id)}`,
+          }).join("\n"), "info");
           notifyExternal(ctx, `Goal complete without audit (user choice): ${recap}`);
           return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${briefBlock}` }], details: {} };
         }
@@ -1259,6 +1278,9 @@ function registerAgentTools(pi: any): void {
           stopReason: terminalReason,
           archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
         }, state.goal.completionSummary);
+        // v0.38.20: captured pre-archive — archiveCurrentGoal clears
+        // state.goal, so the record pointer must be computed here.
+        const manualArchiveRecord = `— record: ${path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id)}`;
         const archived = archiveCurrentGoal(ctx, "complete", terminalReason);
         if (!archived) {
           // The archive helper preserves the live objective and emits the
@@ -1274,7 +1296,19 @@ function registerAgentTools(pi: any): void {
           appendLedger(ctx.cwd, "goal_archive_failed_after_approval", { goalId: state.goal?.id, origin: "manual-verify", model: result.model });
           return { content: [{ type: "text", text: "The auditor approved, but the terminal archive could not be persisted. The goal is paused; fix persistence, resume, and retry complete_goal." }], details: {} };
         }
-        ctx.ui.notify(`✓ done — ${brief.outcome}\n${[...brief.details, `— auditor ${result.model} approved.`].join("\n")}`, "info");
+        // v0.38.20: same approval voice as the detached path — the stale
+        // pre-verdict `Next:` never reaches the chat.
+        // PR #43: append the kept inspection-session pointer when present.
+        ctx.ui.notify([...buildApprovalChatLines({
+          outcome: brief.outcome,
+          details: brief.details,
+          approval: `— auditor ${result.model} approved.`,
+          record: manualArchiveRecord,
+        }),
+          ...(inspectionSessionPath
+            ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
+            : []),
+        ].join("\n"), "info");
         notifyExternal(ctx, `Goal complete (auditor approved): ${recap}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }

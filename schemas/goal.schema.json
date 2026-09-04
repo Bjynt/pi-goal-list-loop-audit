@@ -265,6 +265,14 @@
           "type": "integer",
           "minimum": 0,
           "description": "Wall-clock duration of the audit run."
+        },
+        "superseded": {
+          "type": "boolean",
+          "description": "v0.38.21 round scoping: true once a later disapproval retires this round or a later approval clears the pin. Legacy entries lack the field and count as live."
+        },
+        "supersededBy": {
+          "type": "string",
+          "description": "What retired this round: disapproval:<at> of the superseding round, or approval:<at> when a later approval cleared the pin."
         }
       }
     }

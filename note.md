@@ -1,29 +1,9 @@
 # Now
 
-##
-
-auditor completion issue
-/home/dracon/Pictures/Screenshots/Screenshot_20260904_152601.png 
-
-##
-
-after draft operation aborted instead of starting 
-/home/dracon/Pictures/Screenshots/Screenshot_20260904_153208.png 
-
-##
-
-waiting verdict but objective is closed
-/home/dracon/Pictures/Screenshots/Screenshot_20260904_153934.png 
-
-
 # Next
 
-
-##
-
-we need to look into antigravity more and their /teamwork-preview
-
-
+## DONE 2026-09-04 — PR #43 MERGED (auditor observability, defaults kept) + item 2 built as v0.38.21 objection-attached retries (round scoping; full-report surfacing already existed since v0.35.x). Gate 1929/0, npm 0.38.21 live. See audit/OBJECTION-PINNING-2026-09-04.md.
+~~https://github.com/DraconDev/pi-goal-list-loop-audit/pull/43~~
 
 # Later
 
