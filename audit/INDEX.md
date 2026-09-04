@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-04):**
+- `SUBAGENT-DIALECT-2026-09-04.md` — v0.38.16 shipped: prompts/strings speak the live `subagent` tool + `bg_wait` settle (dead tintinweb `Agent`/`get_subagent_result` gone); `isSubagentProviderFailure` matches the live names; tintinweb stays retired, pi-subagents 0.65 gets its own canary'd eval
 - `PAUSE-ANTI-CONFABULATION-2026-09-04.md` — v0.38.15 shipped: `pause_goal` refuses blocker claims that name a missing GLLA tool (the call dispatching proves the batch landed) unless pi's own `Tool X not found` is quoted; new-tab incident forensics (zero tool errors, both claims disproven)
 - `HUMAN-BRIEF-2026-09-04.md` — v0.38.14 shipped: every `✓ done` is now a human briefing (outcome-led, filler labels dropped, `none — <content>` keeps the content); placeholders never leak; pre-archive rule + prefix-strip fix documented
 - `COMPLETION-SUMMARY-2026-09-04.md` — v0.38.13 shipped: the `✓ done` chat notify carries the six labels as one fact per line with word-boundary cuts (never `0 o…` mid-word again); single-line kept for widget + external; caught + fixed a post-archive null crash that swallowed the notify

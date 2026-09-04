@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.16 — subagent dialect (2026-09-04)
+
+### Fixed
+  Prompts and user-facing strings no longer name the dead tintinweb `Agent`/`get_subagent_result` tools — they speak the current `subagent` tool, `bg_wait` settle, and the live roles (`scout`, `worker`, `reviewer`, GLLA-managed `Designer`). The `` `Agent: Designer` `` objective syntax is unchanged (GLLA's own task convention). `isSubagentProviderFailure` now matches `subagent`/`subagent_wait` failures, so real spawn failures take the provider-retry path again. Evidence in `audit/SUBAGENT-DIALECT-2026-09-04.md`.
+
 ## 0.38.15 — pause anti-confabulation (2026-09-04)
 
 ### Changed
