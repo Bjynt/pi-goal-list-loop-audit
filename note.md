@@ -16,6 +16,8 @@ objective completion needs a good summary, not this
 
 ##
 
+https://pi.dev/packages?name=sub+agent
+
 use the other subagent extension ? that lead to more subagents being use
 
 ##
