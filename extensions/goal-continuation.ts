@@ -330,6 +330,26 @@ export function sendRearmDelayMs(streak: number): number {
   return 30_000;
 }
 
+/** v0.38.19 (track 2): how long a busy session with an owed send may go
+ * without real stream output before the marker is sent into pi's followUp
+ * queue anyway. 5m matches SEND_REARM_ESCALATE_SILENT_MS's definition of
+ * wedged silence, far below the ~45m zombie abort that used to be the only
+ * exit from a phantom-busy session. */
+export function busySilentSendMs(): number {
+  const raw = Number(process.env.GLLA_BUSY_SILENT_SEND_MS ?? 5 * 60_000);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 5 * 60_000;
+}
+
+/** v0.38.19 (track 2): true when the session's business is stale enough
+ * that waiting for idle is the stall, not patience. Requires observed
+ * stream history (lastRealActivityAt > 0): a session that never streamed
+ * in this process is ignorance, not evidence of wedging — it keeps the old
+ * wait path (storm → escalation → zombie abort). */
+export function busySilentBypassDue(): boolean {
+  if (flags.lastRealActivityAt <= 0) return false;
+  return Date.now() - flags.lastRealActivityAt >= busySilentSendMs();
+}
+
 export function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "loop"): void {
   const streak = kind === "continuation" ? ++continuationRearmStreak : ++flags.loopRearmStreak;
   if (streak === 1) {
@@ -1225,12 +1245,35 @@ export function sendContinuation(goalId: string): void {
   }
   if (!guardGoalBeforeContinuation(ctx, "dispatch", goalId)) return;
   if (!isActionableGoal()) return;
+  // v0.38.19 (track 2): set when the busy-but-silent bypass below fires so
+  // the sent ledger event carries the marker. The test hook for the stream
+  // clock lives in loops/goal-ui.ts (__testOnlySetLastRealActivityAt).
+  let busyBypass = false;
   if (!ctx.isIdle() || ctx.hasPendingMessages()) {
     accountSendRearm(ctx, "continuation");
-    continuationScheduledFor = goalId;
-    // v0.28.29: backing-off cadence (was flat 50ms — 6,000 spins in 5m).
-    continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), sendRearmDelayMs(continuationRearmStreak));
-    return;
+    // v0.38.19 (track 2, auditor-required): busy-but-silent bypass. A
+    // session that is busy with nothing pending and zero real stream for
+    // busySilentSendMs is not doing work a followUp could corrupt — it is
+    // wedged (neonbreak: answer in, 45m of phantom-busy, zero sends because
+    // wait-for-idle never cleared). pi's followUp queue is the designed
+    // vehicle for exactly this: the marker queues behind the stuck turn
+    // instead of rearming into the void until the zombie abort. Genuinely
+    // working sessions (fresh stream) and loaded queues (pending messages)
+    // keep the old wait path.
+    if (!ctx.isIdle() && !ctx.hasPendingMessages() && busySilentBypassDue()) {
+      busyBypass = true;
+      appendLedger(ctx.cwd, "goal_continuation_send_busy_bypass", {
+        goalId,
+        generation: flags.sessionGeneration,
+        silentMs: Date.now() - flags.lastRealActivityAt,
+        rearmStreak: continuationRearmStreak,
+      });
+    } else {
+      continuationScheduledFor = goalId;
+      // v0.28.29: backing-off cadence (was flat 50ms — 6,000 spins in 5m).
+      continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), sendRearmDelayMs(continuationRearmStreak));
+      return;
+    }
   }
   if (!flags.extensionApi || flags.extensionApiStale) return;
   try {
@@ -1264,7 +1307,7 @@ export function sendContinuation(goalId: string): void {
     lastContinuationSentPayload = { content, display: false }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
-    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation, kind, payloadChars: content.length });
+    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation, kind, payloadChars: content.length, ...(busyBypass ? { busyBypass: true } : {}) });
     // v0.35.37 (audit finding): the welcome-back recovery notice must fire
     // EXACTLY ONCE per auto-resume. The payload above was built with the
     // notice in it; once the dispatch is ACCEPTED the message has landed in
