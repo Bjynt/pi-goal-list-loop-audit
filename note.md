@@ -18,7 +18,9 @@ objective completion needs a good summary, not this
 
 use the other subagent extension ? that lead to more subagents being use
 
+##
 
+we need to look into antigravity more and their /teamwork-preview
 
 # Later
 
