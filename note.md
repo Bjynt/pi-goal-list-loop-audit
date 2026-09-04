@@ -18,7 +18,14 @@ after draft operation aborted instead of starting
 
 ##
 
+waiting verdict but objective is closed
+/home/dracon/Pictures/Screenshots/Screenshot_20260904_153934.png 
+
+##
+
 we need to look into antigravity more and their /teamwork-preview
+
+
 
 # Later
 
