@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.14 — human end-of-objective briefing (2026-09-04)
+
+### Changed
+  Every `✓ done` chat notify is now a human briefing: outcome first in its own words, only informing labels after it (`none` / `not recorded` / empty filler dropped; `none — <content>` keeps the content). Word-boundary cuts, auditor/no-audit trailer, archive keeps the full six-label record. Runbook in `audit/HUMAN-BRIEF-2026-09-04.md`.
+
 ## 0.38.13 — good completion summary (2026-09-04)
 
 ### Changed
