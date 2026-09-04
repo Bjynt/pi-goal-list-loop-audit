@@ -464,7 +464,7 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
     await queued;
     await waitUntil(() => readState(cwd).goal === null);
     const notices = ctx.ui.notifies.map((entry) => entry.message).join("\n");
-    const notice = ctx.ui.notifies.find((entry) => entry.message.includes("done without audit"))?.message ?? "";
+    const notice = ctx.ui.notifies.find((entry) => entry.message.includes("completed without audit (your choice)"))?.message ?? "";
     assert.equal(confirmationTitle, "Audit aborted", "the explicit audit-abort choice was presented");
     assert.match(notice, /^✓ done — Objective "complete without audit target/, "the briefing leads with the archived objective");
     assert.match(notice, /— completed without audit \(your choice\)\./, "the no-audit trailer closes the briefing");
