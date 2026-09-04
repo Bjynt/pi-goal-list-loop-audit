@@ -31,6 +31,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   appendLedger,
+  readLedgerTail,
   nowIso,
   newGoalId,
   archivedGoalPath,
@@ -267,6 +268,12 @@ let continuationRearmSince = 0;
 // (rearm storm fires with no accepted dispatch — the user's "pi did not
 // start a turn" state under a recovery park).
 let lastNoTurnStartedNotifiedAt = 0;
+// v0.38.18 (track 2): the wall clock of the last turn/agent begin-marker
+// observed by dispatchStartAcknowledged, regardless of pending dispatch.
+// Lets the milestone notify distinguish "no turn started" from "a turn is
+// open but never picked up the dispatch" (neonbreak: creation turn open
+// and silent since 12:57 while the storm reported "no turn started").
+let lastObservedTurnStartAt = 0;
 let continuationRearmMilestone = 0;
 // v0.34.57: per-record counter capping the compaction-paused re-arm loop.
 // A stuck session that never produces a new compaction event must not
@@ -348,10 +355,18 @@ export function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "
       const noDispatchAccepted = lastContinuationSentAt === 0 || lastContinuationSentAt < continuationRearmSince;
       if (noDispatchAccepted && lastNoTurnStartedNotifiedAt + SEND_REARM_LEDGER_MILESTONES_MS[0]! <= Date.now()) {
         lastNoTurnStartedNotifiedAt = Date.now();
-        appendLedger(ctx.cwd, "rearm_no_turn_started", { streak, minutes: Math.round(elapsed / 60000) });
+        // v0.38.18 (track 2): a turn that began after the storm started is
+        // open — reporting "no turn started" then is false and sends the
+        // user down the wrong path (resume a queue that is not stuck vs
+        // interrupt a hung turn). Say which is true.
+        const turnOpen = lastObservedTurnStartAt >= since && lastObservedTurnStartAt > 0;
+        const turnOpenMinutes = turnOpen ? Math.max(1, Math.round((Date.now() - lastObservedTurnStartAt) / 60000)) : 0;
+        appendLedger(ctx.cwd, "rearm_no_turn_started", { streak, minutes: Math.round(elapsed / 60000), turnOpen, turnOpenMinutes });
         const aggressive = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode;
         const recoveryStop = aggressive ? "a state-based stop" : "the automatic horizon";
-        const msg = `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — the send queue may be stuck. The generic recovery probe is retrying automatically; no action needed unless it reaches ${recoveryStop}.`;
+        const msg = turnOpen
+          ? `glla: a turn started ${turnOpenMinutes}m ago but no continuation was accepted since (${streak} re-arms) — the open turn has not picked up the queued dispatch. If its stream counters are frozen it is hung, not thinking; Esc interrupts it, then resume retries. No action needed unless this reaches ${recoveryStop}.`
+          : `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — the send queue may be stuck. The generic recovery probe is retrying automatically; no action needed unless it reaches ${recoveryStop}.`;
         ctx.ui.notify(msg, "warning");
         notifyExternal(ctx, msg);
       }
@@ -569,6 +584,10 @@ export function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispat
 }
 
 export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt?: unknown): boolean {
+  // v0.38.18 (track 2): record every begin-marker even when no dispatch is
+  // pending — the rearm milestone uses it to tell an open-but-silent turn
+  // from a turn that never started.
+  if (source === "turn_start" || source === "agent_start") lastObservedTurnStartAt = Date.now();
   // v0.34.104 ([Image-#1]): any real agent activity during the
   // post-list-completion settle window means pi woke up on its own — the
   // deferred continuation must be cancelled so we don't double-dispatch.
@@ -1058,6 +1077,57 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
   continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), delay);
 }
 
+export interface TerminalCompletionNotice {
+  goalId: string;
+  outcome: string;
+  details: string[];
+}
+
+/** v0.38.18 (track 3: junk-runner stale waiting-verdict): the detached
+ * verifier settles asynchronously — the transcript's last word is "the
+ * verdict will be applied asynchronously", and a toast is the only
+ * closure. A later "how are we looking" then truthfully re-reports the
+ * stale transcript as still-waiting even though the goal is archived.
+ * This delivers the `✓ done` brief INTO the conversation as a followUp
+ * turn so the transcript records the completion. Goal-null-safe (the goal
+ * is already archived when this fires), fire-once per goal via a durable
+ * ledger fence, and fenced like every other automatic send. Returns true
+ * when the notice was dispatched. */
+export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: TerminalCompletionNotice): boolean {
+  if (supervisorPaused(state)) return false;
+  if (mainModelRecoveryActive()) return false;
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
+  if (!flags.extensionApi) return false;
+  if (isForeignCtx(ctx)) return false;
+  try {
+    const already = readLedgerTail(ctx.cwd, 400, (entry) =>
+      entry.type === "terminal_completion_notice_sent" &&
+      typeof (entry.value as { goalId?: unknown } | null)?.goalId === "string" &&
+      (entry.value as { goalId: string }).goalId === notice.goalId,
+    );
+    if (already.length > 0) return false;
+  } catch {
+    return false;
+  }
+  const content = [
+    `✓ done — ${notice.outcome}`,
+    ...notice.details,
+    "— goal archived; nothing further is owed. Acknowledge briefly; start follow-up work only if asked.",
+  ].join("\n");
+  try {
+    flags.extensionApi.sendMessage({
+      customType: GOAL_EVENT_ENTRY,
+      content,
+      display: false,
+    }, { triggerTurn: true, deliverAs: "followUp" });
+  } catch {
+    appendLedger(ctx.cwd, "terminal_completion_notice_unsent", { goalId: notice.goalId });
+    return false;
+  }
+  appendLedger(ctx.cwd, "terminal_completion_notice_sent", { goalId: notice.goalId, payloadChars: content.length });
+  return true;
+}
+
 export function buildMarkerContent(goalId: string): string {
   return `[GOAL CHECKPOINT goalId=${goalId}]`;
 }
@@ -1504,6 +1574,11 @@ export function clearQueueStuckProbe(): void {
 export function setContinuationRearmStreak(v: number): void {
   continuationRearmStreak = v;
 }
+
+/** Test-only: pretend a turn begin-marker was observed at the given clock. */
+export function __testOnlySetObservedTurnStartAt(v: number): void {
+  lastObservedTurnStartAt = v;
+}
 export function setContinuationRearmSince(v: number): void {
   continuationRearmSince = v;
 }
@@ -1521,6 +1596,7 @@ export function resetContinuationDispatchState(cwd: string): boolean {
   continuationRearmSince = 0;
   continuationRearmMilestone = 0;
   lastNoTurnStartedNotifiedAt = 0;
+  lastObservedTurnStartAt = 0;
   continuationStartCompactionRearms.clear();
   continuationStartRecoveryRearms.clear();
   return clearDispatchRecord(cwd);
