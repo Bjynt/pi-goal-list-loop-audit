@@ -10,6 +10,11 @@ use the other subagent extension ? that lead to more subagents being use
 
 ##
 
+auditor completion issue
+/home/dracon/Pictures/Screenshots/Screenshot_20260904_152601.png 
+
+##
+
 we need to look into antigravity more and their /teamwork-preview
 
 # Later
