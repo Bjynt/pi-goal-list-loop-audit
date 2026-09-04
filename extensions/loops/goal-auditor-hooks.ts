@@ -240,7 +240,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, compactTerminalCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels, terminalCompletionSummaryLines } from "../completion-summary.js";
+import { compactCompletionSummary, compactTerminalCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels, terminalHumanBrief } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1416,7 +1416,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       archivePath: path.relative(liveCtx.cwd, archivedGoalPath(liveCtx.cwd, state.goal.id)) || archivedGoalPath(liveCtx.cwd, state.goal.id),
     }, state.goal.completionSummary);
     // Computed pre-archive: archiveCurrentGoal clears state.goal.
-    const recapLines = terminalCompletionSummaryLines({
+    const brief = terminalHumanBrief({
       goal: state.goal,
       status: "complete",
       stopReason: terminalReason,
@@ -1438,10 +1438,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       appendLedger(liveCtx.cwd, "goal_archive_failed_after_approval", { goalId, attemptId: claim.attemptId, origin });
       return;
     }
-    // v0.38.13: the chat notify carries the six-label block (one fact per
-    // line, word-bounded) instead of the single-line mash — the external
-    // notify keeps the compact single line (pager/sound safe).
-    liveCtx.ui.notify(`✓ done — auditor ${result.model} approved${approvalVia}.\n${recapLines.join("\n")}`, "info");
+    // v0.38.14: the chat notify is the human briefing — outcome first,
+    // filler labels dropped — while the external notify keeps the compact
+    // single line (pager/sound safe).
+    liveCtx.ui.notify(`✓ done — ${brief.outcome}\n${[...brief.details, `— auditor ${result.model} approved${approvalVia}.`].join("\n")}`, "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${recap}`);
     return;
   }

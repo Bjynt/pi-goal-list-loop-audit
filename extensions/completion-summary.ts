@@ -116,6 +116,46 @@ export function compactCompletionSummary(text: string | undefined, maxValueLengt
   return parts.join(" · ");
 }
 
+/** A recap value informs the human only when it is not an empty / none /
+ * not-recorded placeholder. `None — <real content>` (a common agent habit)
+ * keeps just the content. Returns null for filler. */
+export function briefValueContent(value: string): string | null {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  const prefixed = /^(none|not recorded)\s*[—–:\-]\s*(.+)$/i.exec(clean);
+  const body = (prefixed?.[2] ?? clean).trim();
+  if (/^(none|not recorded|n\/a|nil|nothing)(\s+for\s+this\s+\w+)?\.?$/i.test(body)) return null;
+  return body;
+}
+
+export interface HumanCompletionBrief {
+  outcome: string;
+  details: string[];
+}
+
+/** The human briefing: outcome first in its own words, then only the
+ * labels that carry real content (filler like `Unresolved: none` or
+ * `Changed: not recorded` is dropped, never shown). The durable archive
+ * keeps the full six-label record; this is the end-of-objective voice
+ * that informs the user at a glance. */
+export function humanCompletionBrief(
+  text: string | undefined,
+  outcomeBudget = 140,
+  valueBudget = 120,
+): HumanCompletionBrief {
+  const lines = completionSummaryLines(text, Math.max(outcomeBudget, valueBudget));
+  const rawOutcome = (lines[0] ?? "").replace(/^Outcome:\s*/, "");
+  const outcome = clipSummaryValue(briefValueContent(rawOutcome) ?? "done", outcomeBudget);
+  const details: string[] = [];
+  for (const line of lines.slice(1)) {
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+    const content = briefValueContent(line.slice(separator + 1));
+    if (content) details.push(`${line.slice(0, separator)}: ${clipSummaryValue(content, valueBudget)}`);
+  }
+  return { outcome, details };
+}
+
 /** Multi-line projection: one `Label: value` line per label with generous
  * word-bounded values. This is the user-facing `✓ done` block — six short
  * facts that stay scannable in chat. The single-line projection remains
@@ -234,6 +274,15 @@ export function compactTerminalCompletionSummary(
   maxValueLength = 72,
 ): string {
   return compactCompletionSummary(resolveCompletionSummary(facts, candidate).summary, maxValueLength);
+}
+
+/** Brief twin of compactTerminalCompletionSummary for the `✓ done` chat
+ * notifies: same resolved facts, outcome + informing labels only. */
+export function terminalHumanBrief(
+  facts: CompletionSummaryFacts,
+  candidate = facts.goal.completionSummary,
+): HumanCompletionBrief {
+  return humanCompletionBrief(resolveCompletionSummary(facts, candidate).summary);
 }
 
 /** Multi-line twin of compactTerminalCompletionSummary for the `✓ done`
