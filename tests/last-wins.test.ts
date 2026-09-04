@@ -174,7 +174,7 @@ test("last-wins wiring: session_start supersedes under hostLifecycleStart, agent
 async function activateFreshObjective(cwd: string, oldId: string, fence: boolean): Promise<{ ctx: MockCtx; newId: string }> {
   setGlobal({ autoResume: true, aggressiveMode: false });
   seedState(cwd, {
-    goal: seedGoal({ id: oldId, objective: "OLD objective — done when pinned", status: "active" }),
+    goal: seedGoal({ id: oldId, objective: "Repaint the old shed", status: "active" }),
   });
   if (fence) {
     fs.mkdirSync(path.join(cwd, ".pi-glla", "archive"), { recursive: true });
@@ -201,7 +201,7 @@ test("last-wins: an archive fence no longer refuses the new objective — old is
   const unarchived = readLedger(cwd).filter((l) => l.type === "goal_superseded_unarchived");
   assert.equal(unarchived.length, 1, "the old objective is preserved, not dropped");
   assert.equal(unarchived[0]!.value.oldGoalId, oldId);
-  assert.match(unarchived[0]!.value.objective as string, /OLD objective/);
+  assert.match(unarchived[0]!.value.objective as string, /old shed/i);
   assert.equal(unarchived[0]!.value.replacedBy, newId);
   const notifies = (ctx.ui as { notifies: Array<{ message: string }> }).notifies.map((n) => n.message).join("\n");
   assert.match(notifies, /starts anyway/, "the user is told the new objective won");
