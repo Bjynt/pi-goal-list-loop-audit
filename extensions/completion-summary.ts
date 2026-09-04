@@ -77,6 +77,21 @@ export function isUsefulCompletionSummary(text: string | undefined): boolean {
  * Missing labels are retained as `not recorded` so a compact notification
  * cannot accidentally imply evidence that the durable recap did not contain.
  */
+/** Cut a summary value at a word boundary, never mid-word (the
+ * Screenshot_20260903_204003/204005 complaint: `0 o…`, `qu…`, `belo…`).
+ * Falls back to a hard cut only when the head holds no space past the
+ * halfway mark — a long token such as a commit hash must not eviscerate
+ * the whole value. Short values pass through untouched (no `…`). */
+export function clipSummaryValue(value: string, limit: number): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  const capped = Number.isFinite(limit) ? Math.max(8, Math.floor(limit)) : 72;
+  if (clean.length <= capped) return clean;
+  const head = clean.slice(0, capped - 1);
+  const space = head.lastIndexOf(" ");
+  const kept = (space > capped / 2 ? head.slice(0, space) : head).trimEnd();
+  return `${kept}…`;
+}
+
 export function compactCompletionSummary(text: string | undefined, maxValueLength = 72): string {
   const source = completionSummaryBody(text ?? "").replace(/\s+/g, " ").trim();
   if (!source) return "not recorded";
@@ -96,9 +111,33 @@ export function compactCompletionSummary(text: string | undefined, maxValueLengt
       .sort((a, b) => a - b)[0] ?? source.length;
     const rawValue = source.slice(valueStart, nextStart).trim();
     const value = rawValue || "not recorded";
-    return `${name}: ${value.length > limit ? `${value.slice(0, limit - 1)}…` : value}`;
+    return `${name}: ${clipSummaryValue(value, limit)}`;
   });
   return parts.join(" · ");
+}
+
+/** Multi-line projection: one `Label: value` line per label with generous
+ * word-bounded values. This is the user-facing `✓ done` block — six short
+ * facts that stay scannable in chat. The single-line projection remains
+ * for width-bound surfaces (TUI widget card, external notifies). */
+export function completionSummaryLines(text: string | undefined, maxValueLength = 240): string[] {
+  const source = completionSummaryBody(text ?? "").replace(/\s+/g, " ").trim();
+  const lower = source.toLowerCase();
+  const positions = COMPLETION_SUMMARY_LABELS
+    .map((label) => ({ label, start: lower.indexOf(label.toLowerCase()) }))
+    .filter((entry) => entry.start >= 0);
+  return COMPLETION_SUMMARY_LABELS.map((label) => {
+    const name = label.slice(0, -1);
+    const current = positions.find((entry) => entry.label === label);
+    if (!source || !current) return `${name}: not recorded`;
+    const valueStart = current.start + label.length;
+    const nextStart = positions
+      .filter((entry) => entry.start > current.start)
+      .map((entry) => entry.start)
+      .sort((a, b) => a - b)[0] ?? source.length;
+    const rawValue = source.slice(valueStart, nextStart).trim();
+    return `${name}: ${clipSummaryValue(rawValue || "not recorded", maxValueLength)}`;
+  });
 }
 
 function safeFact(value: unknown, fallback = "not recorded"): string {
@@ -195,6 +234,16 @@ export function compactTerminalCompletionSummary(
   maxValueLength = 72,
 ): string {
   return compactCompletionSummary(resolveCompletionSummary(facts, candidate).summary, maxValueLength);
+}
+
+/** Multi-line twin of compactTerminalCompletionSummary for the `✓ done`
+ * chat notifies: same resolved facts, one `Label: value` line each. */
+export function terminalCompletionSummaryLines(
+  facts: CompletionSummaryFacts,
+  candidate = facts.goal.completionSummary,
+  maxValueLength = 240,
+): string[] {
+  return completionSummaryLines(resolveCompletionSummary(facts, candidate).summary, maxValueLength);
 }
 
 /**

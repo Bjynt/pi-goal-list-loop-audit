@@ -250,7 +250,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary } from "../completion-summary.js";
+import { compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary, terminalCompletionSummaryLines } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1216,9 +1216,15 @@ function registerAgentTools(pi: any): void {
               details: {},
             };
           }
-          ctx.ui.notify(`✓ done without audit (user choice): ${recap}`, "info");
+          const recapLines = terminalCompletionSummaryLines({
+            goal: terminalGoal,
+            status: "complete",
+            stopReason: terminalReason,
+            archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id),
+          });
+          ctx.ui.notify(`✓ done without audit (user choice):\n${recapLines.join("\n")}`, "info");
           notifyExternal(ctx, `Goal complete without audit (user choice): ${recap}`);
-          return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${recap}` }], details: {} };
+          return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${recapLines.join("\n")}` }], details: {} };
         }
         scheduleContinuation(ctx, true);
         return {
@@ -1258,7 +1264,13 @@ function registerAgentTools(pi: any): void {
           appendLedger(ctx.cwd, "goal_archive_failed_after_approval", { goalId: state.goal?.id, origin: "manual-verify", model: result.model });
           return { content: [{ type: "text", text: "The auditor approved, but the terminal archive could not be persisted. The goal is paused; fix persistence, resume, and retry complete_goal." }], details: {} };
         }
-        ctx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved.`, "info");
+        const recapLines = terminalCompletionSummaryLines({
+          goal: state.goal,
+          status: "complete",
+          stopReason: terminalReason,
+          archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
+        }, state.goal.completionSummary);
+        ctx.ui.notify(`✓ done — auditor ${result.model} approved.\n${recapLines.join("\n")}`, "info");
         notifyExternal(ctx, `Goal complete (auditor approved): ${recap}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
