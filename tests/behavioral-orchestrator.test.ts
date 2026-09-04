@@ -3523,6 +3523,7 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     }, ctx);
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);
     const recapNotifs = ctx.ui.matching("Pinned the R-key/HUD retire parity");
+    if (recapNotifs.length === 0) console.log("DBG-NOTIFIES:", JSON.stringify(ctx.ui.notifies.map((n: { message: string }) => n.message.slice(0, 200))));
     assert.ok(recapNotifs.length > 0, "the settle notify carries the recap (what happened), not 'auditor approved' alone");
     assert.equal(ctx.ui.matching("✓ done").length, 1, "the recap line is the single decisive end-of-goal voice");
     assertCompactRecap(recapNotifs[0]!.message, "approved terminal notification");
