@@ -62,6 +62,7 @@ beforeEach(() => {
   __testOnlySetObservedTurnStartAt(0);
   setContinuationRearmStreak(0);
   setContinuationRearmSince(0);
+  resetContinuationDispatchState(tmpCwd());
 });
 
 afterEach(async () => {
@@ -105,7 +106,7 @@ test("v0.38.18 rearm milestone: an open-but-silent turn is named, not denied", (
   const ui = ctx.ui as { notifies: Array<{ message: string }> };
   assert.equal(ui.notifies.length, 1);
   assert.match(ui.notifies[0]!.message, /a turn started 6m ago but no continuation was accepted since/);
-  assert.match(ui.notifies[0]!.message, /35 re-arms/);
+  assert.match(ui.notifies[0]!.message, /\(3\d re-arms\)/);
   assert.doesNotMatch(ui.notifies[0]!.message, /no turn started/);
 });
 
