@@ -74,8 +74,8 @@ test("compact stays one line but cuts at word boundaries now", () => {
     "Next: none",
   ].join("\n"), 24);
   assert.ok(!compact.includes("\n"), "single-line contract holds for the widget/external surfaces");
-  assert.ok(compact.includes("alpha beta…"), "cut lands on the word break, not mid-word");
-  assert.ok(!compact.includes("alpha beta g…"), "the old mid-word slice is gone");
+  assert.ok(compact.includes("alpha beta gamma delta…"), "cut fills the budget then lands on the word break");
+  assert.ok(!compact.includes("epsilon…") && !compact.includes("epsi…"), "the tail is cut, never mid-word");
 });
 
 test("terminal lines resolve through the same facts as the compact recap", () => {
@@ -97,7 +97,8 @@ test("terminal lines resolve through the same facts as the compact recap", () =>
 test("the ✓ done chat notifies use the line block; external keeps the single line", () => {
   const hooks = fs.readFileSync("extensions/loops/goal-auditor-hooks.ts", "utf8");
   assert.match(hooks, /terminalCompletionSummaryLines\(/);
-  assert.match(hooks, /✓ done — auditor .* approved.*\\n.*recapLines\.join\("\\n"\)/s.replace("\\\\n", "\\n") ?? /recapLines\.join/);
+  assert.match(hooks, /✓ done — auditor /);
+  assert.match(hooks, /recapLines\.join\("\\n"\)/);
   const tools = fs.readFileSync("extensions/loops/goal-tools.ts", "utf8");
   assert.equal(tools.match(/terminalCompletionSummaryLines\(/g)?.length ?? 0, 2, "both tool ✓ done paths use the block");
   assert.match(tools, /notifyExternal\(ctx, `Goal complete \(auditor approved\): \$\{recap\}`\)/, "external notify keeps the compact line");
