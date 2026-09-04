@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.38.18 — completion/lifecycle field trilogy (2026-09-04)
+
+### Fixed
+- Track 1 (pipe-syntax): the mechanical pre-audit checker runs narrow `cmd 2>&1 | tail/head/grep` pipelines shell-free with pipefail-head semantics instead of 126-rejecting finished work (`parseMechanicalPipeline`, `runMechanicalPipeline`; `tee`/grep-file-flags still refused).
+- Track 2 (post-answer stall): a turn that never streamed parks on the first abort with no hot retry (`zombie_auto_retry_refused_never_streamed`, honest park copy), and the rearm milestone names an open-but-silent turn instead of claiming "no turn started".
+- Track 3 (stale waiting-verdict): the detached-approval branch delivers the `✓ done` brief into the conversation as a fire-once followUp turn (`sendTerminalCompletionNotice`), so the transcript records the archive instead of narrating "waiting" forever. Skipped for manual `/goal verify` (in-turn closure already exists).
+
 ## 0.38.17 — release-contract docs trail (2026-09-04)
 
 ### Fixed
