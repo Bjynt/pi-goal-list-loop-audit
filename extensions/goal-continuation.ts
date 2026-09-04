@@ -1522,6 +1522,11 @@ export function clearQueueStuckProbe(): void {
 export function setContinuationRearmStreak(v: number): void {
   continuationRearmStreak = v;
 }
+
+/** Test-only: pretend a turn begin-marker was observed at the given clock. */
+export function __testOnlySetObservedTurnStartAt(v: number): void {
+  lastObservedTurnStartAt = v;
+}
 export function setContinuationRearmSince(v: number): void {
   continuationRearmSince = v;
 }
