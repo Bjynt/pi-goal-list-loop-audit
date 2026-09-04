@@ -17,12 +17,20 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 import activate, { __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
-import { MockPi, makeMockCtx, seedState, seedGoal, tick, tmpCwd, readState, type MockCtx } from "./harness/mock-pi.js";
+import { MockPi, makeMockCtx, seedState, seedGoal, tick, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
+import { readState } from "../extensions/goal-loop-core.js";
 import {
   claimedMissingGllaTool,
   PI_TOOL_NOT_FOUND_QUOTE,
-  ledgerEvent,
 } from "../extensions/goal-loop-core.js";
+import * as path from "node:path";
+
+function ledgerHas(cwd: string, type: string): boolean {
+  const file = path.join(cwd, ".pi-glla", "active.jsonl");
+  return fs.readFileSync(file, "utf8").split("\n").filter(Boolean)
+    .map((line) => JSON.parse(line) as { type: string })
+    .some((entry) => entry.type === type);
+}
 import { __testOnlyResetOwnerSession } from "../extensions/loops/goal-session.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
@@ -66,6 +74,8 @@ test("pause claiming a missing tool is refused with a correction, goal stays act
   seedState(cwd, { goal: seedGoal({ objective: "guard probe objective — done when pinned" }) });
   const ctx = await freshSession(cwd, "startup");
   await tick();
+  await pi.command("goal", "resume", ctx);
+  await tick();
   const result = await pi.runTool("pause_goal", {
     reason: "work is done but this session has no complete_goal tool to close the active goal",
     kind: "blocked",
@@ -74,7 +84,7 @@ test("pause claiming a missing tool is refused with a correction, goal stays act
   assert.match(result.content[0]!.text, /`complete_goal` is registered in this session/, "the correction names the tool");
   assert.match(result.content[0]!.text, /quoting that exact error/, "the escape hatch is offered");
   assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active", "the goal never paused");
-  assert.ok(ledgerEvent(cwd, "pause_refused_tool_present"), "the refusal is ledgered");
+  assert.ok(ledgerHas(cwd, "pause_refused_tool_present"), "the refusal is ledgered");
 });
 
 test("pause quoting pi's own not-found error is accepted as a genuine outage", async () => {
@@ -82,6 +92,8 @@ test("pause quoting pi's own not-found error is accepted as a genuine outage", a
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ objective: "outage probe objective — done when pinned" }) });
   const ctx = await freshSession(cwd, "startup");
+  await tick();
+  await pi.command("goal", "resume", ctx);
   await tick();
   const result = await pi.runTool("pause_goal", {
     reason: "tried to close out but pi answered Tool complete_goal not found twice; no complete_goal tool in this session",
@@ -96,6 +108,8 @@ test("ordinary pauses are untouched by the guard", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ objective: "ordinary probe objective — done when pinned" }) });
   const ctx = await freshSession(cwd, "startup");
+  await tick();
+  await pi.command("goal", "resume", ctx);
   await tick();
   const result = await pi.runTool("pause_goal", { reason: "waiting on user answer about scope", kind: "blocked" }, ctx);
   assert.match(result.content[0]!.text, /Goal paused/);
