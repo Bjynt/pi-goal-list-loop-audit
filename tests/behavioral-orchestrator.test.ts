@@ -466,7 +466,9 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
     const notices = ctx.ui.notifies.map((entry) => entry.message).join("\n");
     const notice = ctx.ui.notifies.find((entry) => entry.message.includes("done without audit"))?.message ?? "";
     assert.equal(confirmationTitle, "Audit aborted", "the explicit audit-abort choice was presented");
-    assertCompactRecap(notice, "complete-without-audit notification");
+    assert.match(notice, /^✓ done — Objective "complete without audit target/, "the briefing leads with the archived objective");
+    assert.match(notice, /— completed without audit \(your choice\)\./, "the no-audit trailer closes the briefing");
+    assert.doesNotMatch(notice, /not recorded/, "system placeholders never reach the briefing");
     assert.ok(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length > 0, "archive landed before success was reported");
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;

@@ -122,9 +122,12 @@ export function compactCompletionSummary(text: string | undefined, maxValueLengt
 export function briefValueContent(value: string): string | null {
   const clean = value.replace(/\s+/g, " ").trim();
   if (!clean) return null;
-  const prefixed = /^(none|not recorded)\s*[—–:\-]\s*(.+)$/i.exec(clean);
-  const body = (prefixed?.[2] ?? clean).trim();
-  if (/^(none|not recorded|n\/a|nil|nothing)(\s+for\s+this\s+\w+)?\.?$/i.test(body)) return null;
+  // System placeholder vocabulary: the `— explanation` is still a placeholder.
+  if (/^not recorded\b/i.test(clean)) return null;
+  // Agent habit: `none — <real content>` hides information behind filler.
+  const prefixed = /^none\s*[—–:\-]\s*(.+)$/i.exec(clean);
+  const body = (prefixed?.[1] ?? clean).trim();
+  if (/^(none|n\/a|nil|nothing)(\s+for\s+this\s+\w+)?\.?$/i.test(body)) return null;
   return body;
 }
 

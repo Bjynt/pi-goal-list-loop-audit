@@ -102,6 +102,7 @@ test("v0.38.14: filler values inform nobody and are dropped", () => {
     assert.equal(briefValueContent(filler), null, JSON.stringify(filler));
   }
   assert.equal(briefValueContent("none — queued follow-ups (analytics cache)"), "queued follow-ups (analytics cache)");
+  assert.equal(briefValueContent("not recorded — no file-write signal was captured"), null, "system placeholder stays filler with its explanation");
   assert.equal(briefValueContent("shipped the thing"), "shipped the thing");
 });
 
