@@ -193,7 +193,7 @@ async function activateFreshObjective(cwd: string, oldId: string, fence: boolean
 
 test("last-wins: an archive fence no longer refuses the new objective — old is ledgered, new starts", async () => {
   const cwd = tmpCwd();
-  const oldId = "20260904000000-fence01";
+  const oldId = "20260904000000-fenc01";
   const { ctx, newId } = await activateFreshObjective(cwd, oldId, true);
   const goal = readState(cwd).goal as { id: string; objective: string };
   assert.match(goal.objective, /FRESH objective/, "the new objective owns the slot");
@@ -212,7 +212,7 @@ test("last-wins: an archive fence no longer refuses the new objective — old is
 
 test("last-wins control: without a fence the old objective still archives honestly", async () => {
   const cwd = tmpCwd();
-  const oldId = "20260904000000-clean01";
+  const oldId = "20260904000000-clea01";
   const { ctx } = await activateFreshObjective(cwd, oldId, false);
   assert.ok(fs.existsSync(path.join(cwd, ".pi-glla", "archive", `${oldId}.md`)), "old objective archived");
   assert.equal(readLedger(cwd).filter((l) => l.type === "goal_superseded_unarchived").length, 0);
