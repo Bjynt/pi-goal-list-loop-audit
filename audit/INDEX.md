@@ -13,7 +13,27 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-09-01):**
+**Most recent (2026-09-04):**
+- `SUBAGENT-DIALECT-2026-09-04.md` — v0.38.16 shipped: prompts/strings speak the live `subagent` tool + `bg_wait` settle (dead tintinweb `Agent`/`get_subagent_result` gone); `isSubagentProviderFailure` matches the live names; tintinweb stays retired, pi-subagents 0.65 gets its own canary'd eval
+- `PAUSE-ANTI-CONFABULATION-2026-09-04.md` — v0.38.15 shipped: `pause_goal` refuses blocker claims that name a missing GLLA tool (the call dispatching proves the batch landed) unless pi's own `Tool X not found` is quoted; new-tab incident forensics (zero tool errors, both claims disproven)
+- `HUMAN-BRIEF-2026-09-04.md` — v0.38.14 shipped: every `✓ done` is now a human briefing (outcome-led, filler labels dropped, `none — <content>` keeps the content); placeholders never leak; pre-archive rule + prefix-strip fix documented
+- `COMPLETION-SUMMARY-2026-09-04.md` — v0.38.13 shipped: the `✓ done` chat notify carries the six labels as one fact per line with word-boundary cuts (never `0 o…` mid-word again); single-line kept for widget + external; caught + fixed a post-archive null crash that swallowed the notify
+- `LAST-WINS-2026-09-04.md` — v0.38.12 shipped: newest main session auto-takes the state root (old stands down, never signaled); `/goal start` replaces without dialog; archival failure never refuses the new objective (old preserved in ledger)
+- `OWNER-TAKEOVER-2026-09-03.md` — v0.38.11 shipped: `/glla owner` inspection + consented `/glla takeover` (dead/recycled reclaim silent, live owner SIGTERMed after confirm + verified exit, never claim a survivor)
+- `COMPACTOR-HANDOFF-2026-09-03.md` — v0.38.10 shipped: emergency-only compactor (chain → verified-free plan B → skip), prompt-in/text-out worker, warm handoff in resync+banner, desktop page on refuse
+- `OVERCAP-STRATEGY-2026-09-03.md` — v0.38.9 shipped: the three rungs stated in order (trim always-on, guarded rotation, /new backstop) + viability ranking; ladder skips stale /compact retry; behavioral chain pins
+- `TUI-DENSITY-2026-09-03.md` — v0.38.8 shipped: widget audits row, paused-status tally, ladder reflow, settings tab counts; before/after captures + 80-col pin
+- `SESSION-VISIBILITY-2026-09-03.md` — v0.38.7 shipped: load-hold recovery banner (objective + next task + tally + resume from disk) + durable verdict tally on status line and /goal status; reload sessions answer "are we progressing?"
+- `STARVATION-LADDER-2026-09-03.md` — v0.38.6 shipped: compact-first nudge at 85%, over-cap ladder (/compact retry / larger model / /new+resume + no-LLM backstop), send choke-point refuse, sticky refuse while ≥90%; 5-path ladder answers the over-cap question
+- `DELTA-ONLY-CONTINUATION-2026-09-03.md` — v0.38.5 shipped: steady-state goal continuation is marker-only 45 chars (history holds state), resync+marker after compact, full 23k only on first-send/dirty (repair/recovery/audit); 1824 pass
+- `CACHE-CRITICAL-ADDENDUM-2026-09-03.md` — cache-critical addendum: why a naked ≤160-char followUp marker would break GLLA (no `before_agent_start` systemPrompt authority) vs pi-goal-x `system.cache_control` + marker (45 chars vs GLLA 21–40k); A2 downgraded to CONDITIONAL paired, measured gate
+- `ANTIGRAVITY-CODEX-CLAUDE-PI-GOAL-X-2026-09-03.md` — 4-harness keep-checking comparison vs GLLA ContinuousSupervisor 250ms→15s: Antigravity poll-only already ported, Codex smooth (compact prompt + 50ms idle gate, no heartbeat/auditor), Claude transcript + branch/plan lessons, pi-goal-x contender typed-revision/marker brevity — unified table + §6 borrow ranking (A8→A2→A1) — **errata: A2 now conditional per addendum**
+
+**Most recent (2026-09-02):**
+- `AVO-DEEP-DIVE-2026-09-02.md` — full paper+blog read of NVIDIA AVO (2603.24517 + 2026-08-21 ARC-AGI-3): Vary(Pt)=Agent(Pt,K,f), 40 versions/500 dirs in 7d B200, supervisor = conditional trajectory review, MHA+3.5%/FA4+10.5% → GQA 30-min transfer, vs PR #22/#36 map
+- `v0.38.4` — `USER_INPUT_WAIT` zombie stand-down (PR #36 10-line slice): `pause_goal`/`propose_*`/`list_add`/`ask_user_question` stand down `BUSY+zero-stream` abort with own ledger `zombie_run_stood_down_user_input`; AVO+PRs closed
+
+**2026-09-01:**
 - `PR-AVO-DISPOSITION-2026-09-01.md` — read-only disposition of PRs #22/#36; neither merge as-is, selective stagnation/zombie ports only
 - `CROSS-HARNESS-REVIEW-2026-09-01.md` — cross-harness review (pi-goal-x / dgoal / until-done / codex-goal / pi-goal / better-goal + Codex/Claude/DeepSeek hosts; 9 GLLA-owned deltas, 6 now / 4 defer)
 - `SUBAGENT-PACKAGE-SELECTION-2026-09-01.md` — power-max audit of five subagent/orchestration packages; pin `pi-subagents@0.62.0` for GLLA

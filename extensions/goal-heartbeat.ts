@@ -202,6 +202,32 @@ const SUBAGENT_WAIT_TOOL_NAMES: ReadonlySet<string> = new Set([
 const isSubagentWaitCall = (t: { name?: string }): boolean =>
   typeof t.name === "string" && SUBAGENT_WAIT_TOOL_NAMES.has(t.name);
 
+// v0.36.1 (field: resume-after-long-decision-wait): a turn blocked INSIDE a
+// tool handler that is waiting on HUMAN input is stream-silent by design —
+// glla's own goal-toolkit verbs await Confirm/select pickers (drafting
+// confirms, decision popups, task-list review), and the structured-question
+// provider blocks in `ask_user_question` for as long as the user is away.
+// The zombie watchdog read that silence as a hung provider stream, aborted
+// the dialog mid-answer ("Operation aborted"), parked the goal, and its
+// one bounded auto-retry re-opened the SAME dialog — so the second silence
+// parked permanently. A human-input wait must stand the zombie branch down
+// exactly like a subagent wait: detection+notify territory (wedge alert),
+// never an abort.
+const USER_INPUT_WAIT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  // glla goal-toolkit verbs whose handlers can await user UI:
+  "pause_goal", // decision popup (maybeDecisionPopup)
+  "propose_goal_draft", // drafting confirm + interview
+  "propose_loop_draft",
+  "propose_loop_refine",
+  "propose_task_list",
+  "list_add", // batch drafting interview
+  "list_activate", // item activation → drafting
+  // structured-question providers (the companion we test against):
+  "ask_user_question",
+]);
+export const isUserInputWaitCall = (t: { name?: string }): boolean =>
+  typeof t.name === "string" && USER_INPUT_WAIT_TOOL_NAMES.has(t.name);
+
 // ============================================================================
 // v0.35.28 (issue #16): due-wait backstop — the durable invariant that a
 // pauseKind "wait" actually resumes when its pauseResumeAt lapses.
@@ -1350,9 +1376,25 @@ function heartbeatTick(): void {
     // event has not reached the probe registry yet. Once a probe is already
     // stale, however, the same ambiguous tool name must not shield cleanup.
     const subagentWaitInFlight = healthySubagentWait || (inFlightSubagentTool && !staleSubagent);
-    if (subagentWaitInFlight) {
+    // v0.37.0: a tool blocking on HUMAN input (decision popups, drafting
+    // confirms, ask_user_question) is legitimately stream-silent for as long
+    // as the user is away — never abort it (see USER_INPUT_WAIT_TOOL_NAMES).
+    // This shield is independent of child-probe health: the parent turn is
+    // waiting on its operator, not on a subagent.
+    const userInputWaitInFlight = [...flags.inFlightToolCalls.values()].some(
+      isUserInputWaitCall,
+    );
+    if (subagentWaitInFlight || userInputWaitInFlight) {
       if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown) {
-        appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", { streamSilentMs });
+        appendLedger(
+          ctx.cwd,
+          subagentWaitInFlight
+            ? "zombie_run_stood_down_subagent_wait"
+            : "zombie_run_stood_down_user_input",
+          {
+            streamSilentMs,
+          },
+        );
       }
       return;
     }
@@ -1495,7 +1537,7 @@ function heartbeatTick(): void {
         .map((t) => t.name),
     );
     const subHint = subWaits.size > 0
-      ? ` The in-flight call is a SUBAGENT WAIT (${[...subWaits].join("/")}) — check the Agents panel: a child whose tool-use/token counters have stopped moving between checks is hung, not thinking (hard failures surface as ✗ failed + the wait returns; a HANG is silent). Esc interrupts the wait — then collect the survivors with get_subagent_result and absorb the dead scope inline.`
+      ? ` The in-flight call is a SUBAGENT WAIT (${[...subWaits].join("/")}) — check the Agents panel: a child whose tool-use/token counters have stopped moving between checks is hung, not thinking (hard failures surface as ✗ failed + the wait returns; a HANG is silent). Esc interrupts the wait — then collect the survivors with bg_wait and absorb the dead scope inline.`
       : "";
     const msg = `${goalNoun()} appears wedged: no activity for ${Math.round((Date.now() - flags.lastActivityAt) / 60_000)}m while the session is busy — likely a hung command (test/build/dev server without a timeout).${subHint} Check the session; Esc kills a stuck tool call.`;
     appendLedger(ctx.cwd, "wedge_alert", { silentMs: Date.now() - flags.lastActivityAt, subagentWait: subWaits.size > 0 });

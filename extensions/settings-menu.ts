@@ -5,7 +5,7 @@
 //
 // Pre-0.28.0 used `ctx.ui.select` with flat single-line rows; v0.28.0
 // replaces it with a `ctx.ui.custom` Container/Text layout featuring:
-//   • a top TABS row listing all 7 sections (left/right to switch sections)
+//   • a top TABS row listing all 8 sections (left/right to switch sections)
 //   • a 4-column table for the active section (KEY | VALUE | SOURCE | DESCRIPTION)
 //   • up/down navigation scoped to the active section's rows
 //   • Enter → emit the selected row's id (caller dispatches handler)
@@ -53,15 +53,21 @@ export type SettingsSectionId =
   | "agents"
   | "main-agent"
   | "drafter"
+  | "compactor"
   | "auditor"
   | "subagents"
   | "stall-brakes"
   | "other";
 
+/** v0.38.8: tab label with its row count — pure so tests pin the shape. */
+export function settingsTabLabel(label: string, rowCount: number): string {
+  return rowCount > 0 ? `${label} (${rowCount})` : label;
+}
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
   { id: "keep-going", label: "Keep-going" },
   { id: "main-agent", label: "Main agent" },
   { id: "drafter", label: "Drafter" },
+  { id: "compactor", label: "Compactor" },
   { id: "auditor", label: "Auditor" },
   { id: "subagents", label: "Subagents" },
   { id: "stall-brakes", label: "Stall brakes" },
@@ -163,6 +169,9 @@ export function buildSettingsRows(
   // in the auditor fallback row's final-resort slot.
   const drafterRef = settings.drafterModel?.trim() ? settings.drafterModel : "session model";
   const drafterThinking = settings.drafterThinkingLevel ?? sessionThinking;
+  // v0.38.10: the compactor never runs on the session model (it is the
+  // stuck one) — unset means registry plan B, not a session lease.
+  const compactorRef = settings.compactorModel?.trim() ? settings.compactorModel : "registry plan B";
   const auditorRef = settings.auditorModel?.trim() ? settings.auditorModel : "session model";
   // An unset auditor level follows the live parent dial. This keeps the
   // detached verifier at the same effective reasoning level as the main
@@ -320,6 +329,28 @@ export function buildSettingsRows(
         : `0/${MAX_MAIN_MODEL_FALLBACKS} · ${sessionRef} · ${drafterThinking} (last resort)`,
       sourceText: src("drafterModelFallbacks"),
       description: "ordered and deselectable: current drafter → fallback 1 → fallback 2…; every recoverable provider failure switches one eligible fallback at a time",
+    },
+  );
+
+  // ── Compactor (v0.38.10) ──
+  rows.push(
+    {
+      id: "compactorModel",
+      section: "compactor",
+      label: "Compactor agent",
+      valueText: compactorRef,
+      sourceText: src("compactorModel"),
+      description: "emergency handoff-brief model used only when context starvation parks the session; unset → verified free big-context registry plan B (never the stuck session model)",
+    },
+    {
+      id: "compactorModelFallbacks",
+      section: "compactor",
+      label: `Compactor fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
+      valueText: settings.compactorModelFallbacks?.length
+        ? `${settings.compactorModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${settings.compactorModelFallbacks.map((ref, index) => `${index + 1}. ${ref}`).join(" → ")}`
+        : `0/${MAX_MAIN_MODEL_FALLBACKS} · registry plan B`,
+      sourceText: src("compactorModelFallbacks"),
+      description: "ordered and deselectable: compactor primary → fallback 1 → fallback 2… then registry plan B; no session last resort",
     },
   );
 
@@ -780,15 +811,19 @@ export class SettingsMenuComponent implements Component {
 
     const lines: string[] = [];
 
-    lines.push(this.theme.fg("accent", this.theme.bold(this.title)));
+    lines.push(this.theme.fg("accent", this.theme.bold(truncateToWidth(this.title, Math.max(20, width - 2), "…"))));
 
     // v0.28.19: color-only tabs (user call: "dropping the brackets") —
     // active = accent + bold, inactive = dim. No bracket chrome.
+    // v0.38.8: per-tab row counts — the menu holds 8 sections (v0.38.10 adds Compactor) and the
+    // count says where the settings live at a glance.
+    const tabLabel = (s: { id: SettingsSectionId; label: string }): string =>
+      settingsTabLabel(s.label, this.rows.filter((r) => r.section === s.id).length);
     lines.push(
       SETTINGS_SECTIONS.map((s, i) =>
         i === this.activeSectionIdx
-          ? this.theme.fg("accent", this.theme.bold(s.label))
-          : this.theme.fg("dim", s.label),
+          ? this.theme.fg("accent", this.theme.bold(tabLabel(s)))
+          : this.theme.fg("dim", tabLabel(s)),
       ).join("  "),
     );
 

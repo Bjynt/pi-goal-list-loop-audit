@@ -1243,6 +1243,32 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       ctx.ui.notify(refs.length ? `Drafter fallback models saved: ${refs.join(" → ")}.` : "Drafter fallback models cleared — the session model remains the last resort.", "info");
       return;
     }
+    case "compactorModel": {
+      const pick = await promptModelRef(ctx, "Compactor agent — emergency handoff brief only", "provider/model-id — empty keeps registry plan B (verified free big-context model)");
+      if (pick === undefined) return;
+      saveSettings("global", ctx.cwd, { compactorModel: pick.kind === "session" ? undefined : pick.ref });
+      ctx.ui.notify(
+        pick.kind === "session"
+          ? "Compactor agent: registry plan B (the session model can never be the compactor — it is the stuck one)."
+          : `Compactor agent: ${pick.ref} — main, drafter, and auditor agents are unchanged.`,
+        "info",
+      );
+      return;
+    }
+    case "compactorModelFallbacks": {
+      const global = loadGlobalSettings();
+      const current = normalizeMainModelFallbackRefs(global.compactorModelFallbacks);
+      const refs = await promptModelRefs(
+        ctx,
+        `Compactor fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS}) — ordered; then registry plan B; the session model is never used`,
+        current,
+        { excludeRefs: normalizeModelRefs(loadSettings(ctx.cwd).forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
+      );
+      if (refs === undefined) return;
+      saveSettings("global", ctx.cwd, { compactorModelFallbacks: refs.length ? refs : undefined });
+      ctx.ui.notify(refs.length ? `Compactor fallback models saved: ${refs.join(" → ")}.` : "Compactor fallback models cleared — registry plan B remains.", "info");
+      return;
+    }
     case "forbiddenModels": {
       const settings = loadSettings(ctx.cwd);
       const current = normalizeModelRefs(settings.forbiddenModels);
@@ -1252,6 +1278,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const fallbackRefs = [
         ...normalizeMainModelFallbackRefs(settings.mainModelFallbacks),
         ...normalizeMainModelFallbackRefs(settings.drafterModelFallbacks),
+        ...normalizeMainModelFallbackRefs(settings.compactorModelFallbacks),
+        ...(settings.compactorModel?.trim() ? [settings.compactorModel.trim()] : []),
         ...normalizeMainModelFallbackRefs(settings.auditorModelFallbacks),
         ...Object.values(settings.subagentFallbacks ?? {}).flatMap((chain) => normalizeModelRefs(chain)),
       ];

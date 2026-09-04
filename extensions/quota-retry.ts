@@ -495,11 +495,13 @@ export function scheduleProviderRetry(
   }
 }
 
-/** A failed Agent result is a provider/runtime failure. Keep this generic:
- * no status, quota, billing, or message parsing is used to choose a path. */
+/** A failed subagent-spawn/wait result is a provider/runtime failure. Keep
+ * this generic: no status, quota, billing, or message parsing is used to
+ * choose a path. v0.38.16: the legacy `Agent` name missed the current
+ * `subagent` tool entirely — real spawn failures never took this path. */
 export function isSubagentProviderFailure(toolName: string, isError: boolean, payload: unknown): boolean {
   if (!isError) return false;
-  if (toolName !== "Agent" && toolName !== "agent") return false;
+  if (!["Agent", "agent", "subagent", "subagent_wait"].includes(toolName)) return false;
   const text = typeof payload === "string" ? payload : JSON.stringify(payload ?? "");
   return text.trim().length > 0;
 }

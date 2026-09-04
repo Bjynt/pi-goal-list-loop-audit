@@ -120,7 +120,7 @@ test("grouped entry points can open a specific settings section", () => {
   assert.ok(component.visibleRows().every((row) => row.section === "stall-brakes"));
 });
 
-test("render: tabs row lists all 7 sections", () => {
+test("render: tabs row lists all 8 sections", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   const lines = component.render(120);
   // Tabs row is index 1 (after title).
@@ -388,7 +388,7 @@ test("structural: Class implements Component (has render + invalidate + handleIn
   assert.equal(typeof component.invalidate, "function");
 });
 
-test("structural: buildSettingsRows returns ≥20 rows across all 7 sections (coverage)", () => {
+test("structural: buildSettingsRows returns ≥20 rows across all 8 sections (coverage)", () => {
   const rows = buildSettingsRows({} as Settings, {});
   assert.ok(rows.length >= 20, `expected ≥20 rows, got ${rows.length}`);
 });

@@ -74,3 +74,29 @@ test("subagent provider failure: any failed Agent payload, without classificatio
   assert.equal(isSubagentProviderFailure("Agent", false, "403 Key limit exceeded"), false);
   assert.equal(isSubagentProviderFailure("bash", true, "403 Key limit exceeded"), false);
 });
+
+test("v0.38.16: failed current-tool spawns take the provider-failure path too", () => {
+  assert.equal(isSubagentProviderFailure("subagent", true, "Error: 403 Key limit exceeded"), true);
+  assert.equal(isSubagentProviderFailure("subagent_wait", true, "launch failed: no model available"), true);
+  assert.equal(isSubagentProviderFailure("subagent", false, "Error: 403 Key limit exceeded"), false);
+  assert.equal(isSubagentProviderFailure("bash", true, "Error: 403 Key limit exceeded"), false);
+});
+
+test("v0.38.16: model-facing text speaks the current subagent dialect", () => {
+  for (const file of [
+    "prompts/goal-loop-forever.md",
+    "prompts/goal-loop-forever-metricless.md",
+    "prompts/goal-loop-continuation.md",
+  ]) {
+    const text = fs.readFileSync(file, "utf8");
+    assert.doesNotMatch(text, /`Agent`/, `${file} no longer names the dead tintinweb tool`);
+    assert.match(text, /`subagent`/, `${file} names the current tool`);
+  }
+  const continuation = fs.readFileSync("prompts/goal-loop-continuation.md", "utf8");
+  assert.doesNotMatch(continuation, /get_subagent_result/, "settle guidance no longer names the dead wait tool");
+  assert.match(continuation, /bg_wait/, "settle guidance names the live wait");
+  const panel = fs.readFileSync("extensions/goal-agents-panel.ts", "utf8");
+  assert.match(panel, /via the `subagent` tool/, "agents panel points at the live tool");
+  const continuationSrc = fs.readFileSync("extensions/goal-continuation.ts", "utf8");
+  assert.match(continuationSrc, /Use the `subagent` tool with agent `Designer`/, "designer checkpoint uses the live tool");
+});

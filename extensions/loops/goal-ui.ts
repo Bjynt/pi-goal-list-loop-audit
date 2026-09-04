@@ -171,6 +171,7 @@ import {
 } from "../goal-continuation.js";
 export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff } from "../goal-continuation.js";
 import {
+  LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT,
   LENGTH_CONTINUE_MAX,
   LENGTH_CONTINUE_TEXT,
   isContextStarvedLengthStop,
@@ -965,8 +966,52 @@ let lastCompactionAt = 0;
 // immediately clears the streak.
 const CONTEXT_STARVATION_REFUSE_THRESHOLD = 2;
 const CONTEXT_STARVATION_RECENT_WINDOW_MS = 90_000;
+// v0.38.6: compact-first band — heavy but still compactable. One proactive
+// nudge per episode here avoids the over-cap ladder entirely (summarization
+// still fits below the 90% starvation line).
+export const COMPACT_FIRST_NUDGE_PERCENT = 85;
+export const COMPACT_FIRST_RESET_PERCENT = 80;
 let contextStarvedStreak = 0;
 let lastContextStarvedAt = 0;
+// v0.38.6: last-known context percent (sampled at agent_end). Keeps the
+// refuse sticky while the session is physically over cap even after the 90s
+// recency window lapses — a slow-truncating 120%+ session must not re-arm
+// the spin (field 2026-09-03: 119–243% truncation loops).
+let lastContextPercent: number | null = null;
+let compactFirstNudged = false;
+export function noteContextPercent(pct: number | null | undefined): void {
+  lastContextPercent = typeof pct === "number" && Number.isFinite(pct) ? pct : null;
+}
+/** v0.38.6: compact-first decision — pure. True exactly once per episode
+ * while percent sits at/above the nudge band; resets below 80% or on
+ * compaction. Returns false for missing/non-finite input. */
+export function shouldCompactFirstNudge(percent: number | null | undefined): boolean {
+  if (typeof percent !== "number" || !Number.isFinite(percent)) return false;
+  if (percent < COMPACT_FIRST_RESET_PERCENT) { compactFirstNudged = false; return false; }
+  if (percent < COMPACT_FIRST_NUDGE_PERCENT || compactFirstNudged) return false;
+  compactFirstNudged = true;
+  return true;
+}
+/** v0.38.6: the over-cap ladder, user-facing. Three recoveries in order
+ * (retry /compact after GLLA's deterministic trim, larger-context model,
+ * /new + resume from durable state) plus the no-LLM backstop: the
+ * post-compact resync re-anchors a fresh session with no summarization.
+ * `recentCompact` skips the stale retry (v0.38.9). */
+export function buildStarvationLadderMessage(input: { percent?: number | null; streak?: number; recentCompact?: boolean } = {}): string {
+  const at = typeof input.percent === "number" && Number.isFinite(input.percent)
+    ? `${input.percent.toFixed(1)}%` : "nearly full";
+  // One recovery per line (v0.38.8) — same content, scannable shape.
+  return [
+    `glla: output-token stop was context starvation (tiny output at ${at} context) — yielding to pi auto-compaction instead of re-sending.`,
+    `If compaction fails or context is already over cap, in order:`,
+    input.recentCompact === true
+      ? `(1) skip the /compact retry — one already failed within the last 90s; the trim below already ran, so go straight to (2)/(3);`
+      : `(1) run /compact again — GLLA already trimmed repeat payloads to a checkpoint, so the retry may now fit;`,
+    `(2) switch to a larger-context model, then /compact (GLLA auto-rotates its fallback chain after a failed compact-and-retry);`,
+    `(3) /new, then /goal resume — the goal, tasks, ledger and audits are durable on disk, and the post-compact resync re-anchors the fresh session with no summarization needed.`,
+    `Automatic turns stay parked until a real compaction lands.`,
+  ].join("\n");
+}
 function noteContextStarvedYield(): { streak: number; shouldRefuse: boolean } {
   const now = Date.now();
   if (now - lastContextStarvedAt > CONTEXT_STARVATION_RECENT_WINDOW_MS) {
@@ -983,6 +1028,7 @@ function clearContextStarvedStreak(): void {
 /** Public: a session_compact landed — clear the starvation refuse gate. */
 function onCompactionLanded(): void {
   clearContextStarvedStreak();
+  compactFirstNudged = false; // v0.38.6: fresh episode after real room
 }
 /** Public: has the yield path declared compaction absent? The heartbeat
  * consults this to refuse to schedule a new continuation while the
@@ -990,7 +1036,10 @@ function onCompactionLanded(): void {
 function isContextStarvedRefused(): boolean {
   if (contextStarvedStreak < CONTEXT_STARVATION_REFUSE_THRESHOLD) return false;
   if (lastCompactionAt > lastContextStarvedAt) return false; // a compact happened after the streak — fresh slate
-  return Date.now() - lastContextStarvedAt <= CONTEXT_STARVATION_RECENT_WINDOW_MS;
+  if (Date.now() - lastContextStarvedAt <= CONTEXT_STARVATION_RECENT_WINDOW_MS) return true;
+  // v0.38.6: sticky while physically over cap — recency lapse must not
+  // re-arm the spin against a session that never got room (field: 243%).
+  return lastContextPercent !== null && lastContextPercent >= LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT;
 }
 /** Test-only: simulate a compaction event at a controlled time without firing
  * the full session_compact plumbing. Pass null to clear. */
@@ -1134,6 +1183,11 @@ defineGoalRuntimeGlobal("CONTEXT_STARVATION_RECENT_WINDOW_MS", { get: () => CONT
 defineGoalRuntimeGlobal("contextStarvedStreak", { get: () => contextStarvedStreak, set: (v) => { contextStarvedStreak = v as any; } });
 defineGoalRuntimeGlobal("lastContextStarvedAt", { get: () => lastContextStarvedAt, set: (v) => { lastContextStarvedAt = v as any; } });
 defineGoalRuntimeGlobal("noteContextStarvedYield", { get: () => noteContextStarvedYield });
+defineGoalRuntimeGlobal("noteContextPercent", { get: () => noteContextPercent });
+defineGoalRuntimeGlobal("shouldCompactFirstNudge", { get: () => shouldCompactFirstNudge });
+defineGoalRuntimeGlobal("buildStarvationLadderMessage", { get: () => buildStarvationLadderMessage });
+defineGoalRuntimeGlobal("COMPACT_FIRST_NUDGE_PERCENT", { get: () => COMPACT_FIRST_NUDGE_PERCENT });
+defineGoalRuntimeGlobal("lastContextPercent", { get: () => lastContextPercent, set: (v) => { lastContextPercent = v as any; } });
 defineGoalRuntimeGlobal("clearContextStarvedStreak", { get: () => clearContextStarvedStreak });
 defineGoalRuntimeGlobal("onCompactionLanded", { get: () => onCompactionLanded });
 defineGoalRuntimeGlobal("isContextStarvedRefused", { get: () => isContextStarvedRefused });

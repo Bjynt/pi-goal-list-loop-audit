@@ -3056,6 +3056,28 @@ export function missingGllaTools(activeNames: readonly string[]): readonly GllaT
   return GLLA_TOOL_NAMES.filter((n) => !active.has(n));
 }
 
+/** pi's own wording when a model calls a tool pi cannot dispatch. A pause
+ * reason quoting this is evidence of a genuine tool outage — the pause
+ * must be accepted, never refused as confabulation. */
+export const PI_TOOL_NOT_FOUND_QUOTE = /tool\s+\S+\s+not found/i;
+
+/** A pause reason that claims a GLLA tool does not exist in this session
+ * (`no complete_goal tool`, `complete_goal is missing`, …). Ordinary
+ * mentions of a tool (results, instructions, summaries) never match —
+ * absence language is required. */
+export function claimedMissingGllaTool(reason: string): GllaToolName | null {
+  const text = (reason ?? "").replace(/\s+/g, " ");
+  if (!text) return null;
+  for (const name of GLLA_TOOL_NAMES) {
+    const absence = new RegExp(
+      `\\bno\\s+${name}\\s+tool\\b|\\b${name}\\b[^.]{0,120}?\\b(missing|not found|not available|unavailable|doesn'?t exist|isn'?t available|is not available|no longer (?:available|exists|present))\\b`,
+      "i",
+    );
+    if (absence.test(text)) return name;
+  }
+  return null;
+}
+
 // -----------------------------------------------------------------
 // v0.25.0 — eager-continuation contract helpers
 // -----------------------------------------------------------------

@@ -592,6 +592,18 @@ function claimProcessOwner(cwd: string): boolean {
   return false;
 }
 
+/** v0.38.11: unlink the owner file. Only the consented takeover path
+ * (extensions/state-root-owner.ts, after its dead/recycled/live-verified
+ * guards) calls this — never call it to pre-empt a live owner. */
+function removeOwnerFile(cwd: string): boolean {
+  try {
+    fs.unlinkSync(ownerFilePath(cwd));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A stale probe is terminal only for ORPHANS. Returns true when the
  * stale sighting was absorbed (a rebind window is open, or a successor
  * instance owns this cwd and we stand down silently), false when the
@@ -959,6 +971,43 @@ interface SessionOwnerRecord {
 /** A live process owns the workingDir root. A denied fresh host stays
  * read-only until its own session_start can prove that ownership changed. */
 let processOwnerDeniedCwd: string | null = null;
+
+/** v0.38.12 (last-wins sessions): how often a RUNNING session re-reads
+ * the owner file. The claim is not a lease — a newer main host may have
+ * stolen the root while we were working, and we must notice (and stand
+ * down) instead of writing competitively forever. */
+const OWNERSHIP_RECHECK_MS = 30_000;
+let lastOwnershipRecheckAt = 0;
+
+/** v0.38.12: throttled self-check — does THIS process still own the root?
+ * "held": ours (or unclaimed); clears a stale denial for this cwd.
+ * "lost": a live foreign owner holds it — the denial flag is SET, so
+ * command entry refuses until ownership changes again. Dead/released
+ * owners never flap the flag here (the heartbeat reclaims them quietly).
+ * "deferred": sessionDir selected but unresolved — nothing is knowable. */
+export function refreshOwnershipStanding(cwd: string, now: number = Date.now()): "held" | "lost" | "deferred" {
+  if (stateRootPending()) return "deferred";
+  if (now - lastOwnershipRecheckAt < OWNERSHIP_RECHECK_MS) {
+    return processOwnerDeniedCwd === cwd ? "lost" : "held";
+  }
+  lastOwnershipRecheckAt = now;
+  const record = readOwnerFile(cwd);
+  const pid = typeof record?.pid === "number" ? record.pid : null;
+  if (pid === null || pid === process.pid) {
+    if (processOwnerDeniedCwd === cwd) processOwnerDeniedCwd = null;
+    return "held";
+  }
+  if (record?.shutdownAt !== undefined || record?.shutdownReason !== undefined || !isProcessAlive(pid)) {
+    return processOwnerDeniedCwd === cwd ? "lost" : "held";
+  }
+  processOwnerDeniedCwd = cwd;
+  return "lost";
+}
+
+/** Test-only: drop the recheck throttle so standing transitions are immediate. */
+export function __testOnlyResetOwnershipRecheck(): void {
+  lastOwnershipRecheckAt = 0;
+}
 interface SessionOwnerClaim {
   rebind: boolean;
   generation: number;
@@ -1207,8 +1256,15 @@ function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
  * true when the handle is stale — callers must skip send-dependent paths
  * and must NOT claim work started (S3's "created — starting now" lie). */
 function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
+  // v0.38.12 (last-wins): a newer session may have taken the root while
+  // we were idle — recheck (throttled) so commands refuse promptly here
+  // instead of writing competitively. A fresh main session takes over
+  // automatically at its own session_start. Workers skip the recheck:
+  // a subagent never owns the root, so it must keep its own refusal
+  // wording instead of tripping the ownership flag in its process.
+  if (!isForeignCtx(ctx) && !isWorkerSessionCtx(ctx)) refreshOwnershipStanding(ctx.cwd);
   if (processOwnerDeniedCwd === ctx.cwd) {
-    ctx.ui.notify(`glla: another live pi process owns this working-directory state root — ${what} is refused here to prevent competing writes. Close the other host or select sessionDir, then start a fresh session.`, "warning");
+    ctx.ui.notify(`glla: a newer pi session owns this working-directory state root — ${what} is refused here to prevent competing writes. Start a fresh session to take it back. /glla owner inspects the holder; /glla takeover ends it with confirmation.`, "warning");
     return true;
   }
   if (!probeExtensionApiStale()) return false;
@@ -1904,3 +1960,17 @@ defineGoalRuntimeGlobal("draftingTarget", { get: () => draftingTarget, set: (v) 
 defineGoalRuntimeGlobal("draftingUserReplies", { get: () => draftingUserReplies, set: (v) => { draftingUserReplies = v as any; } });
 defineGoalRuntimeGlobal("draftingBlockedProposals", { get: () => draftingBlockedProposals, set: (v) => { draftingBlockedProposals = v as any; } });
 defineGoalRuntimeGlobal("draftingSeedInFlight", { get: () => draftingSeedInFlight, set: (v) => { draftingSeedInFlight = v as any; } });
+
+// v0.38.11: state-root owner inspection + consented takeover live in
+// extensions/state-root-owner.ts. These lifetime/ownership helpers are
+// exported additively for it — no behavior change in this file.
+export {
+  sessionManagerId,
+  ownerFilePath,
+  writeOwnerFile,
+  readOwnerFile,
+  isProcessAlive,
+  claimProcessOwner,
+  removeOwnerFile,
+  type SessionOwnerRecord,
+};

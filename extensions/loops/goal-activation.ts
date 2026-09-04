@@ -136,6 +136,7 @@ import {
   transitionDispatch,
   type ContinuationDispatch,
 } from "../goal-loop-dispatch.js";
+import { readHandoffBriefExcerpt, runEmergencyCompactorIfDue } from "../goal-compactor.js";
 import {
   createGoalContinuation,
   scheduleContinuation,
@@ -181,6 +182,7 @@ import {
 } from "../length-continue.js";
 import { isSubagentProviderFailure } from "../quota-retry.js";
 import { captureProviderTokenUsage } from "../context-growth.js";
+import { noteOwnershipStanding, refreshOwnerHeartbeat, supersedeLiveOwnerRoot } from "../state-root-owner.js";
 import {
   classifyInBandProviderFailure,
   classifyMainModelFailure,
@@ -238,7 +240,7 @@ import {
   textFingerprint,
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
-import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
+import { auditorVerdictTally, buildLoadHoldRecoveryLines, buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import { compactLoopCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
@@ -1208,9 +1210,21 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // ownership, or restore ledger write. In-memory worker managers have no
     // directory and therefore remain pending rather than falling back to cwd.
     setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
-    if (!claimProcessOwner(ctx.cwd)) {
+    // v0.38.12 (last-wins sessions): a newer MAIN host does not queue
+    // behind the previous session — it takes the root and the old session
+    // stands down to read-only on its next recheck. Workers keep the old
+    // refusal: a subagent must never dethrone the main session it serves.
+    let ownsRoot = claimProcessOwner(ctx.cwd);
+    if (!ownsRoot && hostLifecycleStart) {
+      const supersede = supersedeLiveOwnerRoot(ctx.cwd, { isMainHost: true, bySession: sessionManagerId(ctx) });
+      ownsRoot = supersede !== "refused";
+      if (supersede === "stolen") {
+        ctx.ui.notify("glla: this fresh session took over the state root — the previous live session is now read-only. Your new objective is the real one; the old session's disk state is preserved.", "warning");
+      }
+    }
+    if (!ownsRoot) {
       processOwnerDeniedCwd = ctx.cwd;
-      ctx.ui.notify("glla: another live pi process owns this working-directory state root — this session is read-only to prevent competing goal/loop writes. Close the other host or select sessionDir, then start a fresh session.", "warning");
+      ctx.ui.notify("glla: this session could not own the working-directory state root (a worker contact, or an unresolved sessionDir) — it is read-only to prevent competing goal/loop writes. /glla owner inspects the holder; /glla takeover resolves it with confirmation.", "warning");
       return;
     }
     processOwnerDeniedCwd = null;
@@ -1863,6 +1877,37 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           "Loaded without starting: your goal/list/loop state is restored and shown below, but automation is HELD for your decision. /goal resume, /list resume, or /list next starts work; enable Auto-resume in /glla settings to restore load-time automation.",
           "warning",
         );
+        // v0.38.7 (note.md Next: objectives seemingly lost on reload) —
+        // the recovery banner: objective + next task + verdict tally +
+        // resume command, all from durable disk state. The transcript is
+        // empty in exactly the sessions that need this, so nothing here
+        // may depend on in-memory progress. Fires with the fresh hold
+        // (guarded above), never as a timer re-arm.
+        const tasks = state.goal?.taskList?.tasks ?? [];
+        const pendingTasks = tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
+        const tally = auditorVerdictTally(state.goal?.auditHistory);
+        const resumeCommand = state.goal
+          ? (state.goal.policy === "list" ? "/list resume" : "/goal resume")
+          : (state.list?.length ?? 0) > 0 ? "/list resume" : state.loop ? "/loop resume" : "/goal resume";
+        const banner = buildLoadHoldRecoveryLines({
+          objective: state.goal?.objective ?? ((state.list?.length ?? 0) > 0 ? `${state.list!.length} queued list items` : null),
+          status: state.goal?.status ?? (state.loop ? "loop" : "held"),
+          nextTask: pendingTasks[0]?.title ?? null,
+          tally,
+          resumeCommand,
+          listWaiting: state.goal?.policy === "list" ? undefined : state.list?.length ?? 0,
+          // v0.38.10: the emergency compactor's handoff, when one exists —
+          // the /new + resume path lands warm instead of cold.
+          briefExcerpt: readHandoffBriefExcerpt(ctx.cwd),
+        });
+        appendLedger(ctx.cwd, "load_hold_recovery_banner", {
+          goalId: state.goal?.id ?? null,
+          status: state.goal?.status ?? null,
+          pendingTasks: pendingTasks.length,
+          totalVerdicts: tally.total,
+          disapprovals: tally.disapprovals,
+        });
+        ctx.ui.notify(banner.join("\n"), "info");
       }
     } else if ((autoResume || explicitRecovery) && typeof state.loadHoldAt === "number") {
       // v0.35.28 (issue #16): a hold persisted by a PREVIOUS process must
@@ -1894,6 +1939,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // continuation loop.
     if (isForeignCtx(ctx)) return;
     noteActivity(true);
+    refreshOwnerHeartbeat(ctx.cwd); // v0.38.11: throttled (60s) claim refresh so /glla owner shows real idle
+    noteOwnershipStanding(ctx); // v0.38.12: stand down to read-only when a newer session stole the root
     dispatchStartAcknowledged(ctx, "agent_end");
     lastStreamActivityAt = Date.now();
     streamActivityObserved = true;
@@ -1979,7 +2026,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           return;
         }
       }
-      ctx.ui.notify("glla: output-token stop was context starvation (tiny output at a nearly full context) — yielding to pi auto-compaction instead of re-sending.", "info");
+      // Ladder banner (v0.38.6; v0.38.9 skips stale step 1 after a failed compact-and-retry).
+      ctx.ui.notify(buildStarvationLadderMessage({ percent: typeof contextUsage?.percent === "number" ? contextUsage.percent : null, streak: starved.streak, recentCompact: sinceLastCompactMs < COMPACTION_GRACE_MS }), "info");
+      // v0.38.10: emergency compactor, one shot per episode (fire-and-forget).
+      void runEmergencyCompactorIfDue(ctx, starved.shouldRefuse, {
+        notify: (message) => ctx.ui.notify(message, "info"),
+        page: (message) => notifyExternal(ctx, message),
+      });
       return;
     }
     if (lc.giveUpNow) {
@@ -2186,6 +2239,20 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (!state.goal) return;
     if (state.goal.status !== "active") return;
     clearContinuationTimer();
+    // v0.38.6: feed the sticky refuse gate + compact-first nudge with the
+    // live percent. Placed AFTER the goal gate: the length-continue order
+    // pin requires the length path first, and starved sessions already
+    // returned via the yield ladder above. Recording null clears a stale
+    // reading (host estimate gone) so the refuse can lapse instead of
+    // sticking forever.
+    noteContextPercent(typeof contextUsage?.percent === "number" ? contextUsage.percent : null);
+    if (shouldCompactFirstNudge(contextUsage?.percent)) {
+      appendLedger(ctx.cwd, "context_compact_first_nudge", {
+        goalId: state.goal?.id ?? null,
+        contextPercent: contextUsage?.percent ?? null,
+      });
+      ctx.ui.notify(`glla: context at ${contextUsage!.percent!.toFixed(1)}% — run /compact now while summarization still fits. Below 90% the compact succeeds; past it you get the over-cap ladder (retry /compact, larger model, or /new + resume).`, "info");
+    }
 
     const last = [...(event.messages as any[])].reverse().find((m) => m.role === "assistant");
     const text = last && Array.isArray(last.content) ? last.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n") : "";

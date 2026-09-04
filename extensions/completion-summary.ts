@@ -77,6 +77,21 @@ export function isUsefulCompletionSummary(text: string | undefined): boolean {
  * Missing labels are retained as `not recorded` so a compact notification
  * cannot accidentally imply evidence that the durable recap did not contain.
  */
+/** Cut a summary value at a word boundary, never mid-word (the
+ * Screenshot_20260903_204003/204005 complaint: `0 o…`, `qu…`, `belo…`).
+ * Falls back to a hard cut only when the head holds no space past the
+ * halfway mark — a long token such as a commit hash must not eviscerate
+ * the whole value. Short values pass through untouched (no `…`). */
+export function clipSummaryValue(value: string, limit: number): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  const capped = Number.isFinite(limit) ? Math.max(8, Math.floor(limit)) : 72;
+  if (clean.length <= capped) return clean;
+  const head = clean.slice(0, capped - 1);
+  const space = head.lastIndexOf(" ");
+  const kept = (space > capped / 2 ? head.slice(0, space) : head).trimEnd();
+  return `${kept}…`;
+}
+
 export function compactCompletionSummary(text: string | undefined, maxValueLength = 72): string {
   const source = completionSummaryBody(text ?? "").replace(/\s+/g, " ").trim();
   if (!source) return "not recorded";
@@ -96,9 +111,76 @@ export function compactCompletionSummary(text: string | undefined, maxValueLengt
       .sort((a, b) => a - b)[0] ?? source.length;
     const rawValue = source.slice(valueStart, nextStart).trim();
     const value = rawValue || "not recorded";
-    return `${name}: ${value.length > limit ? `${value.slice(0, limit - 1)}…` : value}`;
+    return `${name}: ${clipSummaryValue(value, limit)}`;
   });
   return parts.join(" · ");
+}
+
+/** A recap value informs the human only when it is not an empty / none /
+ * not-recorded placeholder. `None — <real content>` (a common agent habit)
+ * keeps just the content. Returns null for filler. */
+export function briefValueContent(value: string): string | null {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+  // System placeholder vocabulary: the `— explanation` is still a placeholder.
+  if (/^not recorded\b/i.test(clean)) return null;
+  // Agent habit: `none — <real content>` hides information behind filler.
+  const prefixed = /^none\s*[—–:\-]\s*(.+)$/i.exec(clean);
+  const body = (prefixed?.[1] ?? clean).trim();
+  if (/^(none|n\/a|nil|nothing)(\s+for\s+this\s+\w+)?\.?$/i.test(body)) return null;
+  return body;
+}
+
+export interface HumanCompletionBrief {
+  outcome: string;
+  details: string[];
+}
+
+/** The human briefing: outcome first in its own words, then only the
+ * labels that carry real content (filler like `Unresolved: none` or
+ * `Changed: not recorded` is dropped, never shown). The durable archive
+ * keeps the full six-label record; this is the end-of-objective voice
+ * that informs the user at a glance. */
+export function humanCompletionBrief(
+  text: string | undefined,
+  outcomeBudget = 140,
+  valueBudget = 120,
+): HumanCompletionBrief {
+  const lines = completionSummaryLines(text, Math.max(outcomeBudget, valueBudget));
+  const rawOutcome = (lines[0] ?? "").replace(/^Outcome:\s*/, "");
+  const outcome = clipSummaryValue(briefValueContent(rawOutcome) ?? "done", outcomeBudget);
+  const details: string[] = [];
+  for (const line of lines.slice(1)) {
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+    const content = briefValueContent(line.slice(separator + 1));
+    if (content) details.push(`${line.slice(0, separator)}: ${clipSummaryValue(content, valueBudget)}`);
+  }
+  return { outcome, details };
+}
+
+/** Multi-line projection: one `Label: value` line per label with generous
+ * word-bounded values. This is the user-facing `✓ done` block — six short
+ * facts that stay scannable in chat. The single-line projection remains
+ * for width-bound surfaces (TUI widget card, external notifies). */
+export function completionSummaryLines(text: string | undefined, maxValueLength = 240): string[] {
+  const source = completionSummaryBody(text ?? "").replace(/\s+/g, " ").trim();
+  const lower = source.toLowerCase();
+  const positions = COMPLETION_SUMMARY_LABELS
+    .map((label) => ({ label, start: lower.indexOf(label.toLowerCase()) }))
+    .filter((entry) => entry.start >= 0);
+  return COMPLETION_SUMMARY_LABELS.map((label) => {
+    const name = label.slice(0, -1);
+    const current = positions.find((entry) => entry.label === label);
+    if (!source || !current) return `${name}: not recorded`;
+    const valueStart = current.start + label.length;
+    const nextStart = positions
+      .filter((entry) => entry.start > current.start)
+      .map((entry) => entry.start)
+      .sort((a, b) => a - b)[0] ?? source.length;
+    const rawValue = source.slice(valueStart, nextStart).trim();
+    return `${name}: ${clipSummaryValue(rawValue || "not recorded", maxValueLength)}`;
+  });
 }
 
 function safeFact(value: unknown, fallback = "not recorded"): string {
@@ -195,6 +277,25 @@ export function compactTerminalCompletionSummary(
   maxValueLength = 72,
 ): string {
   return compactCompletionSummary(resolveCompletionSummary(facts, candidate).summary, maxValueLength);
+}
+
+/** Brief twin of compactTerminalCompletionSummary for the `✓ done` chat
+ * notifies: same resolved facts, outcome + informing labels only. */
+export function terminalHumanBrief(
+  facts: CompletionSummaryFacts,
+  candidate = facts.goal.completionSummary,
+): HumanCompletionBrief {
+  return humanCompletionBrief(resolveCompletionSummary(facts, candidate).summary);
+}
+
+/** Multi-line twin of compactTerminalCompletionSummary for the `✓ done`
+ * chat notifies: same resolved facts, one `Label: value` line each. */
+export function terminalCompletionSummaryLines(
+  facts: CompletionSummaryFacts,
+  candidate = facts.goal.completionSummary,
+  maxValueLength = 240,
+): string[] {
+  return completionSummaryLines(resolveCompletionSummary(facts, candidate).summary, maxValueLength);
 }
 
 /**

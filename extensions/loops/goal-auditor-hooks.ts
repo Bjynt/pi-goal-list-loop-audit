@@ -240,7 +240,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, compactTerminalCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels } from "../completion-summary.js";
+import { compactCompletionSummary, compactTerminalCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels, terminalHumanBrief } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1423,6 +1423,13 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       stopReason: terminalReason,
       archivePath: path.relative(liveCtx.cwd, archivedGoalPath(liveCtx.cwd, state.goal.id)) || archivedGoalPath(liveCtx.cwd, state.goal.id),
     }, state.goal.completionSummary);
+    // Computed pre-archive: archiveCurrentGoal clears state.goal.
+    const brief = terminalHumanBrief({
+      goal: state.goal,
+      status: "complete",
+      stopReason: terminalReason,
+      archivePath: path.relative(liveCtx.cwd, archivedGoalPath(liveCtx.cwd, state.goal.id)) || archivedGoalPath(liveCtx.cwd, state.goal.id),
+    }, state.goal.completionSummary);
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the provider retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
     const archived = archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     if (!archived) {
@@ -1439,15 +1446,20 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       appendLedger(liveCtx.cwd, "goal_archive_failed_after_approval", { goalId, attemptId: claim.attemptId, origin });
       return;
     }
+    // v0.38.14: the chat notify is the human briefing — outcome first,
+    // filler labels dropped — while the external notify keeps the compact
+    // single line (pager/sound safe).
     // v0.38.3: live inspection — the auditor's pi persisted a resumable
     // session pinned inside the job dir. Point the user at it AFTER the
     // audit (interactive attach only now; while running it was read-only).
     liveCtx.ui.notify(
-      `✓ done: ${recap} — auditor ${result.model} approved${approvalVia}.` +
-      (inspectionSessionPath
-        ? `\nAuditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`
-        : ""),
-      "info",
+      `✓ done — ${brief.outcome}\n${[
+        ...brief.details,
+        `— auditor ${result.model} approved${approvalVia}.`,
+        ...(inspectionSessionPath
+          ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
+          : []),
+      ].join("\n")}`, "info",
     );
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${recap}`);
     return;

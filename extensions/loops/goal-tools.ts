@@ -114,6 +114,8 @@ import {
   readQueueFromDisk,
   deleteQueueItemFileResult,
   missingGllaTools,
+  claimedMissingGllaTool,
+  PI_TOOL_NOT_FOUND_QUOTE,
   runPersistStep,
   isPersistenceDegraded,
   lastPersistenceFailure,
@@ -250,7 +252,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary } from "../completion-summary.js";
+import { compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary, terminalHumanBrief } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1224,9 +1226,16 @@ function registerAgentTools(pi: any): void {
               details: {},
             };
           }
-          ctx.ui.notify(`✓ done without audit (user choice): ${recap}`, "info");
+          const brief = terminalHumanBrief({
+            goal: terminalGoal,
+            status: "complete",
+            stopReason: terminalReason,
+            archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id),
+          });
+          const briefBlock = [...brief.details, `— completed without audit (your choice).`].join("\n");
+          ctx.ui.notify(`✓ done — ${brief.outcome}\n${briefBlock}`, "info");
           notifyExternal(ctx, `Goal complete without audit (user choice): ${recap}`);
-          return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${recap}` }], details: {} };
+          return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${briefBlock}` }], details: {} };
         }
         scheduleContinuation(ctx, true);
         return {
@@ -1251,6 +1260,13 @@ function registerAgentTools(pi: any): void {
           stopReason: terminalReason,
           archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
         }, state.goal.completionSummary);
+        // Computed pre-archive: archiveCurrentGoal clears state.goal.
+        const brief = terminalHumanBrief({
+          goal: state.goal,
+          status: "complete",
+          stopReason: terminalReason,
+          archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
+        }, state.goal.completionSummary);
         const archived = archiveCurrentGoal(ctx, "complete", terminalReason);
         if (!archived) {
           // The archive helper preserves the live objective and emits the
@@ -1267,11 +1283,13 @@ function registerAgentTools(pi: any): void {
           return { content: [{ type: "text", text: "The auditor approved, but the terminal archive could not be persisted. The goal is paused; fix persistence, resume, and retry complete_goal." }], details: {} };
         }
         ctx.ui.notify(
-          `✓ done: ${recap} — auditor ${result.model} approved.` +
-          (inspectionSessionPath
-            ? `\nAuditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`
-            : ""),
-          "info",
+          `✓ done — ${brief.outcome}\n${[
+            ...brief.details,
+            `— auditor ${result.model} approved.`,
+            ...(inspectionSessionPath
+              ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
+              : []),
+          ].join("\n")}`, "info",
         );
         notifyExternal(ctx, `Goal complete (auditor approved): ${recap}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
@@ -1926,6 +1944,20 @@ function registerAgentTools(pi: any): void {
       // repeatable and could erase an in-flight detached-auditor state.
       if (state.goal.status !== "active") {
         return { content: [{ type: "text", text: `Goal is already ${state.goal.status}; pause request ignored.` }], details: {} };
+      }
+      // v0.38.15: anti-confabulation — a pause whose blocker is "this
+      // session has no <glla tool>" is refused when the tool path provably
+      // works: this very pause_goal call dispatched through the same
+      // registration batch (complete_goal registers first in that batch),
+      // so the tool IS callable — the model is misreading its tool list
+      // (field: new-tab 2026-09-04, 5×-compacted session, zero tool errors
+      // in transcript or ledger). The model is told to call it now; a
+      // quoted pi `Tool X not found` error is genuine-outage evidence and
+      // the pause is accepted.
+      const missingClaim = claimedMissingGllaTool(p.reason ?? "");
+      if (missingClaim && !PI_TOOL_NOT_FOUND_QUOTE.test(p.reason ?? "")) {
+        appendLedger(ctx.cwd, "pause_refused_tool_present", { goalId: state.goal.id, tool: missingClaim });
+        return { content: [{ type: "text", text: `Not paused: \`${missingClaim}\` is registered in this session — this pause_goal call just dispatched through the same registration batch, so the tool path works. If \`${missingClaim}\` is missing from your visible tool list, that is a client-side gap: call \`${missingClaim}\` now${missingClaim === "complete_goal" ? " with your six-label recap and verification summary" : ""}. If pi itself answers with a \`Tool ${missingClaim} not found\` error, call pause_goal again quoting that exact error and the pause will be accepted.` }], details: {} };
       }
       const pauseCopy = providerErrorPresentation(p.reason, "recovery");
       const safePauseReason = pauseCopy.sensitive ? pauseCopy.display : p.reason;

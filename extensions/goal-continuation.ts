@@ -78,6 +78,7 @@ const MONITOR_CHECK_INTERVAL_MS = Number.isFinite(configuredMonitorIntervalMs) &
   : DEFAULT_MONITOR_CHECK_INTERVAL_MS;
 void MONITOR_CHECK_INTERVAL_MS; // deprecated throttle — scheduling is now event-driven
 import { VISION_ASSIST_GUIDANCE } from "./vision-assist.js";
+import { readHandoffBriefExcerpt } from "./goal-compactor.js";
 import { loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, isLoopActive } from "./goal-loop.js";
 import { attemptFreshSessionRecovery, mainModelRecoveryActive, recoverMainModelFromSendStorm } from "./goal-recovery.js";
@@ -146,6 +147,7 @@ export interface ContinuationDeps {
   isForeignCtx(ctx: ExtensionContext): boolean;
   sessionManagerId(ctx: ExtensionContext): string;
   isActionableGoal(): boolean;
+  isContextStarvedRefused(): boolean;
   isSupervising(): boolean;
   goalNoun(): string;
   activeGoalSurfaceCommand(command: string): string;
@@ -170,6 +172,7 @@ let goStaleTerminal: ContinuationDeps["goStaleTerminal"];
 let isForeignCtx: ContinuationDeps["isForeignCtx"];
 let sessionManagerId: ContinuationDeps["sessionManagerId"];
 let isActionableGoal: ContinuationDeps["isActionableGoal"];
+let isContextStarvedRefused: ContinuationDeps["isContextStarvedRefused"];
 let isSupervising: ContinuationDeps["isSupervising"];
 let goalNoun: ContinuationDeps["goalNoun"];
 let activeGoalSurfaceCommand: ContinuationDeps["activeGoalSurfaceCommand"];
@@ -194,6 +197,7 @@ export function createGoalContinuation(flagsArg: ContinuationFlags, d: Continuat
   isForeignCtx = d.isForeignCtx;
   sessionManagerId = d.sessionManagerId;
   isActionableGoal = d.isActionableGoal;
+  isContextStarvedRefused = d.isContextStarvedRefused;
   isSupervising = d.isSupervising;
   goalNoun = d.goalNoun;
   activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
@@ -1054,6 +1058,52 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
   continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), delay);
 }
 
+export function buildMarkerContent(goalId: string): string {
+  return `[GOAL CHECKPOINT goalId=${goalId}]`;
+}
+
+/** v0.38.5 (delta-only): steady-state live turns need only the wake-up marker —
+ * history already holds T0 objective/contract/tasks + complete_task deltas.
+ * Full is required only for dynamic deltas the model has not seen: repair,
+ * recovery, auditor TODOs/report, stale-approval mismatch, plus the rare
+ * designer / full-audit paths (preserved verbatim in v1). Stable guidance
+ * (vision, discipline) stays clean — it was in the first full send.
+ */
+export function needsFullContinuation(goal: Goal): boolean {
+  if (goal.repairTarget) return true;
+  if (goal.autoResumedAt) return true;
+  if (!auditorSurfaceSuppressed() && goal.pendingTasks && goal.pendingTasks.length > 0) return true;
+  const lastAudit = goal.auditHistory?.[goal.auditHistory.length - 1];
+  if (lastAudit && lastAudit.report && !auditorSurfaceSuppressed()) return true;
+  if (
+    !auditorSurfaceSuppressed() &&
+    goal.status === "active" &&
+    !goal.pendingCompletion &&
+    lastAudit?.approved &&
+    !lastAudit.impossible &&
+    lastAudit.regressionShieldPassed !== false &&
+    typeof lastAudit.revision === "number" &&
+    lastAudit.revision !== (goal.revision ?? 0)
+  ) return true;
+  const next = findNextPendingTask(goal.taskList?.tasks ?? []);
+  if (goal.agentRole === "designer" || next?.agentRole === "designer") return true;
+  try {
+    const settingsCwd = freshCtx?.()?.cwd ?? process.cwd();
+    const eff = resolveEffectiveAggressiveSettings(loadSettings(settingsCwd));
+    if (eff.aggressiveMode && isFullAuditObjective(goal.objective)) return true;
+  } catch { /* settings read failure must not force full */ }
+  return false;
+}
+
+export function buildContinuationContent(goal: Goal, opts: { resync?: string; firstSend?: boolean } = {}): { content: string; kind: string } {
+  const resync = opts.resync ?? "";
+  const marker = buildMarkerContent(goal.id);
+  const needsFull = (opts.firstSend ?? false) || needsFullContinuation(goal);
+  if (needsFull) return { content: resync + continuationPrompt(goal), kind: resync ? "full+resync" : "full" };
+  if (resync) return { content: resync + marker, kind: "resync" };
+  return { content: marker, kind: "marker" };
+}
+
 export function sendContinuation(goalId: string): void {
   // v0.35.15: `/glla pause` — a continuation timer armed BEFORE the pause
   // must not fire into the frozen window. scheduleContinuation already
@@ -1094,6 +1144,15 @@ export function sendContinuation(goalId: string): void {
     continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
     return;
   }
+  // v0.38.6: the starvation choke point — EVERY automatic send path funnels
+  // through here (agent_end, heartbeat rearm, loop tick, recovery). While
+  // the session is starved with no compaction, no turn can land, so refuse
+  // SILENTLY (ledger only): the heartbeat one-shot + agent_end yield ladder
+  // own user messaging, and a refused send must not rearm a timer spin.
+  if (isContextStarvedRefused()) {
+    appendLedger(ctx.cwd, "continuation_send_refused_context_starved", { goalId, generation: flags.sessionGeneration });
+    return;
+  }
   if (!guardGoalBeforeContinuation(ctx, "dispatch", goalId)) return;
   if (!isActionableGoal()) return;
   if (!ctx.isIdle() || ctx.hasPendingMessages()) {
@@ -1108,7 +1167,7 @@ export function sendContinuation(goalId: string): void {
     let resync = "";
     // v0.33.1: a builder throw (corrupt restored state) must not masquerade
     // as a transport failure — send without the block instead.
-    if (flags.postCompactResyncPending) { try { resync = buildPostCompactResync(); } catch { resync = ""; } }
+    if (flags.postCompactResyncPending) { try { resync = buildPostCompactResync(readHandoffBriefExcerpt(ctx.cwd)); } catch { resync = ""; } }
     const attempt = dispatchPrepare(ctx, {
       generation: flags.sessionGeneration,
       ownerSessionId: sessionManagerId(ctx),
@@ -1118,15 +1177,24 @@ export function sendContinuation(goalId: string): void {
       resync: Boolean(resync),
     });
     if (!attempt) return;
+    // v0.38.5 (delta-only, ongoing conversation): clean live turns send the
+    // 45-char marker only — history already holds objective/contract/tasks.
+    // Resync (post-compact) sends resync+marker (~250 chars). Full 23k sends
+    // only on first-send per process or dynamic deltas (repair/recovery/
+    // audit). Marker still carries the dispatch marker so before_agent_start
+    // start-proof matching keeps working; fallback agent_start/turn_start
+    // needs no prompt at all.
+    const goalForSend = state.goal!;
+    const { content, kind } = buildContinuationContent(goalForSend, { resync, firstSend: lastContinuationSentAt === 0 });
     flags.extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
-      content: resync + continuationPrompt(state.goal!),
+      content,
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-    lastContinuationSentPayload = { content: resync + continuationPrompt(state.goal!), display: false }; // v0.34.88: verbatim retry payload
+    lastContinuationSentPayload = { content, display: false }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
-    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation });
+    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation, kind, payloadChars: content.length });
     // v0.35.37 (audit finding): the welcome-back recovery notice must fire
     // EXACTLY ONCE per auto-resume. The payload above was built with the
     // notice in it; once the dispatch is ACCEPTED the message has landed in
@@ -1235,8 +1303,10 @@ export function sendLengthContinue(ctx: ExtensionContext, consecutive: number): 
 /* ------------------------------------------------------------------ */
 
 /** v0.32.1: deterministic post-compaction re-anchor (pi-goal-x's #5) —
- * prepended to the first continuation/loop message after a compact. */
-export function buildPostCompactResync(): string {
+ * prepended to the first continuation/loop message after a compact.
+ * v0.38.10: optional brief excerpt — the emergency compactor's handoff,
+ * when one exists, rides the resync so a fresh session lands warm. */
+export function buildPostCompactResync(briefExcerpt?: string): string {
   const lines: string[] = [
     "[POST-COMPACTION RESYNC] The transcript was just compacted. Trust the artifacts on disk and .pi-glla/ state — NOT your memory of the prior chat. Re-read files before editing them.",
   ];
@@ -1250,6 +1320,9 @@ export function buildPostCompactResync(): string {
   } else if (state.loop?.active) {
     lines.push(`Loop: ${state.loop.target.slice(0, 160)} — iteration ${state.loop.iteration}`);
   }
+  // Goal-independent: the brief may outlive the goal record (or arrive
+  // before one exists) — the fresh session needs it either way.
+  if (briefExcerpt?.trim()) lines.push(`Handoff brief: ${briefExcerpt.trim().slice(0, 600)}`);
   return lines.join("\n") + "\n\n";
 }
 
@@ -1279,7 +1352,7 @@ export function continuationPrompt(goal: Goal): string {
   const requestedDesigner = goal.agentRole === "designer" || next?.agentRole === "designer";
   if (requestedDesigner) {
     directives.push(
-      "## DESIGNER ROLE REQUESTED\n\nThis objective or the next pending task explicitly requests design review. Use the `Agent` tool with agent name `Designer` before implementation to produce a concise architecture, risks, affected files, and verification plan. If that agent is unavailable or its provider fails, continue inline with the same design checkpoint and record the fallback; do not wait for or infer a provider reset.",
+      "## DESIGNER ROLE REQUESTED\n\nThis objective or the next pending task explicitly requests design review. Use the `subagent` tool with agent `Designer` before implementation to produce a concise architecture, risks, affected files, and verification plan. If that agent is unavailable or its provider fails, continue inline with the same design checkpoint and record the fallback; do not wait for or infer a provider reset.",
     );
   }
   if (goal.repairTarget) {

@@ -59,7 +59,7 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // more (silent-swap absorb branch + durable exhaustion pause).
   // Keep the source window above the lifecycle handler's pre-gate recovery
   // block; provider-pane recovery adds a bounded branch before the gate.
-  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 20000);
+  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 20500);
   const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength)');
   assert.ok(lengthIdx > 0, "length tick present");
   assert.ok(handler.indexOf("isContextStarvedLengthStop(rawLastA, contextUsage)") < lengthIdx, "context-starvation classification runs before the tracker");
@@ -69,14 +69,18 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // … before per-goal telemetry …
   assert.ok(lengthIdx < handler.indexOf("state.goal.telemetry"), "before telemetry");
   // … and before the "no goal → return" gate (works in plain sessions)
+  // v0.38.10: window 20000 → 20500 — the starvation branch gained the
+  // emergency-compactor trigger (one fire-and-forget call + one comment
+  // line) before the gate. Order contract unchanged.
   assert.ok(lengthIdx < handler.indexOf('if (!state.goal) return;'), "before goal gating");
   // truncated turns return early — no continuation scheduling on half a response
   // v0.34.116: window bumped to 5000 — the post-`contextStarvedLength` early
   // return now lives further down (the context-overflow fallback branch runs
-  // first), so the 3400-char window clipped the assertion. Factual contract
-  // (the inner `if (lastA?.stopReason === "length" && ...)` block exists)
-  // is unchanged.
-  const early = handler.slice(lengthIdx, lengthIdx + 5000);
+  // first), so the 3400-char window clipped the assertion. v0.38.10: 5000 →
+  // 5500 — the starvation branch gained the emergency-compactor trigger.
+  // Factual contract (the inner `if (lastA?.stopReason === "length" && ...)`
+  // block exists) is unchanged.
+  const early = handler.slice(lengthIdx, lengthIdx + 5500);
   assert.match(early, /if \(lastA\?\.stopReason === "length"\) \{\s*\n\s*if \(lc\.fire && !ctx\.hasPendingMessages\(\)\) sendLengthContinue\(ctx, lc\.consecutive\);\s*\n\s*return;\s*\n\s*\}/);
 });
 

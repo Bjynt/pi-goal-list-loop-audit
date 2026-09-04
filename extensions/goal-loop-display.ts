@@ -13,7 +13,8 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
 import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
-import { buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { auditVerdictLabel, buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+
 export { isMonitorGoal };
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 import { auditorSurfaceSuppressed } from "./loops/goal-auditor-surface.js";
@@ -431,6 +432,71 @@ function latestAuditFeedback(g: Goal): LatestAuditFeedback | undefined {
   };
 }
 
+/** v0.38.7 (note.md Next: reload recovery + progress signal): durable
+ * verdict tally — disapproval count + last-verdict age from auditHistory.
+ * After a reload the in-memory auditor progress is gone; the stored
+ * verdicts are what answers "are we progressing?". Classification goes
+ * through auditVerdictLabel so a shield-blocked approval is never counted
+ * as a disapproval and an infra error is never counted as a verdict. */
+export interface AuditorVerdictTally {
+  total: number;
+  approvals: number;
+  disapprovals: number;
+  lastAt: number | null;
+  lastLabel: string | null;
+}
+export function auditorVerdictTally(history: Goal["auditHistory"], now = Date.now()): AuditorVerdictTally {
+  void now;
+  const entries = Array.isArray(history) ? history : [];
+  let approvals = 0;
+  let disapprovals = 0;
+  for (const v of entries) {
+    const label = auditVerdictLabel(v);
+    if (label === "approved") approvals++;
+    else if (label === "disapproved") disapprovals++;
+  }
+  const last = entries[entries.length - 1];
+  const lastMs = last ? Date.parse(last.at) : Number.NaN;
+  return {
+    total: entries.length,
+    approvals,
+    disapprovals,
+    lastAt: last && Number.isFinite(lastMs) ? lastMs : null,
+    lastLabel: last ? auditVerdictLabel(last) : null,
+  };
+}
+/** Compact tally segment for the always-on surfaces. "" when no verdicts. */
+export function formatVerdictTallySegment(t: AuditorVerdictTally, now = Date.now()): string {
+  if (t.total <= 0) return "";
+  const dis = t.disapprovals > 0 ? ` · ${t.disapprovals} disapproved` : "";
+  const age = t.lastAt !== null && t.lastLabel ? ` · last ${t.lastLabel} ${fmtElapsed(now - t.lastAt)} ago` : "";
+  return `${t.total} verdict${t.total === 1 ? "" : "s"}${dis}${age}`;
+}
+/** v0.38.7: the load-hold recovery banner — objective + next task + verdict
+ * tally + resume command, all from durable disk state (never transcript
+ * memory, which is empty in exactly the sessions that need this). */
+export interface LoadHoldRecoverySummary {
+  objective?: string | null;
+  status?: string;
+  nextTask?: string | null;
+  tally: AuditorVerdictTally;
+  resumeCommand: string;
+  listWaiting?: number;
+  /** v0.38.10: emergency compactor handoff excerpt — appended when present. */
+  briefExcerpt?: string;
+}
+export function buildLoadHoldRecoveryLines(s: LoadHoldRecoverySummary, now = Date.now()): string[] {
+  const lines = [
+    `glla: recovered from disk — "${truncate((s.objective ?? "").trim() || "(no objective recorded)", 120)}" (${s.status ?? "held"})`,
+  ];
+  lines.push(s.nextTask ? `next: ${truncate(s.nextTask, 100)}` : `next: no pending tasks recorded`);
+  const tally = formatVerdictTallySegment(s.tally, now);
+  lines.push(tally ? `audits: ${tally}` : `audits: none yet`);
+  if ((s.listWaiting ?? 0) > 0) lines.push(`list: ${s.listWaiting} waiting — /list to manage`);
+  if (s.briefExcerpt?.trim()) lines.push(`handoff: ${truncate(s.briefExcerpt.trim(), 300)}`);
+  lines.push(`run ${s.resumeCommand} to continue`);
+  return lines;
+}
 function activeAttention(g: Goal): ActiveAttention | undefined {
   if (g.status !== "active" || !g.pauseReason) return undefined;
   if (/regression shield/i.test(g.pauseReason)) {
@@ -865,10 +931,14 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
   const queueLabel = (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "queue empty";
   const lifecycleText = lifecycle.replace(/^lifecycle: /, "");
   const repair = g.repairTarget ? ` · replan required: ${truncate(g.repairTarget.objective.replace(/\s+/g, " "), 100)}` : "";
+  // v0.38.8: parked goals carry their verdict tally — a paused session
+  // with 2 disapprovals reads as "waiting with history", not dead.
+  const tallyText = formatVerdictTallySegment(auditorVerdictTally(g.auditHistory, now), now);
+  const verdict = tallyText ? ` · ${tallyText}` : "";
   if (queueFirst) {
-    return ` · ${queueLabel} · ${lifecycleText.replace(` · ${queueLabel}`, "")} · ${transition}${repair}`;
+    return ` · ${queueLabel} · ${lifecycleText.replace(` · ${queueLabel}`, "")} · ${transition}${repair}${verdict}`;
   }
-  return ` · ${lifecycleText} · ${transition}${repair}`;
+  return ` · ${lifecycleText} · ${transition}${repair}${verdict}`;
 }
 
 /**
@@ -958,7 +1028,12 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const quietSuffix = quietAge !== undefined ? ` · silent ${fmtElapsed(quietAge)}` : "";
     const next = ` · next: ${auditorNextTransition(phase)}`;
     const detachedSuffix = live ? "" : " · detached worker";
-    return `glla: ${host} · ${label}${quietSuffix}${next}${detachedSuffix}${heldSuffix}`;
+    // v0.38.7: durable verdict tally on the always-on footer — after a
+    // reload there is no live auditor evidence, so the stored verdicts
+    // (disapproval count + last-verdict age) answer "are we progressing?".
+    const tallyText = formatVerdictTallySegment(auditorVerdictTally(g.auditHistory, now), now);
+    const verdictSuffix = tallyText ? ` · ${tallyText}` : "";
+    return `glla: ${host} · ${label}${quietSuffix}${next}${detachedSuffix}${verdictSuffix}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -1362,6 +1437,13 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     : 48;
   const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
+  // v0.38.8: durable verdict tally as a first-class card row — the widget
+  // is the glance surface, and stored verdicts are the progress evidence
+  // when no auditor is live. Silent when history is empty.
+  const headTally = formatVerdictTallySegment(auditorVerdictTally(g.auditHistory, now), now);
+  if (headTally) {
+    lines.push(`├─ ${paint(theme, "dim", `audits: ${truncate(headTally, Math.max(20, (width ?? 80) - 12))}`)}`);
+  }
   if (g.repairTarget) {
     lines.push(`├─ ${paint(theme, "warning", `REPLAN REQUIRED · original target: ${truncate(g.repairTarget.objective.replace(/\s+/g, " "), Math.max(30, (width ?? 80) - 28))}`)}`);
     const repairStep = g.repairTarget.replanPromptedAt

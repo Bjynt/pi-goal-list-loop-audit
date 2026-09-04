@@ -28,7 +28,7 @@ Start your reply with exactly one line: `HYPOTHESIS: <what you will change and w
 Then make **ONE** small, concrete change that moves the metric in the right
 direction. Then stop.
 
-**Default to subagents.** Use the `Agent` tool when a subagent adds value. If identifying the change needs research, spawn an
+**Default to subagents.** Use the `subagent` tool when a subagent adds value. If identifying the change needs research, spawn a
 `scout` subagent (several in parallel for disjoint areas); if the
 change decomposes, use `worker`. Eager continuation: if a subagent
 fails, retry with a different approach — just continue, don't stall the loop

@@ -10,6 +10,99 @@
 
   Live auditor inspection: opt-in `auditorInspection` setting (global-only; default off). When on, the detached auditor's pi runs as a **normal persistent session** pinned inside the job dir (`--session <jobDir>/session.jsonl`) instead of the original `--no-session`, so you can `tail -f` it live (read-only while the audit runs) and resume it interactively after completion (`pi --session <path>` / `pi --fork <path>`). Off (default) keeps the original `--no-session` spawn byte-identical. The session file's lifetime equals the job-dir retention window (`auditJobRetentionMs`) — no new cleanup path. `progress.json` carries `sessionPath`; the audit card shows a `session: <path> — tail -f it live` line while running, and the approval notification points at the kept session for post-audit review. Settings row + editor + headless dump line included; real-worker spawn-spec and progress-shape tests in `tests/auditor-process.test.ts`.
 
+## 0.38.17 — release-contract docs trail (2026-09-04)
+
+### Fixed
+  `docs/INDEX.md` trail reaches the current version (the v0.38.16 tag shipped without it, failing the publish gate's docs-index pin). Process lesson, now enforced by habit: bump the version FIRST and run the gate against the release tree, or keep `docs/INDEX.md` in the same commit as the bump — the release-contract test already demands it.
+
+## 0.38.16 — subagent dialect (2026-09-04)
+
+### Fixed
+  Prompts and user-facing strings no longer name the dead tintinweb `Agent`/`get_subagent_result` tools — they speak the current `subagent` tool, `bg_wait` settle, and the live roles (`scout`, `worker`, `reviewer`, GLLA-managed `Designer`). The `` `Agent: Designer` `` objective syntax is unchanged (GLLA's own task convention). `isSubagentProviderFailure` now matches `subagent`/`subagent_wait` failures, so real spawn failures take the provider-retry path again. Evidence in `audit/SUBAGENT-DIALECT-2026-09-04.md`.
+
+## 0.38.15 — pause anti-confabulation (2026-09-04)
+
+### Changed
+  `pause_goal` refuses pauses whose blocker claims a GLLA tool is missing (dispatch proves the batch landed) and tells the model to call it; quoting pi's `Tool X not found` is accepted as genuine outage. Runbook + new-tab forensics in `audit/PAUSE-ANTI-CONFABULATION-2026-09-04.md`.
+
+## 0.38.14 — human end-of-objective briefing (2026-09-04)
+
+### Changed
+  Every `✓ done` chat notify is now a human briefing: outcome first in its own words, only informing labels after it (`none` / `not recorded` / empty filler dropped; `none — <content>` keeps the content). Word-boundary cuts, auditor/no-audit trailer, archive keeps the full six-label record. Runbook in `audit/HUMAN-BRIEF-2026-09-04.md`.
+
+## 0.38.13 — good completion summary (2026-09-04)
+
+### Changed
+  The `✓ done` chat notify is now the six-label block (one `Label: value` line each, 240-char word-bounded values) instead of the single-line mash with mid-word cuts. New `clipSummaryValue` cuts at word boundaries everywhere (hard-cut only for spaceless tokens); widget card and external notifies keep the compact line. Fixed a post-archive null crash that silently swallowed the notify. Runbook in `audit/COMPLETION-SUMMARY-2026-09-04.md`.
+
+## 0.38.12 — last-wins sessions + objectives (2026-09-04)
+
+### Changed
+  A fresh main-host session_start now takes the state root automatically when a live foreign owner holds it (ledger `owner_superseded`); the dethroned session stands down to read-only on its next throttled recheck (`owner_stood_down`) — never signaled, workers can never steal. `/goal start <objective>` skips the conflict dialog as explicit consent (ledgered `replace via: start-explicit`); plain `/goal` keeps update/cancel. `setGoal` never refuses the new objective over an archive failure — the old objective is preserved in `goal_superseded_unarchived` and the new goal starts anyway. Runbook in `audit/LAST-WINS-2026-09-04.md`.
+
+## 0.38.11 — state-root owner takeover (2026-09-03)
+
+### Added
+  `/glla owner` (read-only holder inspection: pid/comm/since/idle/session + verdict) and `/glla takeover` (consented steal). Dead/released/recycled owners reclaim without signaling; a live foreign owner is SIGTERMed only after explicit confirm, only when pi-shaped, and claimed only after verified exit — a survivor is never claimed. Owner heartbeat refreshes throttled on agent_end so idle is measurable. Both read-only warnings point at the new commands. Runbook in `audit/OWNER-TAKEOVER-2026-09-03.md`.
+
+## 0.38.10 — emergency compactor handoff (2026-09-03)
+
+### Added
+  Emergency-only compactor: on starvation-refuse engage (one shot per episode) resolve a handoff model via the new `compactorModel` + `compactorModelFallbacks` 0-10 chain (Main/drafter/auditor parity, new Compactor settings tab), then registry plan B (verified free-only, contextWindow >= measured need, unknown metadata disqualified, stuck model excluded, max 2 attempts, rationale ledgered), then skip with ledger. A tool-less `pi -p` worker compresses a bounded disk-state packet into a ~2k handoff brief; resync + recovery banner quote it (warm `/new` + resume); a desktop page fires alongside (`notifyCmd: "off"` respected). Runbook in `audit/COMPACTOR-HANDOFF-2026-09-03.md`.
+
+### Fixed
+  Walked-away-stuck sessions no longer sit mute at 101%: refuse now pages the user and preserves a narrative handoff. `/goal` draft-to-trigger gap closed (goal `20260903175837-9lag0s` triggered via the extension's own writers after the Confirm dialog proved unreachable from a tool-less session).
+
+## 0.38.9 — over-cap strategy stated and pinned (2026-09-03)
+
+### Added
+  Explicit rung order for over-cap + model-can't-compress: always-on checkpoint projection (trim), guarded fallback-chain rotation on compact failure, `/new` + resume from durable state as the backstop — with the viability ranking (switch when a bigger model exists, `/new` when none can compress). Runbook in `audit/OVERCAP-STRATEGY-2026-09-03.md`.
+
+### Fixed
+  Stale advice: the ladder no longer advises a `/compact` retry when one already failed inside the 90s grace window (`recentCompact` → step (1) points at (2)/(3)). `tests/overcap-strategy.test.ts` (3 tests) pins the skip shape and both behavioral chain branches (rotation with chain, honest ladder without).
+
+## 0.38.8 — TUI information-density pass (2026-09-03)
+
+### Added
+  Widget `audits:` row (verdict tally, width-truncated, silent when empty); verdict tally suffix on all paused status lines via `pausedStatusSuffix`; per-tab row counts in the settings menu (`settingsTabLabel`, pure). Starvation ladder reflowed to one recovery per line, same content and phrases.
+
+### Fixed
+  Glance-density gaps: parked sessions read as waiting-with-history instead of dead; ladder recoveries scannable; settings tabs locate content. Display-only — no automation, hold, auditor, or menu-structure changes. `tests/tui-density.test.ts` (5 tests) pins all four surfaces plus an 80-column widget fit; before/after captures in `audit/TUI-DENSITY-2026-09-03.md`.
+
+## 0.38.7 — session visibility: recovery banner + durable verdict tally (2026-09-03)
+
+### Added
+  Load-hold recovery banner: a consent-less cold load that engages the load hold now also paints objective + next pending task + verdict tally + resume command (`/goal`/`/list`/`/loop` by policy), all from durable disk state — the transcript is empty in exactly the sessions that need this. Fires once with the fresh hold; ledger `load_hold_recovery_banner`. Durable verdict tally (`auditorVerdictTally` via `auditVerdictLabel`): disapproval count + last-verdict age on the auditing status-line footer and the `/goal status` `Audits:` line, silent when history is empty — a reloaded session answers "are we progressing?" from stored verdicts.
+
+### Fixed
+  Reload invisibility: resumed-but-empty sessions no longer look goal-less, and capped/queued auditor sessions show stored-verdict evidence instead of a dead surface. Hold mechanics, hold text, auditor phase machine, and auditor card untouched. `tests/session-visibility.test.ts` (5 tests) pins tally classification, banner text, status-line tally, and a behavioral reload.
+
+## 0.38.6 — over-cap starvation ladder: compact first, then 5 ordered recoveries (2026-09-03)
+
+### Added
+  Compact-first nudge: at 85% context (below the 90% starvation line) a one-shot-per-episode notify to run `/compact` while summarization still fits (episode resets below 80% or on compaction; ledger `context_compact_first_nudge`). The agent_end starvation yield notify now carries the full over-cap ladder — `/compact` retry after GLLA's deterministic trim, larger-context model (GLLA already auto-rotates its fallback chain after a failed compact-and-retry, v0.34.116), `/new` + `/goal resume` from durable disk state with no summarization needed — and states that automatic turns stay parked.
+
+### Fixed
+  Over-cap spin: `sendContinuation` now refuses while `isContextStarvedRefused()` — the single choke point every automatic path funnels through — so a 119–243% session stops queueing truncating turns (ledger `continuation_send_refused_context_starved`, silent; heartbeat one-shot + yield ladder own messaging). The refuse stays sticky while the last-known percent is ≥90% instead of lapsing 90s after the last yield. Heartbeat refuse branch/ledger/text unchanged (pinned). `tests/starvation-ladder.test.ts` (6 tests) pins band, ladder text, nudge episodes, sticky matrix, wiring, and a behavioral starved boot.
+
+## 0.38.5 — delta-only goal continuation: marker-only steady-state (2026-09-03)
+
+### Fixed
+  Ongoing-conversation resend: steady-state goal turns now send the 45-char `[GOAL CHECKPOINT goalId=…]` marker only instead of the full ~23k continuation prompt every turn (history already holds T0 objective/contract/tasks + `complete_task` deltas). Post-compact sends `resync + marker` (~250 chars); full sends only on first-send per process or dynamic deltas (`repairTarget` / `autoResumedAt` / auditor TODOs / audit report / stale-approval mismatch / designer / full-audit). Marker still carries the dispatch marker so `before_agent_start` start-proof keeps matching; `agent_start`/`turn_start` fallback needs no prompt. Ledger `goal_continuation_sent` gains `kind` (`full`/`full+resync`/`resync`/`marker`) + `payloadChars`. Loop turns unchanged (per-iteration prompts vary). `extensions/goal-continuation.ts` (`buildMarkerContent` / `needsFullContinuation` / `buildContinuationContent`); `tests/delta-only-continuation.test.ts` pins the matrix.
+
+## 0.38.4 — human-input zombie stand-down (PR #36 slice) + AVO close (2026-09-02)
+
+### Fixed
+  Zombie watchdog no longer aborts while waiting on human input: `pause_goal`, `propose_goal_draft`, `propose_loop_draft`, `propose_loop_refine`, `propose_task_list`, `list_add`, `list_activate`, and `ask_user_question` now stand down the `BUSY + zero stream` abort exactly like `subagent` waits (field: drafting confirm / decision popup / `ask_user_question` looked like a hung provider, the bounded abort parked the dialog and the retry re-opened the same dialog). Own ledger `zombie_run_stood_down_user_input` vs `zombie_run_stood_down_subagent_wait`; genuinely hung streams still abort after the grace window. Selective port of PR #36 `USER_INPUT_WAIT_TOOL_NAMES` + `isUserInputWaitCall` with `heartbeatTick` carve-out; `tests/zombie-user-input-standdown.test.ts` pins the set and the branch.
+
+### Changed
+  AVO consideration closed: `audit/AVO-DEEP-DIVE-2026-09-02.md` remains the full read (`Vary(Pt)=Agent(Pt,K,f)`, §3.3 3-sentence supervisor). PR #22 (stagnation nudge, true AVO pattern but P1s: raw HEAD, no fencing, cycling-cap bypass) and PR #36 (commissar not AVO) dispositioned as `no merge as-is`; only the zombie stand-down ships in this release. PRs to be closed.
+
+## 0.38.3 — truncate picker/settings titles to terminal width (PR #41) (2026-09-02)
+
+### Fixed
+  `Rendered line N exceeds terminal width` crash when opening `Main/Auditor fallback models` (and `ModelPicker` / `SettingsMenu`) — long help titles now truncated with `truncateToWidth(…, "…")` to the available width, matching existing picker-row truncation. Prevents `pi` TUI crash that made the `glla: [LIVE]` widget disappear between audit/loop iterations and after `page.reload()`/`/reload` (Next item `audit ended between loops, and the ui disappeared` / Screenshot_20260902_121313). Regression test `multi-model-picker: render truncates a long title to the terminal width` pins 140-col rendering.
+
 ## 0.38.2 — thinking selected with model, remove standalone rows (2026-09-02)
 
 ### Changed

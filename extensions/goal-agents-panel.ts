@@ -120,7 +120,7 @@ function orderedRows(rows: AgentsPanelRow[]): AgentsPanelRow[] {
  * capped at PANEL_ROW_CAP rows with an explicit truncation notice. */
 export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAvailable: boolean): string[] {
   if (rows.length === 0) {
-    return ["No subagents tracked yet — spawn one via the Agent tool and it appears here.", "(evidence: glla's event probes" + (managerAvailable ? " + pi-subagents manager records" : "") + ")"];
+    return ["No subagents tracked yet — spawn one via the `subagent` tool and it appears here.", "(evidence: glla's event probes" + (managerAvailable ? " + pi-subagents manager records" : "") + ")"];
   }
   const ordered = orderedRows(rows);
   const shown = ordered.slice(0, PANEL_ROW_CAP);
