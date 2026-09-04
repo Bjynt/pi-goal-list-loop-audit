@@ -971,6 +971,43 @@ interface SessionOwnerRecord {
 /** A live process owns the workingDir root. A denied fresh host stays
  * read-only until its own session_start can prove that ownership changed. */
 let processOwnerDeniedCwd: string | null = null;
+
+/** v0.38.12 (last-wins sessions): how often a RUNNING session re-reads
+ * the owner file. The claim is not a lease — a newer main host may have
+ * stolen the root while we were working, and we must notice (and stand
+ * down) instead of writing competitively forever. */
+const OWNERSHIP_RECHECK_MS = 30_000;
+let lastOwnershipRecheckAt = 0;
+
+/** v0.38.12: throttled self-check — does THIS process still own the root?
+ * "held": ours (or unclaimed); clears a stale denial for this cwd.
+ * "lost": a live foreign owner holds it — the denial flag is SET, so
+ * command entry refuses until ownership changes again. Dead/released
+ * owners never flap the flag here (the heartbeat reclaims them quietly).
+ * "deferred": sessionDir selected but unresolved — nothing is knowable. */
+export function refreshOwnershipStanding(cwd: string, now: number = Date.now()): "held" | "lost" | "deferred" {
+  if (stateRootPending()) return "deferred";
+  if (now - lastOwnershipRecheckAt < OWNERSHIP_RECHECK_MS) {
+    return processOwnerDeniedCwd === cwd ? "lost" : "held";
+  }
+  lastOwnershipRecheckAt = now;
+  const record = readOwnerFile(cwd);
+  const pid = typeof record?.pid === "number" ? record.pid : null;
+  if (pid === null || pid === process.pid) {
+    if (processOwnerDeniedCwd === cwd) processOwnerDeniedCwd = null;
+    return "held";
+  }
+  if (record.shutdownAt !== undefined || record.shutdownReason !== undefined || !isProcessAlive(pid)) {
+    return processOwnerDeniedCwd === cwd ? "lost" : "held";
+  }
+  processOwnerDeniedCwd = cwd;
+  return "lost";
+}
+
+/** Test-only: drop the recheck throttle so standing transitions are immediate. */
+export function __testOnlyResetOwnershipRecheck(): void {
+  lastOwnershipRecheckAt = 0;
+}
 interface SessionOwnerClaim {
   rebind: boolean;
   generation: number;
