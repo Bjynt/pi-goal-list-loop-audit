@@ -47,6 +47,8 @@ export interface OwnerProcDeps {
   procStartMs?: (pid: number) => number | null;
   now?: () => number;
   sleepMs?: (ms: number) => Promise<void>;
+  /** Settle window override (tests only — production always waits the full 5s). */
+  settleMs?: number;
 }
 
 const defaultDeps = (): Required<OwnerProcDeps> => ({
@@ -56,6 +58,7 @@ const defaultDeps = (): Required<OwnerProcDeps> => ({
   procStartMs,
   now: () => Date.now(),
   sleepMs: (ms) => new Promise((r) => setTimeout(r, ms)),
+  settleMs: TAKEOVER_SETTLE_MS,
 });
 
 /** Best-effort raw cmdline (Linux /proc). Null everywhere else — callers
@@ -309,11 +312,12 @@ export async function takeoverOwnerRoot(opts: {
     const fresh = readOwnerFile(opts.cwd);
     return takeoverOwnerRoot({ cwd: opts.cwd, record: fresh, confirmed: true, deps: opts.deps });
   }
-  const deadline = d.now() + TAKEOVER_SETTLE_MS;
+  const settleMs = d.settleMs ?? TAKEOVER_SETTLE_MS;
+  const deadline = d.now() + settleMs;
   while (d.isAlive(owner.pid)) {
     if (d.now() >= deadline) {
       appendLedger(opts.cwd, "owner_takeover_refused", { reason: "still-alive", pid: owner.pid });
-      return { outcome: "refused", reason: "still-alive", detail: `pid ${owner.pid} survived SIGTERM after ${TAKEOVER_SETTLE_MS / 1000}s — NOT claimed (two live writers is worse than read-only). Close it by hand, then /glla takeover again.` };
+      return { outcome: "refused", reason: "still-alive", detail: `pid ${owner.pid} survived SIGTERM after ${settleMs / 1000}s — NOT claimed (two live writers is worse than read-only). Close it by hand, then /glla takeover again.` };
     }
     await d.sleepMs(TAKEOVER_POLL_MS);
   }

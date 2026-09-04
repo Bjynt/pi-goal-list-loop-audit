@@ -237,7 +237,9 @@ test("owner surviving SIGTERM is never claimed", async () => {
     cwd,
     record: readOwnerFile(cwd),
     confirmed: true,
-    deps: { readCmdline: () => "pi\0", sleepMs: () => Promise.resolve() },
+    // settleMs shrinks the 5s production settle window: the busy poll
+    // with immediate sleeps would otherwise eat the whole test timeout.
+    deps: { readCmdline: () => "pi\0", sleepMs: () => Promise.resolve(), settleMs: 300 },
   });
   assert.equal(r.outcome, "refused");
   assert.equal((r as any).reason, "still-alive");
