@@ -363,9 +363,6 @@ import {
   zombieRetryDecision,
   type ZombieRetryStreak,
 } from "../goal-loop-backoff.js";
-import { Key } from "@earendil-works/pi-tui";
-import { toggleAuditorTranscript } from "./goal-ui.js";
-
 import {
   addSingleItem,
   autoNotifyCmd,
@@ -770,7 +767,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       ["wipe", "Confirm-gated idempotent reset of all live goal/list/loop state"],
       ["stats", "show per-project ledger rollups"],
       ["audits", "browse the audit log"],
-      ["transcript", "open/close the detached-auditor transcript panel (bare form toggles; F9 also toggles it)"],
       ["agents", "show tracked subagents; --tail <id> reads a child transcript"],
       ["switchlog", "show the model-switch trail (model_switch / forbidden_model_switch)"],
       ["tooloverride", "configure agent-tool visibility"],
@@ -2765,17 +2761,5 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }
     }
     return {};
-  });
-
-  // v0.38.3: F9 toggles the full detached-auditor transcript block
-  // under the goal card (extensions/auditor-transcript.ts). Registered here,
-  // not in goal.ts, because the factory default export must stay
-  // registration-only (`registerGoalRuntime(pi);` as its last statement —
-  // pinned by tests/stale-api-terminal.test.ts).
-  pi.registerShortcut(Key.f9, {
-    description: "Toggle the full detached auditor session transcript on the goal card",
-    handler: () => {
-      toggleAuditorTranscript();
-    },
   });
 }

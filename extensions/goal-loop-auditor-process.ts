@@ -126,6 +126,10 @@ export interface AuditorProgress {
    * display layer renders "tool: X · 4m / 20m budget" and exempts an
    * in-budget long tool from the 3m quiet warning. */
   toolTimeoutMs?: number;
+  /** v0.38.3: worker telemetry — the deterministic session file the
+   * auditor's pi persists when the request enabled live inspection
+   * (<jobDir>/session.jsonl). Absent = the original --no-session spawn. */
+  sessionPath?: string;
 }
 
 export type AuditorModel = string | { provider: string; id: string };
@@ -969,6 +973,11 @@ interface AuditorRequest {
    * switch). Absent/empty = the default extension-less auditor. Part of the
    * request hash like every other field. */
   allowedExtensions?: string[];
+  /** v0.38.3: opt-in live inspection. When true the worker spawns pi with
+   * --session <jobDir>/session.jsonl instead of --no-session, persisting the
+   * auditor's pi as a resumable session (tail -f live, resume after).
+   * Part of the request hash; absent/false = the original spawn. */
+  inspection?: boolean;
   /** v0.34.59: focus revision token captured at dispatch. Echoed in
    * result.json; the parent re-validates against current disk state
    * before applying the verdict. Mismatch → stale-refusal, not a silent
@@ -1005,6 +1014,9 @@ interface AuditorProgressFile {
   requestHash: string;
   phase: AuditorProgress["phase"];
   elapsedMs: number;
+  /** v0.38.3: set when the request enabled live inspection — the session
+   * file the auditor's pi writes inside the job dir. */
+  sessionPath?: string;
   /** v0.34.86: monotonic report-stream byte count (text_delta chars). The
    * silent-mode byte counter — the "worker IS making progress" evidence
    * that never reveals prose. */
@@ -1176,6 +1188,7 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
     ...(file.currentTool ? { currentTool: file.currentTool } : {}),
     ...(file.currentToolArgs ? { currentToolArgs: file.currentToolArgs } : {}),
     ...(file.currentToolStartedAt ? { currentToolStartedAt: file.currentToolStartedAt } : {}),
+    ...(file.sessionPath ? { sessionPath: file.sessionPath } : {}),
     ...(file.unmatchedToolStarts ? { unmatchedToolStarts: file.unmatchedToolStarts } : {}),
     ...(file.unmatchedToolEnds ? { unmatchedToolEnds: file.unmatchedToolEnds } : {}),
   };
@@ -1248,6 +1261,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
    * so no call site can bypass resolution — the detached worker only ever
    * sees directly loadable absolute paths. */
   allowedExtensions?: string[];
+  /** v0.38.3: opt-in live inspection (settings key auditorInspection) — the
+   * worker persists the auditor's pi as a resumable session pinned inside
+   * the job dir. Off/absent = the original --no-session spawn. */
+  inspection?: boolean;
   signal?: AbortSignal;
   onProgress?: AuditorProgressCallback;
   /** v0.34.57: fired once when the heartbeat-without-progress watchdog
@@ -1341,6 +1358,9 @@ export async function runDetachedGoalCompletionAuditor(args: {
       // v0.36.0: only present when non-empty so historical requests hash
       // byte-identically to pre-feature workers.
       ...(allowedExtensions.length ? { allowedExtensions } : {}),
+      // v0.38.3: only present when enabled so default dispatches hash
+      // byte-identically to pre-feature workers.
+      ...(args.inspection ? { inspection: true } : {}),
     };
     const request: AuditorRequest = { ...requestWithoutHash, requestHash: requestHash(requestWithoutHash) };
     await writeAtomicJson(requestPath, request);

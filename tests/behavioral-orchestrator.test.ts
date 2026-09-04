@@ -3339,30 +3339,6 @@ test("v0.35.x: /glla audits full sanitizes active and global reports", async () 
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
-test("v0.38.3: /glla transcript is the visible menu option for the auditor transcript panel", async () => {
-  __testOnlyResetStaleFlag();
-  const cwd = tmpCwd();
-  const ctx = await freshSession(cwd, "startup");
-  // Explicit open first so the assertions are deterministic regardless of
-  // any earlier in-process toggle state.
-  await pi.command("glla", "transcript open", ctx);
-  let msg = ctx.ui.notifies.at(-1)?.message ?? "";
-  assert.match(msg, /^glla transcript: opened/);
-  // Bare form toggles: from open → closed.
-  await pi.command("glla", "transcript", ctx);
-  msg = ctx.ui.notifies.at(-1)?.message ?? "";
-  assert.match(msg, /^glla transcript: closed/);
-  // Bare form toggles back: closed → opened.
-  await pi.command("glla", "transcript", ctx);
-  msg = ctx.ui.notifies.at(-1)?.message ?? "";
-  assert.match(msg, /^glla transcript: opened/);
-  // Explicit close wins regardless of prior state.
-  await pi.command("glla", "transcript close", ctx);
-  msg = ctx.ui.notifies.at(-1)?.message ?? "";
-  assert.match(msg, /^glla transcript: closed/);
-  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
-});
-
 test("v0.35.x: bare 403 main recovery sanitizes live surfaces while retaining diagnostics", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

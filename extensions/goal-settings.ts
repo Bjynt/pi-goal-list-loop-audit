@@ -139,6 +139,13 @@ export interface Settings {
    * Default 15m (the legacy hardcoded threshold); bounds 0–7d. Global-only:
    * disk hygiene is a machine characteristic, not a project one. */
   auditJobRetentionMs?: number;
+  /** v0.38.3: on → the detached auditor's pi runs as a normal persistent
+   * session (--session <jobDir>/session.jsonl) instead of --no-session, so
+   * you can `tail -f` it live or resume it interactively after the audit.
+   * Default OFF: the original --no-session spawn is unchanged. The session
+   * file lives inside the job dir, so its lifetime = the job-dir retention
+   * window (auditJobRetentionMs). */
+  auditorInspection?: boolean;
   /** Global-only: when main-model recovery is parked, fire an extra retry at
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
@@ -321,6 +328,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.38.3: dead audit job dirs (and their transcripts) survive this long
   // after the worker dies before `/glla audits health cleanup` reaps them.
   auditJobRetentionMs: AUDIT_JOB_CLEANUP_MIN_AGE_MS,
+  // v0.38.3: opt-in live inspection — the auditor's pi becomes a normal
+  // persistent session you can tail/resume. Off = the original --no-session.
+  auditorInspection: false,
   // v0.34.142: an extra blind retry at :00:30 after every hour starts.
   // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.
@@ -525,6 +535,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditorToolTimeoutMs",
   "auditorStallMs",
   "auditJobRetentionMs",
+  "auditorInspection",
   "notifyCmd",
   "tokenLimit",
   "wedgeAlertMinutes",

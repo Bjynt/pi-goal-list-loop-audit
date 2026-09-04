@@ -559,6 +559,106 @@ process.stdin.on("data", (chunk) => {
   }
 });
 
+test("real worker persists the auditor session when inspection is enabled (spawn spec + progress shape)", { timeout: 40_000 }, async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-inspection-on-"));
+  const fakePi = path.join(dir, "inspection-pi.mjs");
+  const argvDump = path.join(dir, "argv-dump.json");
+  const fakePiSource = `
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.FAKE_PI_ARGV_DUMP, JSON.stringify(process.argv));
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  const out = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+  out({ type: "agent_start" });
+  out({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args: { path: "/repo/README.md" } });
+  out({ type: "tool_execution_end", toolCallId: "read-1" });
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists; tests pass\\n</evidence>\\n<approved/>" } });
+  out({ type: "agent_settled" });
+});
+`;
+  await writeFile(fakePi, `#!/usr/bin/env node\n${fakePiSource}`);
+  await chmod(fakePi, 0o700);
+  const reports: AuditorProgress[] = [];
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      inspection: true,
+      onProgress: (progress) => reports.push(progress),
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: { GLLA_PI_BINARY: fakePi, FAKE_PI_ARGV_DUMP: argvDump },
+        attemptId: () => "attempt-inspection",
+        pollIntervalMs: 5,
+        wallTimeoutMs: 30_000,
+      },
+    });
+    assert.equal(result.approved, true);
+    // Spawn spec: --session <jobDir>/session.jsonl replaces --no-session.
+    const argv = JSON.parse(await readFile(argvDump, "utf8"));
+    const expectedSession = path.join(dir, ".pi-glla", "audit-jobs", "attempt-inspection", "session.jsonl");
+    assert.ok(argv.includes("--session"), "the spawn used --session");
+    assert.equal(argv.includes("--no-session"), false, "the spawn dropped --no-session");
+    assert.equal(argv[argv.indexOf("--session") + 1], expectedSession, "--session points at the job-dir session file");
+    // Progress shape: a snapshot carries the deterministic session path.
+    assert.ok(reports.some((progress) => progress.sessionPath === expectedSession), "progress.json carried the session path");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("real worker keeps the original --no-session spawn when inspection is unset (default unchanged)", { timeout: 40_000 }, async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-inspection-off-"));
+  const fakePi = path.join(dir, "inspection-off-pi.mjs");
+  const argvDump = path.join(dir, "argv-dump.json");
+  const fakePiSource = `
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.FAKE_PI_ARGV_DUMP, JSON.stringify(process.argv));
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  const out = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+  out({ type: "agent_start" });
+  out({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args: { path: "/repo/README.md" } });
+  out({ type: "tool_execution_end", toolCallId: "read-1" });
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists; tests pass\\n</evidence>\\n<approved/>" } });
+  out({ type: "agent_settled" });
+});
+`;
+  await writeFile(fakePi, `#!/usr/bin/env node\n${fakePiSource}`);
+  await chmod(fakePi, 0o700);
+  const reports: AuditorProgress[] = [];
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      onProgress: (progress) => reports.push(progress),
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: { GLLA_PI_BINARY: fakePi, FAKE_PI_ARGV_DUMP: argvDump },
+        attemptId: () => "attempt-inspection-off",
+        pollIntervalMs: 5,
+        wallTimeoutMs: 30_000,
+      },
+    });
+    assert.equal(result.approved, true);
+    // Default dispatch is byte-identical to pre-feature: --no-session, no --session.
+    const argv = JSON.parse(await readFile(argvDump, "utf8"));
+    assert.equal(argv.includes("--no-session"), true, "the default spawn still uses --no-session");
+    assert.equal(argv.includes("--session"), false, "no --session in the default spawn");
+    assert.ok(reports.every((progress) => progress.sessionPath === undefined), "no session path leaks into progress");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("worker assembles streamed report fragments into cumulative display lines without changing the exact result", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-fragment-telemetry-"));
   const fakePi = path.join(dir, "fragment-pi.mjs");

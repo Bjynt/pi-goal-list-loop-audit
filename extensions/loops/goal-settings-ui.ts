@@ -1136,6 +1136,21 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       return;
     }
+    case "auditorInspection": {
+      // v0.38.3: opt-in live inspection — the auditor's pi becomes a normal
+      // persistent session you can tail -f or resume. Off = original --no-session.
+      const v = await ctx.ui.select("Auditor inspection session — persist the auditor's pi as a resumable session for live tail -f / post-audit attach", [
+        "off — the original --no-session spawn (default)",
+        "on — --session <jobDir>/session.jsonl: tail -f it live, resume it after the audit",
+      ]);
+      if (v) {
+        const on = v.startsWith("on");
+        saveSettings("global", ctx.cwd, { auditorInspection: on ? true : undefined });
+        ctx.ui.notify(on ? "Auditor inspection ON — audits now persist a resumable session."
+          : "Auditor inspection OFF — back to the original --no-session spawn.", "info");
+      }
+      return;
+    }
     case "hourlyRetryProbe": {
       const v = await ctx.ui.select("Hourly main-model retry — an extra blind :00:30 attempt while recovery is parked (the normal retry ladder is separate)", [
         "on — fire an extra probe at :00:30 every hour while parked (default)",

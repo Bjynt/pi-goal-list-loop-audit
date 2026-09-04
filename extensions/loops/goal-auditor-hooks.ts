@@ -1037,6 +1037,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   let result: Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
   let retriedOnce = false;
   let fallbackUsed = false;
+  // v0.38.3: the live-inspection session path, captured from worker progress
+  // BEFORE the finally clears latestAuditProgress — the approval notify uses
+  // it to point the user at the kept resumable session.
+  let inspectionSessionPath: string | undefined;
   try {
     ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(
       auditorCandidates,
@@ -1068,6 +1072,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           // entries to install paths before hashing (see
           // goal-loop-auditor-process.ts).
           allowedExtensions: settings.auditorAllowedExtensions,
+          // v0.38.3: opt-in live inspection — persist the auditor's pi as a
+          // resumable session pinned inside the job dir (off = --no-session).
+          inspection: settings.auditorInspection === true,
           runtime: {
             attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!),
             logicalAttemptId: claim.attemptId!,
@@ -1087,6 +1094,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
             // toolTimeoutMs is a dispatch fact for the display layer: the
             // quiet watcher exempts an in-budget long tool from the 3m
             // warning, and the card renders "tool: X · 4m / 20m budget".
+            if (progress.sessionPath) inspectionSessionPath = progress.sessionPath;
             publishDetachedAuditProgress(generation, goalId, claim.attemptId!, { ...progress, toolTimeoutMs });
           },
           // v0.34.57: the parent-side heartbeat-without-progress watchdog
@@ -1431,7 +1439,16 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       appendLedger(liveCtx.cwd, "goal_archive_failed_after_approval", { goalId, attemptId: claim.attemptId, origin });
       return;
     }
-    liveCtx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved${approvalVia}.`, "info");
+    // v0.38.3: live inspection — the auditor's pi persisted a resumable
+    // session pinned inside the job dir. Point the user at it AFTER the
+    // audit (interactive attach only now; while running it was read-only).
+    liveCtx.ui.notify(
+      `✓ done: ${recap} — auditor ${result.model} approved${approvalVia}.` +
+      (inspectionSessionPath
+        ? `\nAuditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`
+        : ""),
+      "info",
+    );
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${recap}`);
     return;
   }

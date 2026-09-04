@@ -425,6 +425,15 @@ export function buildSettingsRows(
         "how long a finished audit's job dir (and its F9 transcript) survives after the worker dies, before `/glla audits health cleanup` reaps it — raise it to keep finished audit logs readable longer; 0 reaps immediately",
     },
     {
+      id: "auditorInspection",
+      section: "auditor",
+      label: "Auditor inspection session",
+      valueText: show("auditorInspection", "off"),
+      sourceText: src("auditorInspection"),
+      description:
+        "on: the auditor's pi runs as a normal persistent session (--session <jobDir>/session.jsonl) you can tail -f live or resume after the audit · off: the original --no-session spawn (default)",
+    },
+    {
       id: "auditCap",
       section: "auditor",
       label: "Audit cap",
