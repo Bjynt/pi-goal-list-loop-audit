@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.13 — good completion summary (2026-09-04)
+
+### Changed
+  The `✓ done` chat notify is now the six-label block (one `Label: value` line each, 240-char word-bounded values) instead of the single-line mash with mid-word cuts. New `clipSummaryValue` cuts at word boundaries everywhere (hard-cut only for spaceless tokens); widget card and external notifies keep the compact line. Fixed a post-archive null crash that silently swallowed the notify. Runbook in `audit/COMPLETION-SUMMARY-2026-09-04.md`.
+
 ## 0.38.12 — last-wins sessions + objectives (2026-09-04)
 
 ### Changed
