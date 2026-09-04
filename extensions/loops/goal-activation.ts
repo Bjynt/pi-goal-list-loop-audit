@@ -484,7 +484,7 @@ function scheduleZombieAutoRetry(
   goalId: string | undefined,
   observedStreamAt: number,
   silentMinutes: number,
-): { scheduled: boolean; attempt: number; maxAttempts: number } {
+): { scheduled: boolean; attempt: number; maxAttempts: number; reason?: "never-streamed" | "budget-exhausted" } {
   const key = goalId ?? "loop";
   const maxAttempts = zombieRetryMaxAttemptsOverride
     ?? loadSettings(ctx.cwd).zombieRetryMaxAttempts
