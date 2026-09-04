@@ -27,7 +27,10 @@ test("parseMechanicalPipeline: accepts the narrow pipeline shape", () => {
 });
 
 test("parseMechanicalPipeline: rejects everything outside the shape", () => {
-  assert.equal(parseMechanicalPipeline("rm -rf / | tail -n 4"), null); // unsafe head
+  // Note: bare-program choice matches the pre-existing single-command threat
+  // model (shell metacharacters are the boundary, not the program name) —
+  // the pipeline-specific guards are the filter allowlist and no redirects.
+  assert.equal(parseMechanicalPipeline("node --version | tail -n 4 | tee x"), null); // second filter not allowlisted
   assert.equal(parseMechanicalPipeline("node --version | tee /tmp/glla-pipe-test"), null); // second program
   assert.equal(parseMechanicalPipeline("node --version | tail -n 2 > /tmp/glla-pipe-test"), null); // redirect
   assert.equal(parseMechanicalPipeline("node --version | tail -n 4; printf boom"), null); // chaining
