@@ -114,6 +114,8 @@ import {
   readQueueFromDisk,
   deleteQueueItemFileResult,
   missingGllaTools,
+  claimedMissingGllaTool,
+  PI_TOOL_NOT_FOUND_QUOTE,
   runPersistStep,
   isPersistenceDegraded,
   lastPersistenceFailure,
@@ -1926,6 +1928,20 @@ function registerAgentTools(pi: any): void {
       // repeatable and could erase an in-flight detached-auditor state.
       if (state.goal.status !== "active") {
         return { content: [{ type: "text", text: `Goal is already ${state.goal.status}; pause request ignored.` }], details: {} };
+      }
+      // v0.38.15: anti-confabulation — a pause whose blocker is "this
+      // session has no <glla tool>" is refused when the tool path provably
+      // works: this very pause_goal call dispatched through the same
+      // registration batch (complete_goal registers first in that batch),
+      // so the tool IS callable — the model is misreading its tool list
+      // (field: new-tab 2026-09-04, 5×-compacted session, zero tool errors
+      // in transcript or ledger). The model is told to call it now; a
+      // quoted pi `Tool X not found` error is genuine-outage evidence and
+      // the pause is accepted.
+      const missingClaim = claimedMissingGllaTool(p.reason ?? "");
+      if (missingClaim && !PI_TOOL_NOT_FOUND_QUOTE.test(p.reason ?? "")) {
+        appendLedger(ctx.cwd, "pause_refused_tool_present", { goalId: state.goal.id, tool: missingClaim });
+        return { content: [{ type: "text", text: `Not paused: \`${missingClaim}\` is registered in this session — this pause_goal call just dispatched through the same registration batch, so the tool path works. If \`${missingClaim}\` is missing from your visible tool list, that is a client-side gap: call \`${missingClaim}\` now${missingClaim === "complete_goal" ? " with your six-label recap and verification summary" : ""}. If pi itself answers with a \`Tool ${missingClaim} not found\` error, call pause_goal again quoting that exact error and the pause will be accepted.` }], details: {} };
       }
       const pauseCopy = providerErrorPresentation(p.reason, "recovery");
       const safePauseReason = pauseCopy.sensitive ? pauseCopy.display : p.reason;
