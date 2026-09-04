@@ -839,9 +839,26 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
       stopReason: replacementReason,
       archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, replaced.id)) || archivedGoalPath(ctx.cwd, replaced.id),
     });
+    // v0.38.12 (last-wins objectives): the new objective is the real one
+    // and is NEVER refused because the old one could not archive. The old
+    // behavior returned false here, stranding the user's new objective
+    // behind a disk/archive failure they did not cause. Preserve the old
+    // objective in the ledger (nothing is silently lost — the contract,
+    // status, and audit tail needed to recreate it are all inline) and
+    // proceed with the replacement.
     if (!archiveCurrentGoal(ctx, "aborted", replacementReason)) {
-      ctx.ui.notify(`New objective not started — the current ${replaced.policy === "list" ? "list item" : "goal"} could not be archived safely.`, "warning");
-      return false;
+      appendLedger(ctx.cwd, "goal_superseded_unarchived", {
+        oldGoalId: replaced.id,
+        objective: replaced.objective,
+        verificationContract: (replaced as { verificationContract?: unknown }).verificationContract ?? null,
+        status: replaced.status,
+        policy: replaced.policy,
+        pauseResumeAt: replaced.pauseResumeAt ?? null,
+        pendingCompletion: (replaced as { pendingCompletion?: unknown }).pendingCompletion ?? null,
+        replacedBy: goal.id,
+        archiveError: "archiveCurrentGoal refused (fence or intent/persist failure)",
+      });
+      ctx.ui.notify(`Previous ${replaced.policy === "list" ? "list item" : "goal"} could not be archived safely — its objective is preserved in the ledger, and the new objective starts anyway.`, "warning");
     }
     if (hadScheduledResume) {
       appendLedger(ctx.cwd, "replaced_resume_cancelled", {
@@ -861,9 +878,10 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
       notifyExternal(ctx, `${replaced.policy === "list" ? "List item" : "Goal"} superseded by a new objective: ${replacementRecap}`);
     }
   }
-  // v0.33.1: reset per-goal runtime state only after any superseded goal
-  // has archived successfully. If archival fails, the old objective, recovery
-  // timer, dispatch sidecar, and stand-down remain untouched for retry.
+  // v0.33.1: reset per-goal runtime state once any superseded goal has
+  // been handled. v0.38.12: archival failure no longer blocks the reset —
+  // the old objective is preserved in the ledger (goal_superseded_unarchived)
+  // and the new objective owns the runtime from here on.
   postCompactResumeOwed = false;
   postCompactResyncPending = false;
   clearMainModelRecoveryTimer();

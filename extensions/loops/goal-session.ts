@@ -997,7 +997,7 @@ export function refreshOwnershipStanding(cwd: string, now: number = Date.now()):
     if (processOwnerDeniedCwd === cwd) processOwnerDeniedCwd = null;
     return "held";
   }
-  if (record.shutdownAt !== undefined || record.shutdownReason !== undefined || !isProcessAlive(pid)) {
+  if (record?.shutdownAt !== undefined || record?.shutdownReason !== undefined || !isProcessAlive(pid)) {
     return processOwnerDeniedCwd === cwd ? "lost" : "held";
   }
   processOwnerDeniedCwd = cwd;
@@ -1256,8 +1256,15 @@ function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
  * true when the handle is stale — callers must skip send-dependent paths
  * and must NOT claim work started (S3's "created — starting now" lie). */
 function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
+  // v0.38.12 (last-wins): a newer session may have taken the root while
+  // we were idle — recheck (throttled) so commands refuse promptly here
+  // instead of writing competitively. A fresh main session takes over
+  // automatically at its own session_start. Workers skip the recheck:
+  // a subagent never owns the root, so it must keep its own refusal
+  // wording instead of tripping the ownership flag in its process.
+  if (!isForeignCtx(ctx) && !isWorkerSessionCtx(ctx)) refreshOwnershipStanding(ctx.cwd);
   if (processOwnerDeniedCwd === ctx.cwd) {
-    ctx.ui.notify(`glla: another live pi process owns this working-directory state root — ${what} is refused here to prevent competing writes. /glla owner inspects the holder; /glla takeover resolves it with confirmation. (Or close the other host or select sessionDir, then start a fresh session.)`, "warning");
+    ctx.ui.notify(`glla: a newer pi session owns this working-directory state root — ${what} is refused here to prevent competing writes. Start a fresh session to take it back. /glla owner inspects the holder; /glla takeover ends it with confirmation.`, "warning");
     return true;
   }
   if (!probeExtensionApiStale()) return false;

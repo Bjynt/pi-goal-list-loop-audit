@@ -182,7 +182,7 @@ import {
 } from "../length-continue.js";
 import { isSubagentProviderFailure } from "../quota-retry.js";
 import { captureProviderTokenUsage } from "../context-growth.js";
-import { refreshOwnerHeartbeat } from "../state-root-owner.js";
+import { noteOwnershipStanding, refreshOwnerHeartbeat, supersedeLiveOwnerRoot } from "../state-root-owner.js";
 import {
   classifyInBandProviderFailure,
   classifyMainModelFailure,
@@ -1211,9 +1211,21 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // ownership, or restore ledger write. In-memory worker managers have no
     // directory and therefore remain pending rather than falling back to cwd.
     setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
-    if (!claimProcessOwner(ctx.cwd)) {
+    // v0.38.12 (last-wins sessions): a newer MAIN host does not queue
+    // behind the previous session — it takes the root and the old session
+    // stands down to read-only on its next recheck. Workers keep the old
+    // refusal: a subagent must never dethrone the main session it serves.
+    let ownsRoot = claimProcessOwner(ctx.cwd);
+    if (!ownsRoot && hostLifecycleStart) {
+      const supersede = supersedeLiveOwnerRoot(ctx.cwd, { isMainHost: true, bySession: sessionManagerId(ctx) });
+      ownsRoot = supersede !== "refused";
+      if (supersede === "stolen") {
+        ctx.ui.notify("glla: this fresh session took over the state root — the previous live session is now read-only. Your new objective is the real one; the old session's disk state is preserved.", "warning");
+      }
+    }
+    if (!ownsRoot) {
       processOwnerDeniedCwd = ctx.cwd;
-      ctx.ui.notify("glla: another live pi process owns this working-directory state root — this session is read-only to prevent competing goal/loop writes. /glla owner inspects the holder; /glla takeover resolves it with confirmation. (Or close the other host or select sessionDir, then start a fresh session.)", "warning");
+      ctx.ui.notify("glla: this session could not own the working-directory state root (a worker contact, or an unresolved sessionDir) — it is read-only to prevent competing goal/loop writes. /glla owner inspects the holder; /glla takeover resolves it with confirmation.", "warning");
       return;
     }
     processOwnerDeniedCwd = null;
@@ -1929,6 +1941,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (isForeignCtx(ctx)) return;
     noteActivity(true);
     refreshOwnerHeartbeat(ctx.cwd); // v0.38.11: throttled (60s) claim refresh so /glla owner shows real idle
+    noteOwnershipStanding(ctx); // v0.38.12: stand down to read-only when a newer session stole the root
     dispatchStartAcknowledged(ctx, "agent_end");
     lastStreamActivityAt = Date.now();
     streamActivityObserved = true;

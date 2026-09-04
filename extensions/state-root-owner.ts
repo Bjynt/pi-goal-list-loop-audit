@@ -27,9 +27,11 @@ import {
   claimProcessOwner,
   isProcessAlive,
   readOwnerFile,
+  refreshOwnershipStanding,
   removeOwnerFile,
   sessionManagerId,
   writeOwnerFile,
+  __testOnlyResetOwnershipRecheck,
   type SessionOwnerRecord,
 } from "./loops/goal-session.js";
 
@@ -336,6 +338,74 @@ export function refreshOwnerHeartbeat(cwd: string, now = Date.now()): void {
 /** Test-only reset for the heartbeat throttle. */
 export function __testOnlyResetOwnerHeartbeat(): void {
   lastHeartbeatAt = 0;
+}
+
+/** v0.38.12 (last-wins sessions): the newest MAIN session owns the root.
+ * A live foreign owner is not a stop sign — it is the PREVIOUS session,
+ * and it becomes irrelevant the moment a newer main host starts here.
+ * Steal the claim (unlink + fresh claim) and ledger the handoff so
+ * forensics can see who dethroned whom. The old process is never
+ * signaled: on its next throttled recheck (`refreshOwnershipStanding`)
+ * it sees a live foreign owner and stands down to read-only itself.
+ *
+ * Workers/subagents must never steal — `isMainHost` is false for every
+ * non-host lifecycle contact (a subagent stealing the root from its own
+ * main session would sideline the very session it serves). Those callers
+ * keep the old refusal. Returns "stolen" after dethroning a live owner,
+ * "reclaimed" for the quiet paths (missing/dead/released/self),
+ * "refused" when we may not own (pending state root, worker contact,
+ * or an unclaimable file). */
+export function supersedeLiveOwnerRoot(
+  cwd: string,
+  opts: { isMainHost: boolean; bySession?: string },
+): "stolen" | "reclaimed" | "refused" {
+  if (stateRootPending()) return "refused";
+  const record = readOwnerFile(cwd);
+  const prevPid = typeof record?.pid === "number" ? record.pid : null;
+  const prevAlive = prevPid !== null && prevPid !== process.pid && isProcessAlive(prevPid);
+  if (!prevAlive) {
+    return claimProcessOwner(cwd) ? "reclaimed" : "refused";
+  }
+  if (!opts.isMainHost) return "refused";
+  removeOwnerFile(cwd);
+  if (!claimProcessOwner(cwd)) return "refused";
+  appendLedger(cwd, "owner_superseded", {
+    prevPid,
+    prevAt: record?.at ?? null,
+    prevSession: (record as { ownerSessionId?: unknown } | null)?.ownerSessionId ?? null,
+    byPid: process.pid,
+    bySession: opts.bySession ?? "unknown-session",
+  });
+  return "stolen";
+}
+
+/** The dethroned side of last-wins: notice we lost the root and stand
+ * down to read-only. Ledgers the transition and notifies once per
+ * holding owner (not on every poll). Callers must gate out foreign /
+ * worker contexts themselves — a subagent never owns the root, so asking
+ * it whether it "still" does would always answer lost. */
+let stoodDownFor: { cwd: string; ownerPid: number } | null = null;
+export function noteOwnershipStanding(ctx: ExtensionContext): void {
+  const standing = refreshOwnershipStanding(ctx.cwd);
+  if (standing === "held") {
+    stoodDownFor = null;
+    return;
+  }
+  if (standing !== "lost") return;
+  const record = readOwnerFile(ctx.cwd);
+  const ownerPid = typeof record?.pid === "number" ? record.pid : -1;
+  if (stoodDownFor !== null && stoodDownFor.cwd === ctx.cwd && stoodDownFor.ownerPid === ownerPid) return;
+  stoodDownFor = { cwd: ctx.cwd, ownerPid };
+  appendLedger(ctx.cwd, "owner_stood_down", { ownerPid, ownerAt: record?.at ?? null });
+  ctx.ui.notify(
+    `glla: a newer session (pid ${ownerPid}) took over this folder's state root — this session is now read-only to prevent competing writes. Start a fresh session here to take it back.`,
+    "warning",
+  );
+}
+/** Test-only reset for the stand-down notice latch. */
+export function __testOnlyResetStandDownNotice(): void {
+  stoodDownFor = null;
+  __testOnlyResetOwnershipRecheck();
 }
 
 function confirmBody(owner: DescribedOwner): string {
