@@ -3532,7 +3532,7 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
       assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `approved notification carries ${label} on its own line`);
     }
     assert.match(recapNotifs[0]!.message, /…/, "long approved recap values are bounded");
-    assert.doesNotMatch(recapNotifs[0]!.message, /durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker/, "approved notification does not flatten the full long recap");
+    assert.doesNotMatch(recapNotifs[0]!.message, new RegExp(`(${"durable-proof-marker "}){20}`), "approved notification does not flatten the full long recap");
     assert.doesNotMatch(recapNotifs.join("\n"), /^Goal complete — auditor /, "the old process-only line is gone");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
