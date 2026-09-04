@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.15 — pause anti-confabulation (2026-09-04)
+
+### Changed
+  `pause_goal` refuses pauses whose blocker claims a GLLA tool is missing (dispatch proves the batch landed) and tells the model to call it; quoting pi's `Tool X not found` is accepted as genuine outage. Runbook + new-tab forensics in `audit/PAUSE-ANTI-CONFABULATION-2026-09-04.md`.
+
 ## 0.38.14 — human end-of-objective briefing (2026-09-04)
 
 ### Changed
