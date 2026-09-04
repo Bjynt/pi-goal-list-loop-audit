@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.12 — last-wins sessions + objectives (2026-09-04)
+
+### Changed
+  A fresh main-host session_start now takes the state root automatically when a live foreign owner holds it (ledger `owner_superseded`); the dethroned session stands down to read-only on its next throttled recheck (`owner_stood_down`) — never signaled, workers can never steal. `/goal start <objective>` skips the conflict dialog as explicit consent (ledgered `replace via: start-explicit`); plain `/goal` keeps update/cancel. `setGoal` never refuses the new objective over an archive failure — the old objective is preserved in `goal_superseded_unarchived` and the new goal starts anyway. Runbook in `audit/LAST-WINS-2026-09-04.md`.
+
 ## 0.38.11 — state-root owner takeover (2026-09-03)
 
 ### Added
