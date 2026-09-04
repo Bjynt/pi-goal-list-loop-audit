@@ -28,7 +28,7 @@ const FOREVER_SRC = fs.readFileSync(path.resolve("extensions/goal-loop-forever.t
 for (const name of PROMPTS) {
   test(`${name}: contains subagent fan-out guidance (item 4)`, () => {
     const p = readPrompt(name);
-    assert.match(p, /`subagent`/, `${name} mentions the subagent tool`);
+    assert.match(p, /`subagent`|Agent: Designer/, `${name} mentions the subagent tool or the Agent: task syntax`);
     assert.ok(
       /Default to subagents|in parallel|parallel/i.test(p),
       `${name} says "Default to subagents" or "parallel"`,

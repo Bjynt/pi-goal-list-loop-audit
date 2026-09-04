@@ -80,7 +80,7 @@ request into a **confirmed goal contract**. Do NOT start substantive work yet.
    fine otherwise and for free-form answers.
 2. Targeted read-only research is allowed when it helps define a better
    contract (read a file, check the repo layout). Do NOT implement anything.
-   **Default to subagents for research**: spawn a `scout` subagent
+   **Default to subagents for research**: use the `subagent` tool to spawn a `scout` subagent
    (in parallel with your own reading when there are several areas) rather
    than paging large files through the drafting context yourself. Eager
    continuation applies here too — if a subagent fails, just continue with
