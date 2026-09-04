@@ -263,7 +263,11 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
         await startDrafting(ctx, "goal", startInferenceSeed(inference));
         return;
       }
-      return cmdSet(route.rest, ctx, true);
+      // v0.38.12 (last-wins): /goal start with an explicit objective is
+      // consent to replace — the conflict dialog is skipped, the old
+      // objective retires in setGoal. The bare-start inference path below
+      // keeps the dialog (inferred intent is not explicit consent).
+      return cmdSet(route.rest, ctx, true, true);
     }
     // v0.35.33: /goal plan [seed] — the EXTENDED DRAFT. Same trust machinery
     // as a regular draft (Confirm card gates activation), deeper process:
@@ -281,9 +285,16 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
   return cmdSet(route.kind === "set" ? route.text : "", ctx);
 }
 
-async function resolveGoalStartConflict(ctx: ExtensionContext, objective: string): Promise<boolean> {
+async function resolveGoalStartConflict(ctx: ExtensionContext, objective: string, explicitReplace = false): Promise<boolean> {
   const current = liveObjectives(state);
   if (current.length === 0) return true;
+  // v0.38.12 (last-wins): /goal start <objective> is explicit consent —
+  // the new objective is the real one, the old one retires, no dialog.
+  // The choice is still ledgered so forensics can trace the handoff.
+  if (explicitReplace) {
+    appendLedger(ctx.cwd, "objective_conflict_resolved", { incoming: "goal", choice: "replace", via: "start-explicit", current: current.map((item) => item.id) });
+    return true;
+  }
   const choice = await chooseObjectiveConflict(ctx, "goal", objective, current);
   if (choice === "cancel") {
     ctx.ui.notify("New goal cancelled; the current objective is unchanged.", "info");
@@ -312,7 +323,7 @@ async function resolveGoalStartConflict(ctx: ExtensionContext, objective: string
 // /goal: bypass drafting, start now (the only entry in v0.1.0)
 // =================================================================
 
-async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): Promise<void> {
+async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false, explicitReplace = false): Promise<void> {
   releaseInitialSessionLoadBarrier();
   // v0.28.1 (S3): probe at the creation entry — no "created — starting now"
   // lie in a doomed process. (The draft path's seed send has its own loud
@@ -340,7 +351,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     await startDrafting(ctx, "goal", raw);
     return;
   }
-  if (!(await resolveGoalStartConflict(ctx, raw))) return;
+  if (!(await resolveGoalStartConflict(ctx, raw, explicitReplace))) return;
   flags.draftingTarget = null; // explicit objective cancels any drafting session
   await ((globalThis as any).restoreDrafterModel?.() ?? Promise.resolve());
   if (!resolveCarryover(ctx, "goal")) return; // v0.28.14: surface/clear stale leftovers
