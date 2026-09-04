@@ -12,10 +12,13 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import {
+  briefValueContent,
   clipSummaryValue,
   compactCompletionSummary,
   completionSummaryLines,
+  humanCompletionBrief,
   terminalCompletionSummaryLines,
+  terminalHumanBrief,
 } from "../extensions/completion-summary.js";
 import { seedGoal } from "./harness/mock-pi.js";
 
@@ -94,12 +97,48 @@ test("terminal lines resolve through the same facts as the compact recap", () =>
   assert.equal(lines[5], "Next: follow-ups below");
 });
 
+test("v0.38.14: filler values inform nobody and are dropped", () => {
+  for (const filler of ["", "  ", "none", "None.", "not recorded", "none for this objective", "none for this audit", "N/A", "nothing"]) {
+    assert.equal(briefValueContent(filler), null, JSON.stringify(filler));
+  }
+  assert.equal(briefValueContent("none — queued follow-ups (analytics cache)"), "queued follow-ups (analytics cache)");
+  assert.equal(briefValueContent("shipped the thing"), "shipped the thing");
+});
+
+test("v0.38.14: the briefing leads with the outcome and keeps only informing labels", () => {
+  const brief = humanCompletionBrief([
+    "Outcome: Full-sweep UI/UX pass with bolder dark+red restyle across shell, all 5 views.",
+    "Changed: theme tokens/gradients/glows, hero SetupBanner with step progress.",
+    "Evidence: commits f5466da30 on main.",
+    "Tests: tsc clean; vitest 1179 passed.",
+    "Unresolved: none for this objective.",
+    "Next: none — queued follow-ups (analytics SWR cache, new-tab extraction).",
+  ].join("\n"));
+  assert.equal(brief.outcome, "Full-sweep UI/UX pass with bolder dark+red restyle across shell, all 5 views.");
+  assert.ok(brief.details.some((d) => d.startsWith("Changed:")), "informing labels stay");
+  assert.ok(brief.details.some((d) => d.startsWith("Tests:")), "informing labels stay");
+  assert.ok(brief.details.some((d) => d === "Next: queued follow-ups (analytics SWR cache, new-tab extraction)."), "none-prefix content is kept, prefix stripped");
+  assert.ok(!brief.details.some((d) => d.startsWith("Unresolved:")), "filler labels are gone");
+  assert.ok(!brief.details.join("\n").includes("not recorded"), "no placeholders leak through");
+});
+
+test("v0.38.14: terminal brief resolves through the same facts as the compact recap", () => {
+  const brief = terminalHumanBrief({
+    goal: seedGoal({ status: "active", objective: "terminal brief", completionSummary: SIX }) as any,
+    status: "complete",
+    stopReason: "auditor approved",
+    archivePath: ".pi-glla/archive/terminal-brief.md",
+  });
+  assert.equal(brief.outcome, "shipped the thing");
+  assert.ok(brief.details.length >= 2, "informing labels survive the terminal path");
+});
+
 test("the ✓ done chat notifies use the line block; external keeps the single line", () => {
   const hooks = fs.readFileSync("extensions/loops/goal-auditor-hooks.ts", "utf8");
-  assert.match(hooks, /terminalCompletionSummaryLines\(/);
-  assert.match(hooks, /✓ done — auditor /);
-  assert.match(hooks, /recapLines\.join\("\\n"\)/);
+  assert.match(hooks, /terminalHumanBrief\(/);
+  assert.match(hooks, /✓ done — \$\{brief\.outcome\}/);
+  assert.match(hooks, /— auditor \$\{result\.model\} approved/);
   const tools = fs.readFileSync("extensions/loops/goal-tools.ts", "utf8");
-  assert.equal(tools.match(/terminalCompletionSummaryLines\(/g)?.length ?? 0, 2, "both tool ✓ done paths use the block");
+  assert.equal(tools.match(/terminalHumanBrief\(/g)?.length ?? 0, 2, "both tool ✓ done paths use the briefing");
   assert.match(tools, /notifyExternal\(ctx, `Goal complete \(auditor approved\): \$\{recap\}`\)/, "external notify keeps the compact line");
 });
