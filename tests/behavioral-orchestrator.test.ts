@@ -3527,10 +3527,12 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     assert.ok(recapNotifs.some((n: { message: string }) => n.message.includes("Changed:") && n.message.includes("\n")), "the recap arrives as one-label-per-line, not the single-line mash");
     assert.equal(ctx.ui.matching("✓ done").length, 1, "the recap line is the single decisive end-of-goal voice");
     assert.match(recapNotifs[0]!.message, /^✓ done — Pinned the R-key\/HUD retire parity/, "the briefing leads with the outcome in the header");
-    for (const label of ["Changed:", "Evidence:", "Tests:", "Next:"]) {
+    for (const label of ["Changed:", "Evidence:", "Tests:"]) {
       assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `approved briefing keeps informing label ${label}`);
     }
-    assert.ok(!recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith("Unresolved:")), "filler Unresolved: none is dropped from the briefing");
+    for (const label of ["Unresolved:", "Next:"]) {
+      assert.ok(!recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `filler ${label} none is dropped from the briefing`);
+    }
     assert.doesNotMatch(recapNotifs[0]!.message, / · /, "approved briefing is lines, not the single-line mash");
     assert.match(recapNotifs[0]!.message, /…/, "long approved recap values are bounded");
     assert.doesNotMatch(recapNotifs[0]!.message, new RegExp(`(${"durable-proof-marker "}){20}`), "approved notification does not flatten the full long recap");
