@@ -246,6 +246,168 @@ function safeFileMarkerCompound(command: string): string[] | null {
   return [`test -${flag} ${testPath}`, `grep -q ${marker} ${grepPath}`];
 }
 
+/**
+ * v0.38.18 (track 1: endless-td pipe-syntax wedge): a narrow pipeline form.
+ * Contracts legitimately truncate noisy suites (`bun test 2>&1 | tail -n 4`);
+ * rejecting the `|` deterministically fast-failed finished work with no
+ * agent-side remedy. A pipeline is accepted only when EVERY segment is
+ * independently safe: the head is an ordinary safe command (resolved through
+ * the canonical runner exactly like a bare command) and each tail segment is
+ * an allowlisted text filter. Execution never touches a shell — the head
+ * runs through runMechanicalCommand and each filter is spawned with piped
+ * stdio. The pipeline passes iff the HEAD exits 0 (pipefail-head semantics:
+ * `tail` exits 0 even when the suite is red, so the tail's status is
+ * meaningless); filters only truncate evidence. `2>&1` on the head is
+ * accepted and ignored — head output already merges stderr. Every other
+ * redirect, substitution, quote, or second program stays exit-126 rejected.
+ */
+const MECHANICAL_HEAD_REDIRECT = /\s*2>&1\s*$/;
+const MECHANICAL_TAIL_FILTER = /^(?:tail|head)\s+-[nc]\s+\d{1,6}$/;
+const MECHANICAL_GREP_FILTER = /^grep\s+(?:-[a-z]+\s+)?[A-Za-z0-9_./:@=+,%-]+$/;
+
+function isAllowlistedMechanicalFilter(segment: string): boolean {
+  return MECHANICAL_TAIL_FILTER.test(segment) || MECHANICAL_GREP_FILTER.test(segment);
+}
+
+interface MechanicalPipeline {
+  head: string;
+  filters: string[];
+}
+
+/** Split a `head | filter | ...` command, or return null when any segment
+ * is outside the narrow allowed shape (callers fall through to the 126
+ * unsafe rejection). Naive `|` splitting is safe here: quotes and
+ * escapes are rejected characters, so a `|` is always a real pipe. */
+export function parseMechanicalPipeline(command: string): MechanicalPipeline | null {
+  if (!command.includes("|")) return null;
+  const segments = command.split("|").map((s) => s.trim());
+  if (segments.length < 2 || segments.some((s) => !s)) return null;
+  let head = segments[0]!.replace(MECHANICAL_HEAD_REDIRECT, "").trim();
+  if (!head) return null;
+  if (!isSafeMechanicalCommand(head)) return null;
+  const filters = segments.slice(1);
+  if (!filters.every(isAllowlistedMechanicalFilter)) return null;
+  return { head, filters };
+}
+
+const MECHANICAL_FILTER_STAGE_TIMEOUT_MS = 30_000;
+
+function runMechanicalFilterStage(
+  input: string,
+  filter: string,
+  timeoutMs: number,
+): Promise<{ output: string; exitCode: number; timedOut: boolean; launchError?: string }> {
+  return new Promise((resolve) => {
+    const [program = "", ...args] = filter.split(/[ \t]+/);
+    let child: ChildProcess;
+    try {
+      child = spawn(program, args, {
+        detached: process.platform !== "win32",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (error) {
+      resolve({ output: "", exitCode: 1, timedOut: false, launchError: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    let output = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      resolve({ output: output.slice(-MECHANICAL_OUTPUT_TAIL_CHARS), exitCode: 1, timedOut: true });
+    }, timeoutMs);
+    child.stdout?.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+      if (output.length > MECHANICAL_OUTPUT_TAIL_CHARS * 2) {
+        output = output.slice(-MECHANICAL_OUTPUT_TAIL_CHARS);
+      }
+    });
+    child.stderr?.on("data", () => { /* filter diagnostics never enter evidence */ });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ output: "", exitCode: 1, timedOut: false, launchError: error.message });
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ output: output.slice(-MECHANICAL_OUTPUT_TAIL_CHARS), exitCode: code ?? 1, timedOut: false });
+    });
+    try {
+      child.stdin?.write(input);
+      child.stdin?.end();
+    } catch { /* stdin already closed */ }
+  });
+}
+
+async function runMechanicalPipeline(
+  cwd: string,
+  pipeline: MechanicalPipeline,
+  rawCommand: string,
+  scripts: Record<string, string>,
+  effectiveTimeoutMs: number,
+  signal: AbortSignal | undefined,
+  effectiveProcessGroupSize: number,
+): Promise<MechanicalCheckResult> {
+  if (process.platform === "win32") {
+    return {
+      passed: false,
+      failedCommand: rawCommand,
+      output: "Mechanical pipelines need POSIX coreutils (tail/head/grep) and are not supported on Windows; reword the contract line to a bare runner invocation.",
+      exitCode: 126,
+    };
+  }
+  const { program, args } = resolveCanonicalRunnerCommand(pipeline.head, scripts);
+  if (!program) {
+    return { passed: false, failedCommand: rawCommand, output: "Empty mechanical command.", exitCode: 126 };
+  }
+  // ONE bounded automatic retry for the whole pipeline on a plain head
+  // failure (mirrors the single-command v0.35.20 retry); containment
+  // events fail immediately without a second untrusted process tree.
+  let firstFailure: { output: string; exitCode: number } | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const head = await runMechanicalCommand(cwd, program, args, effectiveTimeoutMs, signal, effectiveProcessGroupSize);
+    if (head.timedOut || head.aborted || head.outputLimit || head.processGroupLimit) {
+      return { passed: false, failedCommand: rawCommand, ...formatMechanicalFailure(head, effectiveTimeoutMs) };
+    }
+    let stageInput = head.output;
+    let stageFailed: { output: string; exitCode: number } | null = null;
+    for (const filter of pipeline.filters) {
+      const stage = await runMechanicalFilterStage(stageInput, filter, MECHANICAL_FILTER_STAGE_TIMEOUT_MS);
+      if (stage.timedOut || stage.launchError) {
+        stageFailed = {
+          output: `[pipeline filter '${filter}' did not complete: ${stage.timedOut ? "timed out" : stage.launchError}]`,
+          exitCode: 1,
+        };
+        break;
+      }
+      stageInput = stage.output;
+    }
+    if (stageFailed) {
+      return { passed: false, failedCommand: rawCommand, ...stageFailed };
+    }
+    if (head.exitCode === 0) {
+      return { passed: true };
+    }
+    const evidence = [`[pipeline head exited ${head.exitCode}]`, stageInput || "(no output survived the filters)"]
+      .join("\n")
+      .slice(-MECHANICAL_OUTPUT_TAIL_CHARS);
+    if (attempt === 1) {
+      firstFailure = { output: evidence, exitCode: head.exitCode };
+    } else {
+      return {
+        passed: false,
+        failedCommand: rawCommand,
+        output: `[mechanical pipeline retried once after a failed first attempt (head exit ${firstFailure!.exitCode}); second attempt also failed — output tail below]\n` + evidence,
+      };
+    }
+  }
+  return { passed: false, failedCommand: rawCommand, output: firstFailure?.output ?? "", exitCode: firstFailure?.exitCode ?? 1 };
+}
+
 const DEFAULT_MECHANICAL_CHECK_TIMEOUT_MS = 600_000;
 const MECHANICAL_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MECHANICAL_OUTPUT_TAIL_CHARS = 64 * 1024;
@@ -590,6 +752,11 @@ export async function runMechanicalPreAuditChecks(
     : DEFAULT_MECHANICAL_CHECK_TIMEOUT_MS;
   const effectiveProcessGroupSize = normalizeMechanicalProcessGroupLimit(maxProcessGroupSize);
   const recoveredRetries: string[] = [];
+  let scripts: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8"));
+    if (pkg && typeof pkg.scripts === "object" && pkg.scripts) scripts = pkg.scripts;
+  } catch { /* no package.json — nothing to resolve */ }
   for (const rawCommand of commands) {
     const cmd = rawCommand.trim();
     const compound = safeFileMarkerCompound(cmd);
@@ -603,11 +770,21 @@ export async function runMechanicalPreAuditChecks(
       }
       continue;
     }
+    // v0.38.18 (track 1): narrow `head | tail/head/grep` pipelines run
+    // shell-free before the single-command gate below.
+    const pipeline = parseMechanicalPipeline(cmd);
+    if (pipeline) {
+      const pipelineResult = await runMechanicalPipeline(cwd, pipeline, rawCommand, scripts, effectiveTimeoutMs, signal, effectiveProcessGroupSize);
+      if (!pipelineResult.passed) return pipelineResult;
+      continue;
+    }
     if (!isSafeMechanicalCommand(cmd)) {
       return {
         passed: false,
         failedCommand: rawCommand,
-        output: "Rejected unsafe mechanical command syntax; only a single executable followed by literal arguments is allowed.",
+        output: cmd.includes("|")
+          ? "Rejected unsafe mechanical pipeline syntax; only `command | tail -n N`, `command | head -n N`, and `command | grep <literal>` are allowed (no redirects except a trailing 2>&1, no second program)."
+          : "Rejected unsafe mechanical command syntax; only a single executable followed by literal arguments is allowed.",
         exitCode: 126,
       };
     }
@@ -617,11 +794,7 @@ export async function runMechanicalPreAuditChecks(
     // flags the suite requires (serialization/isolation/timeouts). Running
     // the bare runner ignores that configuration and fails spuriously while
     // the real gate is green (field: fourth audit round, 2026-08-21).
-    let scripts: Record<string, string> = {};
-    try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8"));
-      if (pkg && typeof pkg.scripts === "object" && pkg.scripts) scripts = pkg.scripts;
-    } catch { /* no package.json — nothing to resolve */ }
+    // (scripts are loaded once above the loop so the pipeline path shares them.)
     const { program, args } = resolveCanonicalRunnerCommand(cmd, scripts);
     if (!program) {
       return { passed: false, failedCommand: rawCommand, output: "Empty mechanical command.", exitCode: 126 };
