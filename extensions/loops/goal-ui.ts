@@ -1046,6 +1046,12 @@ function isContextStarvedRefused(): boolean {
 export function __testOnlySetLastCompactionAt(at: number | null): void {
   lastCompactionAt = at ?? 0;
 }
+/** Test-only: set the real-stream clock directly so busy-silence scenarios
+ * (answered question, phantom-busy host, zero stream) are drivable without
+ * wall-clock waits. Exported through loops/goal.js like the other hooks. */
+export function __testOnlySetLastRealActivityAt(at: number): void {
+  lastRealActivityAt = at;
+}
 
 /** Test-only: expose the live activity projection without requiring a TUI
  * renderer. This drives the same scope/timestamp checks used by refreshUI. */

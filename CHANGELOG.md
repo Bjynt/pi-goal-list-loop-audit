@@ -10,6 +10,13 @@
 
   Live auditor inspection: opt-in `auditorInspection` setting (global-only; default off). When on, the detached auditor's pi runs as a **normal persistent session** pinned inside the job dir (`--session <jobDir>/session.jsonl`) instead of the original `--no-session`, so you can `tail -f` it live (read-only while the audit runs) and resume it interactively after completion (`pi --session <path>` / `pi --fork <path>`). Off (default) keeps the original `--no-session` spawn byte-identical. The session file's lifetime equals the job-dir retention window (`auditJobRetentionMs`) — no new cleanup path. `progress.json` carries `sessionPath`; the audit card shows a `session: <path> — tail -f it live` line while running, and the approval notification points at the kept session for post-audit review. Settings row + editor + headless dump line included; real-worker spawn-spec and progress-shape tests in `tests/auditor-process.test.ts`.
 
+## 0.38.18 — completion/lifecycle field trilogy (2026-09-04)
+
+### Fixed
+- Track 1 (pipe-syntax): the mechanical pre-audit checker runs narrow `cmd 2>&1 | tail/head/grep` pipelines shell-free with pipefail-head semantics instead of 126-rejecting finished work (`parseMechanicalPipeline`, `runMechanicalPipeline`; `tee`/grep-file-flags still refused).
+- Track 2 (post-answer stall): a turn that never streamed parks on the first abort with no hot retry (`zombie_auto_retry_refused_never_streamed`, honest park copy), and the rearm milestone names an open-but-silent turn instead of claiming "no turn started".
+- Track 3 (stale waiting-verdict): the detached-approval branch delivers the `✓ done` brief into the conversation as a fire-once followUp turn (`sendTerminalCompletionNotice`), so the transcript records the archive instead of narrating "waiting" forever. Skipped for manual `/goal verify` (in-turn closure already exists).
+
 ## 0.38.17 — release-contract docs trail (2026-09-04)
 
 ### Fixed
