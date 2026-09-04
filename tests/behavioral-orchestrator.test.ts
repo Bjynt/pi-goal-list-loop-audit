@@ -3256,7 +3256,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived and closed the goal");
     // v0.34.91: the detached-settle chat notify carries the recap (what
     // happened), not "auditor approved" boilerplate.
-    assert.equal(ctx.ui.matching("✓ done: Outcome: The detached completion path is covered").length, 1, "exactly one final notification surfaces the recap projection");
+    assert.equal(ctx.ui.matching("Outcome: The detached completion path is covered").length, 1, "exactly one final notification surfaces the recap block");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
@@ -3523,11 +3523,14 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     }, ctx);
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);
     const recapNotifs = ctx.ui.matching("Pinned the R-key/HUD retire parity");
-    if (recapNotifs.length === 0) console.log("DBG-NOTIFIES:", JSON.stringify(ctx.ui.notifies.map((n: { message: string }) => n.message.slice(0, 200))));
     assert.ok(recapNotifs.length > 0, "the settle notify carries the recap (what happened), not 'auditor approved' alone");
+    assert.ok(recapNotifs.some((n: { message: string }) => n.message.includes("Changed:") && n.message.includes("\n")), "the recap arrives as one-label-per-line, not the single-line mash");
     assert.equal(ctx.ui.matching("✓ done").length, 1, "the recap line is the single decisive end-of-goal voice");
     assertCompactRecap(recapNotifs[0]!.message, "approved terminal notification");
-    assert.match(recapNotifs[0]!.message, / · /, "approved notification is the six-label compact projection");
+    assert.doesNotMatch(recapNotifs[0]!.message, / · /, "approved notification is the line block, not the single-line mash");
+    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) {
+      assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `approved notification carries ${label} on its own line`);
+    }
     assert.match(recapNotifs[0]!.message, /…/, "long approved recap values are bounded");
     assert.doesNotMatch(recapNotifs[0]!.message, /durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker/, "approved notification does not flatten the full long recap");
     assert.doesNotMatch(recapNotifs.join("\n"), /^Goal complete — auditor /, "the old process-only line is gone");

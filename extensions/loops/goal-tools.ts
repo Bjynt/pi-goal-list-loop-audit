@@ -1249,6 +1249,13 @@ function registerAgentTools(pi: any): void {
           stopReason: terminalReason,
           archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
         }, state.goal.completionSummary);
+        // Computed pre-archive: archiveCurrentGoal clears state.goal.
+        const recapLines = terminalCompletionSummaryLines({
+          goal: state.goal,
+          status: "complete",
+          stopReason: terminalReason,
+          archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
+        }, state.goal.completionSummary);
         const archived = archiveCurrentGoal(ctx, "complete", terminalReason);
         if (!archived) {
           // The archive helper preserves the live objective and emits the
@@ -1264,12 +1271,6 @@ function registerAgentTools(pi: any): void {
           appendLedger(ctx.cwd, "goal_archive_failed_after_approval", { goalId: state.goal?.id, origin: "manual-verify", model: result.model });
           return { content: [{ type: "text", text: "The auditor approved, but the terminal archive could not be persisted. The goal is paused; fix persistence, resume, and retry complete_goal." }], details: {} };
         }
-        const recapLines = terminalCompletionSummaryLines({
-          goal: state.goal,
-          status: "complete",
-          stopReason: terminalReason,
-          archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
-        }, state.goal.completionSummary);
         ctx.ui.notify(`✓ done — auditor ${result.model} approved.\n${recapLines.join("\n")}`, "info");
         notifyExternal(ctx, `Goal complete (auditor approved): ${recap}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
