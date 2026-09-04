@@ -277,7 +277,15 @@ export function zombieRetryDecision(
   key: string,
   prev: ZombieRetryStreak,
   maxAttempts = DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
-): { retry: boolean; streak: ZombieRetryStreak } {
+  // v0.38.18 (track 2: neonbreak never-streamed hot loop): the stream clock
+  // observed when the aborted turn STARTED. When the abort's observation
+  // point never advanced past it, the turn produced zero stream activity in
+  // its whole life — an immediate retry replays the same silence (field:
+  // 3 abort cycles in 5m, same frozen clock, 23k full payload each). Refuse
+  // at once and park for an explicit resume instead of burning the budget.
+  // 0/unknown preserves the legacy behavior (retry within budget).
+  turnStartAt = 0,
+): { retry: boolean; streak: ZombieRetryStreak; neverStreamed?: boolean } {
   const limit = Number.isInteger(maxAttempts) && maxAttempts >= 0
     ? Math.min(maxAttempts, MAX_ZOMBIE_RETRY_ATTEMPTS)
     : DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
@@ -287,6 +295,9 @@ export function zombieRetryDecision(
   const streak: ZombieRetryStreak = sameEpisode
     ? { key, count: Math.min(prev.count + 1, MAX_ZOMBIE_RETRY_ATTEMPTS + 1), lastAbortStreamAt: observedStreamAt }
     : { key, count: 1, lastAbortStreamAt: observedStreamAt };
+  if (turnStartAt > 0 && observedStreamAt <= turnStartAt) {
+    return { retry: false, streak, neverStreamed: true };
+  }
   return { retry: streak.count <= limit, streak };
 }
 
