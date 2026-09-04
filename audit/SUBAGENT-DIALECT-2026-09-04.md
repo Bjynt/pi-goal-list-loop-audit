@@ -43,3 +43,6 @@ prompts were speaking a dead dialect**.
   (`context-checkpoint` 25833→25813; growth-measurement rows likewise; linearity
   invariants hold).
 - `TMPDIR=/var/tmp npm run release:check`: **1899 pass, 0 fail**; `tsc` clean.
+- Process miss: the version was bumped AFTER the gate, so the gate ran at 0.38.15 while
+  `docs/INDEX.md` still trailed — the publish gate failed on the release-contract
+  docs-index pin. Fixed as v0.38.17 with the trail update in-tree before tagging.

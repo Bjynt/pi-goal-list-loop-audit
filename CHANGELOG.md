@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.17 — release-contract docs trail (2026-09-04)
+
+### Fixed
+  `docs/INDEX.md` trail reaches the current version (the v0.38.16 tag shipped without it, failing the publish gate's docs-index pin). Process lesson, now enforced by habit: bump the version FIRST and run the gate against the release tree, or keep `docs/INDEX.md` in the same commit as the bump — the release-contract test already demands it.
+
 ## 0.38.16 — subagent dialect (2026-09-04)
 
 ### Fixed
