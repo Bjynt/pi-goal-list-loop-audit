@@ -164,7 +164,9 @@ test("v0.34.92: session_start re-arms the hourly ticker when recovery is parked"
   // session_start handler grew past 20k chars in v0.35.21 (the restore
   // gained the disk-sidecar queue convergence block); slice enough to
   // still cover the schedule call at the bottom of the recovery block.
-  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 26_000);
+  // v0.38.12: the last-wins supersede block added ~700 chars above the
+  // recovery block — 28k keeps both schedule calls inside the window.
+  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 28_000);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "session_start re-schedules recovery");
   assert.match(tail, /scheduleHourlyProbe\(ctx\);/, "session_start also re-arms the hourly ticker");
 });

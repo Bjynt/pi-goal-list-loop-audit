@@ -545,28 +545,41 @@ test("v0.34.119: /glla cancel also aborts an auditing list objective and clears 
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
-test("v0.35.0: a conflicting /goal start offers update, replace, or cancel without silent overwrite", async () => {
+test("v0.35.0 (v0.38.12 last-wins): /goal start replaces without dialog; plain /goal still offers update/cancel", async () => {
   __testOnlyResetStaleFlag();
   setGlobalAutoResume(true);
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ objective: "current objective — done when current proof exists" }) });
   const ctx = await freshSession(cwd, "reload");
   const original = readState(cwd).goal as { id: string; objective: string };
-  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Update current objective");
+  // v0.38.12: /goal start is explicit consent — the conflict dialog is
+  // skipped even when it would have offered Update. The spy proves no
+  // dialog ran: the new objective is simply the real one now.
+  const conflictTitles: string[] = [];
+  ctx.ui.selectImpl = async (title, options) => {
+    if (String(title).includes("already active")) conflictTitles.push(String(title));
+    return options.find((option) => option === "Update current objective");
+  };
   await pi.command("goal", "start updated current objective — done when updated proof exists", ctx);
-  assert.equal((readState(cwd).goal as { id: string }).id, original.id, "update keeps the current objective identity");
+  assert.equal(conflictTitles.length, 0, "/goal start asks nothing");
+  assert.notEqual((readState(cwd).goal as { id: string }).id, original.id, "start replaces the identity");
   assert.match((readState(cwd).goal as { objective: string }).objective, /updated current objective/);
-  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 0, "update does not archive the current objective");
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 1, "start archives the prior objective");
+  assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /start-explicit/);
 
+  // The plain /goal verb keeps the full dialog: cancel preserves.
   ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Cancel new objective");
-  await pi.command("goal", "start cancelled replacement — done when never starts", ctx);
+  await pi.command("goal", "cancelled replacement — done when never starts", ctx);
   assert.match((readState(cwd).goal as { objective: string }).objective, /updated current objective/);
-  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 0, "cancel preserves the current objective");
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 1, "cancel preserves the current objective");
 
-  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Replace current objective");
-  await pi.command("goal", "start replacement objective — done when replacement proof exists", ctx);
-  assert.match((readState(cwd).goal as { objective: string }).objective, /replacement objective/);
-  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 1, "replace archives the prior objective");
+  // ...and update still edits in place with no archive.
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Update current objective");
+  const beforeUpdate = readState(cwd).goal as { id: string };
+  await pi.command("goal", "tweaked current objective — done when tweaked proof exists", ctx);
+  assert.equal((readState(cwd).goal as { id: string }).id, beforeUpdate.id, "plain-goal update keeps the identity");
+  assert.match((readState(cwd).goal as { objective: string }).objective, /tweaked current objective/);
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 1, "update does not archive the current objective");
   assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /objective_conflict_resolved/);
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });

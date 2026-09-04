@@ -264,9 +264,15 @@ test("heartbeat refresh is throttled and owner-scoped", async () => {
   const cwd = tmpCwd();
   __testOnlyResetOwnerHeartbeat();
   assert.equal(claimProcessOwner(cwd), true);
+  // Drive the throttle with controlled timestamps — asserting against the
+  // file's own `at` raced the millisecond clock under suite load.
+  const t0 = Date.now();
+  refreshOwnerHeartbeat(cwd, t0);
   const first = (readOwnerFile(cwd) as any).at as number;
-  refreshOwnerHeartbeat(cwd, first + 1000);
+  refreshOwnerHeartbeat(cwd, t0 + 1000);
   assert.equal((readOwnerFile(cwd) as any).at, first, "second refresh inside 60s is a no-op");
+  refreshOwnerHeartbeat(cwd, t0 + 61_000);
+  assert.ok((readOwnerFile(cwd) as any).at >= first, "refresh after 60s writes");
   // A foreign live owner must never be overwritten by our heartbeat.
   const child = spawnSleep();
   await new Promise((r) => setTimeout(r, 100));
@@ -326,5 +332,8 @@ test("source pins the new escape hatches on both read-only warnings", () => {
   const activation = fs.readFileSync("extensions/loops/goal-activation.ts", "utf8");
   const session = fs.readFileSync("extensions/loops/goal-session.ts", "utf8");
   assert.match(activation, /\/glla owner inspects the holder; \/glla takeover resolves it/);
-  assert.match(session, /\/glla owner inspects the holder; \/glla takeover resolves it/);
+  // v0.38.12 (last-wins): the command-entry warning names the newer
+  // session and the automatic path back (fresh session takes over).
+  assert.match(session, /a newer pi session owns this working-directory state root/);
+  assert.match(session, /Start a fresh session to take it back/);
 });
