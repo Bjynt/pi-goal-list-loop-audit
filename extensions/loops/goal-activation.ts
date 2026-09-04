@@ -460,6 +460,13 @@ const ZOMBIE_PAUSE_REASON = "automatic zero-stream abort — no provider activit
 // the park standing for manual resume — an honest degradation.
 let zombieRetryStreak: ZombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
 let zombieRetryTimer: NodeJS.Timeout | null = null;
+// v0.38.18 (track 2): the stream clock when the current turn's begin-marker
+// was last observed. Compared against the abort's observation point to tell
+// "wedged after streaming" (deserves budget retries) from "never streamed
+// since birth" (an immediate retry replays the silence — park at once).
+// 0 means no begin-marker observed (extension loaded mid-turn): unknown, and
+// unknown preserves the legacy retry-within-budget behavior.
+let lastTurnStartAt = 0;
 // An in-band provider pane is observed during tool_result and consumed at the
 // matching agent_end. Keep the raw text only in memory; the durable ledger
 // records the bounded classification, never the provider payload.
@@ -482,10 +489,10 @@ function scheduleZombieAutoRetry(
   const maxAttempts = zombieRetryMaxAttemptsOverride
     ?? loadSettings(ctx.cwd).zombieRetryMaxAttempts
     ?? DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
-  const { retry, streak } = zombieRetryDecision(observedStreamAt, key, zombieRetryStreak, maxAttempts);
+  const { retry, streak, neverStreamed } = zombieRetryDecision(observedStreamAt, key, zombieRetryStreak, maxAttempts, lastTurnStartAt);
   zombieRetryStreak = streak;
-  const plan = { scheduled: retry, attempt: streak.count, maxAttempts };
-  appendLedger(ctx.cwd, retry ? "zombie_auto_retry_scheduled" : "zombie_auto_retry_refused_streak", {
+  const plan = { scheduled: retry, attempt: streak.count, maxAttempts, reason: neverStreamed ? "never-streamed" as const : retry ? undefined : "budget-exhausted" as const };
+  appendLedger(ctx.cwd, retry ? "zombie_auto_retry_scheduled" : neverStreamed ? "zombie_auto_retry_refused_never_streamed" : "zombie_auto_retry_refused_streak", {
     goalId,
     streakCount: streak.count,
     maxAttempts,
@@ -566,6 +573,12 @@ export function __testOnlyResetZombieAutoRetry(): void {
   }
   zombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
   zombieRetryMaxAttemptsOverride = null;
+  lastTurnStartAt = 0;
+}
+
+/** Test-only: pretend a turn begin-marker was observed at the given clock. */
+export function __testOnlySetTurnStartAt(at: number): void {
+  lastTurnStartAt = at;
 }
 
 let zombieRetryDelayOverride: number | null = null;
@@ -621,7 +634,7 @@ export function abortZombieRun(
       status: "paused",
       pauseKind: "error",
       pauseReason: reason,
-      pauseSuggestedAction: `The stalled ${noun} turn was aborted safely and the work is saved. Automatic retries use the configured zero-stream budget; ${activeGoalSurfaceCommand("resume")} retries immediately and ${activeGoalSurfaceCommand("cancel")} discards it.`,
+      pauseSuggestedAction: `The stalled ${noun} turn was aborted safely and the work is saved. ${lastTurnStartAt > 0 && observedStreamAt <= lastTurnStartAt ? `The turn never produced stream activity, so no automatic retry was scheduled; ${activeGoalSurfaceCommand("resume")} retries immediately and ${activeGoalSurfaceCommand("cancel")} discards it.` : `Automatic retries use the configured zero-stream budget; ${activeGoalSurfaceCommand("resume")} retries immediately and ${activeGoalSurfaceCommand("cancel")} discards it.`}`,
     }, current);
   } else if (loop) {
     clearLoopTimer();
@@ -649,6 +662,9 @@ export function abortZombieRun(
   // v0.35.x: keep the park as a bounded waystation for repeated
   // zero-stream attempts. Once the configured budget is exhausted the
   // refusal remains manual and durable.
+  // v0.38.18 (track 2): a turn that never streamed gets no hot retry — say
+  // so in the park copy instead of promising budget retries that never come.
+  const neverStreamed = lastTurnStartAt > 0 && observedStreamAt <= lastTurnStartAt;
   const retryPlan = scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes);
   const loopRecap = loop
     ? compactLoopCompletionSummary({ ...loop, historyLength: loop.history.length })
@@ -656,7 +672,9 @@ export function abortZombieRun(
   const message = `${goal ? goal.policy === "list" ? "List item" : "Goal" : "Loop"} paused after ${silentMinutes}m with zero stream activity; the zombie turn was aborted and queued retries were stopped. Work is saved. ${
     retryPlan.scheduled
       ? `Automatic retry ${retryPlan.attempt}/${retryPlan.maxAttempts} starts in ~90s; ${resume} retries immediately instead.`
-      : `${resume} retries it, or ${cancel} discards/stops it; the automatic retry budget is exhausted.`
+      : retryPlan.reason === "never-streamed"
+        ? `The turn never produced stream activity, so no automatic retry was scheduled — a retry would replay the same silence. ${resume} retries it, or ${cancel} discards/stops it.`
+        : `${resume} retries it, or ${cancel} discards/stops it; the automatic retry budget is exhausted.`
   }${loopRecap ? `\nRecap: ${loopRecap}` : ""}`;
   current.ui.notify(message, abortError ? "warning" : "info");
   notifyExternal(current, message);
@@ -2590,6 +2608,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     ensureAgentToolsReady(ctx, true);
     lastStreamActivityAt = Date.now();
+    lastTurnStartAt = lastStreamActivityAt;
     streamActivityObserved = true;
     // v0.32.1: a real turn started — the post-compaction resume debt is
     // discharged (the heartbeat stops retrying it).
@@ -2605,6 +2624,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     ensureAgentToolsReady(ctx, true);
     lastStreamActivityAt = Date.now();
+    lastTurnStartAt = lastStreamActivityAt;
     streamActivityObserved = true;
     dispatchStartAcknowledged(ctx, "turn_start");
   });
