@@ -68,7 +68,12 @@ function spawnSleep(marker = "77773"): ChildProcess {
   return c;
 }
 function readLedger(cwd: string): Array<{ type: string; value?: any }> {
-  const raw = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  let raw = "";
+  try {
+    raw = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  } catch {
+    return []; // refused/quiet paths may write nothing at all
+  }
   return raw.split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 function ownerCtx(cwd: string): MockCtx {
@@ -176,11 +181,15 @@ async function activateFreshObjective(cwd: string, oldId: string, fence: boolean
   seedState(cwd, {
     goal: seedGoal({ id: oldId, objective: "Repaint the old shed", status: "active" }),
   });
+  const ctx = await freshSession(cwd);
   if (fence) {
+    // The winner must appear AFTER restore settles: the continuation
+    // guard treats a pre-existing archive file as "already archived"
+    // and clears the live goal before replacement can run. No await
+    // between the fence and the command, so no timer can interleave.
     fs.mkdirSync(path.join(cwd, ".pi-glla", "archive"), { recursive: true });
     fs.writeFileSync(path.join(cwd, ".pi-glla", "archive", `${oldId}.md`), "# pre-existing winner\n");
   }
-  const ctx = await freshSession(cwd);
   // /goal start bypasses drafting (explicit user command) and drives
   // cmdSet → setGoal, which is where the replacement branch lives. (The
   // draft tool preserves a live goal by design — replacement is explicit.)
