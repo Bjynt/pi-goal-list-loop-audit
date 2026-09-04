@@ -165,6 +165,7 @@ import {
   setLastContinuationSentPayloadRef,
   setContinuationRearmStreak,
   setContinuationRearmSince,
+  sendTerminalCompletionNotice,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
@@ -1443,6 +1444,19 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     // single line (pager/sound safe).
     liveCtx.ui.notify(`✓ done — ${brief.outcome}\n${[...brief.details, `— auditor ${result.model} approved${approvalVia}.`].join("\n")}`, "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${recap}`);
+    // v0.38.18 (track 3): the toast above is ephemeral — without a
+    // transcript entry the session keeps narrating "waiting on the
+    // auditor's verdict" after the archive (junk-runner field). Deliver
+    // the brief into the conversation. Skipped for manual /goal verify:
+    // that runs inside a turn whose command output already closes the
+    // transcript. Fire-once fenced inside the sender.
+    if (origin !== "manual") {
+      sendTerminalCompletionNotice(liveCtx, {
+        goalId,
+        outcome: brief.outcome,
+        details: [...brief.details, `— auditor ${result.model} approved${approvalVia}.`],
+      });
+    }
     return;
   }
 

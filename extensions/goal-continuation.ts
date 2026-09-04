@@ -31,6 +31,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   appendLedger,
+  readLedgerTail,
   nowIso,
   newGoalId,
   archivedGoalPath,
@@ -1074,6 +1075,57 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
   }
   continuationScheduledFor = goalId;
   continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), delay);
+}
+
+export interface TerminalCompletionNotice {
+  goalId: string;
+  outcome: string;
+  details: string[];
+}
+
+/** v0.38.18 (track 3: junk-runner stale waiting-verdict): the detached
+ * verifier settles asynchronously — the transcript's last word is "the
+ * verdict will be applied asynchronously", and a toast is the only
+ * closure. A later "how are we looking" then truthfully re-reports the
+ * stale transcript as still-waiting even though the goal is archived.
+ * This delivers the `✓ done` brief INTO the conversation as a followUp
+ * turn so the transcript records the completion. Goal-null-safe (the goal
+ * is already archived when this fires), fire-once per goal via a durable
+ * ledger fence, and fenced like every other automatic send. Returns true
+ * when the notice was dispatched. */
+export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: TerminalCompletionNotice): boolean {
+  if (supervisorPaused(state)) return false;
+  if (mainModelRecoveryActive()) return false;
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
+  if (!flags.extensionApi) return false;
+  if (isForeignCtx(ctx)) return false;
+  try {
+    const already = readLedgerTail(ctx.cwd, 400, (entry) =>
+      entry.type === "terminal_completion_notice_sent" &&
+      typeof (entry.value as { goalId?: unknown } | null)?.goalId === "string" &&
+      (entry.value as { goalId: string }).goalId === notice.goalId,
+    );
+    if (already.length > 0) return false;
+  } catch {
+    return false;
+  }
+  const content = [
+    `✓ done — ${notice.outcome}`,
+    ...notice.details,
+    "— goal archived; nothing further is owed. Acknowledge briefly; start follow-up work only if asked.",
+  ].join("\n");
+  try {
+    flags.extensionApi.sendMessage({
+      customType: GOAL_EVENT_ENTRY,
+      content,
+      display: false,
+    }, { triggerTurn: true, deliverAs: "followUp" });
+  } catch {
+    appendLedger(ctx.cwd, "terminal_completion_notice_unsent", { goalId: notice.goalId });
+    return false;
+  }
+  appendLedger(ctx.cwd, "terminal_completion_notice_sent", { goalId: notice.goalId, payloadChars: content.length });
+  return true;
 }
 
 export function buildMarkerContent(goalId: string): string {
