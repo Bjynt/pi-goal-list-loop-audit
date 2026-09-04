@@ -24,7 +24,7 @@ Start your reply with exactly one line: `HYPOTHESIS: <what you will change and w
 Then make **ONE** concrete, inspectable change that advances the target.
 Then stop.
 
-**Default to subagents.** Use the `Agent` tool when a subagent adds value. If identifying the change needs research, spawn an
+**Default to subagents.** Use the `subagent` tool when a subagent adds value. If identifying the change needs research, spawn a
 `scout` subagent (several in parallel for disjoint areas); if the
 change decomposes, use `worker`. Eager continuation: if a subagent
 fails, retry with a different approach — just continue, don't stall the loop

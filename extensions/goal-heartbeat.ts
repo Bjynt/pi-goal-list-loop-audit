@@ -1537,7 +1537,7 @@ function heartbeatTick(): void {
         .map((t) => t.name),
     );
     const subHint = subWaits.size > 0
-      ? ` The in-flight call is a SUBAGENT WAIT (${[...subWaits].join("/")}) — check the Agents panel: a child whose tool-use/token counters have stopped moving between checks is hung, not thinking (hard failures surface as ✗ failed + the wait returns; a HANG is silent). Esc interrupts the wait — then collect the survivors with get_subagent_result and absorb the dead scope inline.`
+      ? ` The in-flight call is a SUBAGENT WAIT (${[...subWaits].join("/")}) — check the Agents panel: a child whose tool-use/token counters have stopped moving between checks is hung, not thinking (hard failures surface as ✗ failed + the wait returns; a HANG is silent). Esc interrupts the wait — then collect the survivors with bg_wait and absorb the dead scope inline.`
       : "";
     const msg = `${goalNoun()} appears wedged: no activity for ${Math.round((Date.now() - flags.lastActivityAt) / 60_000)}m while the session is busy — likely a hung command (test/build/dev server without a timeout).${subHint} Check the session; Esc kills a stuck tool call.`;
     appendLedger(ctx.cwd, "wedge_alert", { silentMs: Date.now() - flags.lastActivityAt, subagentWait: subWaits.size > 0 });

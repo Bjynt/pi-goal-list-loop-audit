@@ -1352,7 +1352,7 @@ export function continuationPrompt(goal: Goal): string {
   const requestedDesigner = goal.agentRole === "designer" || next?.agentRole === "designer";
   if (requestedDesigner) {
     directives.push(
-      "## DESIGNER ROLE REQUESTED\n\nThis objective or the next pending task explicitly requests design review. Use the `Agent` tool with agent name `Designer` before implementation to produce a concise architecture, risks, affected files, and verification plan. If that agent is unavailable or its provider fails, continue inline with the same design checkpoint and record the fallback; do not wait for or infer a provider reset.",
+      "## DESIGNER ROLE REQUESTED\n\nThis objective or the next pending task explicitly requests design review. Use the `subagent` tool with agent `Designer` before implementation to produce a concise architecture, risks, affected files, and verification plan. If that agent is unavailable or its provider fails, continue inline with the same design checkpoint and record the fallback; do not wait for or infer a provider reset.",
     );
   }
   if (goal.repairTarget) {
