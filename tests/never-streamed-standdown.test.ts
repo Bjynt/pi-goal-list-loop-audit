@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import {
+  DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
   zombieRetryDecision,
 } from "../extensions/goal-loop-backoff.js";
 import {
@@ -14,7 +15,6 @@ import {
   resetContinuationDispatchState,
 } from "../extensions/goal-continuation.js";
 import {
-  DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
   __testOnlyResetZombieAutoRetry,
   __testOnlySetZombieRetryDelay,
   __testOnlySetZombieRetryMaxAttempts,
