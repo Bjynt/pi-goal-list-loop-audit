@@ -13,6 +13,11 @@ auditor completion issue
 
 ##
 
+after draft operation aborted instead of starting 
+/home/dracon/Pictures/Screenshots/Screenshot_20260904_153208.png 
+
+##
+
 we need to look into antigravity more and their /teamwork-preview
 
 # Later
