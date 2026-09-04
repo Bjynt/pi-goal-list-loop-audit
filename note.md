@@ -2,7 +2,7 @@
 
 ## Done 2026-09-04 — subagent dialect (v0.38.16 shipped)
 
-Kept pi-subagents (tintinweb stays retired: dead upstream, no main/exports). The "does less" was our prompts naming the dead `Agent` tool — now `subagent` + `bg_wait`, live roles kept, provider-failure path fixed. pi-subagents 0.65 (native sessions) gets its own eval later.
+Kept pi-subagents (tintinweb stays retired: dead upstream, no main/exports). The "does less" was our prompts naming the dead `Agent` tool — now `subagent` + `bg_wait`, live roles kept, provider-failure path fixed. npm 0.38.17 live (0.38.16 tag failed the docs-index pin — version bumped after the gate; lesson recorded). pi-subagents 0.65 (native sessions) gets its own eval later.
 
 # Next
 
