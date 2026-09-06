@@ -975,8 +975,12 @@ let processOwnerDeniedCwd: string | null = null;
 /** v0.38.12 (last-wins sessions): how often a RUNNING session re-reads
  * the owner file. The claim is not a lease — a newer main host may have
  * stolen the root while we were working, and we must notice (and stand
- * down) instead of writing competitively forever. */
-const OWNERSHIP_RECHECK_MS = 30_000;
+ * down) instead of writing competitively forever. Audit 2026-09-06:
+ * 30s left a 30s competing-writes window for background (non-command)
+ * writers; 10s — a single tiny JSON read — shrinks it. Command entry
+ * re-gates on every invocation anyway (refuseIfDenied), so interactive
+ * writes were never the exposure. */
+const OWNERSHIP_RECHECK_MS = 10_000;
 let lastOwnershipRecheckAt = 0;
 
 /** v0.38.12: throttled self-check — does THIS process still own the root?
