@@ -2536,7 +2536,9 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (autoAccept) {
         confirmed = true;
-        liveCtx.ui.notify(`Loop draft auto-accepted (Auto-accept drafts = on in /glla settings): ${displaySlice(p.target.trim(), 90)}`, "info");
+        // Audit 2026-09-06: the measure test-run above already executed —
+        // an auto-accept must say so, or the exec is fully silent.
+        liveCtx.ui.notify(`Loop draft auto-accepted (Auto-accept drafts = on in /glla settings): ${displaySlice(p.target.trim(), 90)}${!metricless ? " — the measure command was already test-run once to establish the baseline" : ""}`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "loop", target: p.target.trim().slice(0, 200), metricless });
       } else {
         try {
@@ -2545,7 +2547,7 @@ function registerAgentTools(pi: any): void {
           "Confirm loop",
           metricless
             ? `Target: ${sanitizeDisplayText(p.target.trim())}\n\nMeasure: NONE — metricless spec loop. There is NO plateau stop: the loop ends only at ${max > 0 ? `${max} iterations` : "NO iteration cap"}${typeof p.time === "number" && p.time > 0 ? ` · Time bound: ${p.time}h` : ""}${typeof p.tokens === "number" && p.tokens > 0 ? ` · Token bound: ${p.tokens.toLocaleString()}` : ""}${cadenceMs ? ` · Cadence: ≥ ${Math.ceil(cadenceMs / 1_000)}s` : ""} · /loop stop.${p.branch ? "\nbranch mode: scratch branch, every iteration committed (clean tree required)" : ""}\n\nEvery iteration must make ONE real, inspectable change — cosmetic churn is the known failure mode (doorknob-polishing). Start it?`
-            : `Target: ${sanitizeDisplayText(p.target.trim())}\n\nMeasure: ${sanitizeDisplayText(p.measureCmd ?? "")}\nTest-run output: ${sanitizeDisplayText(rawOutput).slice(0, 200)}\nParsed number: ${parsed} (${p.direction === "min" ? "lower is better" : "higher is better"})\n\nPlateau stop: ${window} non-improving iterations · Cap: ${max > 0 ? `${max} iterations` : "none (unbounded)"}${typeof p.time === "number" && p.time > 0 ? ` · Time bound: ${p.time}h` : ""}${typeof p.tokens === "number" && p.tokens > 0 ? ` · Token bound: ${p.tokens.toLocaleString()}` : ""}${cadenceMs ? ` · Cadence: ≥ ${Math.ceil(cadenceMs / 1_000)}s` : ""}${p.branch ? "\nbranch mode: scratch branch (clean tree required)" : ""}\n\nThe loop never completes — it runs until one of these bounds, plateau, or /loop stop. Start it?`,
+            : `Target: ${sanitizeDisplayText(p.target.trim())}\n\nMeasure: ${sanitizeDisplayText(p.measureCmd ?? "")}\nTest-run output: ${sanitizeDisplayText(rawOutput).slice(0, 200)}\nParsed number: ${parsed} (${p.direction === "min" ? "lower is better" : "higher is better"})\nNote: the orchestrator already ran this command ONCE to produce the baseline above — confirming starts the loop, it does not re-run the test.\n\nPlateau stop: ${window} non-improving iterations · Cap: ${max > 0 ? `${max} iterations` : "none (unbounded)"}${typeof p.time === "number" && p.time > 0 ? ` · Time bound: ${p.time}h` : ""}${typeof p.tokens === "number" && p.tokens > 0 ? ` · Token bound: ${p.tokens.toLocaleString()}` : ""}${cadenceMs ? ` · Cadence: ≥ ${Math.ceil(cadenceMs / 1_000)}s` : ""}${p.branch ? "\nbranch mode: scratch branch (clean tree required)" : ""}\n\nThe loop never completes — it runs until one of these bounds, plateau, or /loop stop. Start it?`,
           );
           confirmed = c === "yes";
         } catch {
@@ -2640,14 +2642,14 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (loadSettings(liveCtx.cwd).autoAcceptDrafts === true) {
         confirmed = true;
-        liveCtx.ui.notify("Loop spec refinement auto-accepted (Auto-accept drafts = on in /glla settings).", "info");
+        liveCtx.ui.notify(`Loop spec refinement auto-accepted (Auto-accept drafts = on in /glla settings).${newMeasure !== loop.measureCmd ? " The new measure command was already test-run once to establish the baseline." : ""}`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "loop-refine" });
       } else {
         try {
           confirmed = (await confirmDraft(
             liveCtx,
             "Confirm loop spec refinement",
-          `Rationale: ${sanitizeDisplayText(p.rationale)}\n\nTarget:\n  old: ${displaySlice(loop.target, 120)}\n  new: ${displaySlice(newTarget, 120)}\n\nMeasure:\n  old: ${sanitizeDisplayText(loop.measureCmd ?? "none")}\n  new: ${sanitizeDisplayText(newMeasure)}${newMeasure !== loop.measureCmd ? `\n  test-run: ${sanitizeDisplayText(testOutput).slice(0, 120)} → ${newBaseline}` : ""}${specChange ? `\n\nSpec file (${sanitizeDisplayText(loop.specFile ?? "")}:\n  ${p.specText?.trim() ? `REPLACE with ${p.specText!.trim().length} chars` : ""}${p.specText?.trim() && p.specAppend?.trim() ? " + " : ""}${p.specAppend?.trim() ? `APPEND: ${sanitizeDisplayText(p.specAppend!.trim()).slice(0, 120)}` : ""}` : ""}\n\nThe loop ${wasActive ? "keeps running" : "stays stopped until /loop resume"} against the refined spec (iteration ${loop.iteration} so far). Apply?`,
+          `Rationale: ${sanitizeDisplayText(p.rationale)}\n\nTarget:\n  old: ${displaySlice(loop.target, 120)}\n  new: ${displaySlice(newTarget, 120)}\n\nMeasure:\n  old: ${sanitizeDisplayText(loop.measureCmd ?? "none")}\n  new: ${sanitizeDisplayText(newMeasure)}${newMeasure !== loop.measureCmd ? `\n  test-run (already executed once by the orchestrator): ${sanitizeDisplayText(testOutput).slice(0, 120)} → ${newBaseline}` : ""}${specChange ? `\n\nSpec file (${sanitizeDisplayText(loop.specFile ?? "")}:\n  ${p.specText?.trim() ? `REPLACE with ${p.specText!.trim().length} chars` : ""}${p.specText?.trim() && p.specAppend?.trim() ? " + " : ""}${p.specAppend?.trim() ? `APPEND: ${sanitizeDisplayText(p.specAppend!.trim()).slice(0, 120)}` : ""}` : ""}\n\nThe loop ${wasActive ? "keeps running" : "stays stopped until /loop resume"} against the refined spec (iteration ${loop.iteration} so far). Apply?`,
           )) === "yes";
         } catch {
           confirmed = false;
