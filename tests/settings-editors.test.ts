@@ -552,3 +552,10 @@ const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   assert.match(MENU, /unset = auto-detect notify-send\/osascript · 'off' = silent/);
 });
+
+test("audit-2026-09-06: headless /glla fallback shows compactor + display-richness rows", () => {
+  const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
+  assert.match(src, /fmt\("compactorModel", "compactorModel"\)/, "compactorModel row present");
+  assert.match(src, /compactorModelFallbacks: \$\{formatMainModelFallbacks/, "compactor fallbacks row present");
+  assert.match(src, /fmt\("subagentDisplayRichness", "subagentDisplayRichness"\)/, "display richness row present");
+});
