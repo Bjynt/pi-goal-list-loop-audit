@@ -622,7 +622,9 @@ test("audit-2026-09-06: archivedPath outside the archive dir is an anomaly, not 
   // nulled the live goal on the hit.
   const outside = path.join(cwd, "package.json");
   fs.writeFileSync(outside, JSON.stringify({ name: "x" }));
-  const g = { ...suspiciousGoal("active"), archivedPath: outside };
+  // A clean (non-suspicious) objective isolates the archive-path behavior
+  // from the faulty-objective repair flow.
+  const g = { ...seedGoal({ objective: "Ship the widget", status: "active" }), archivedPath: outside };
   seedState(cwd, { goal: g, list: [] });
   const pi = new MockPi();
   activate(pi.api);
