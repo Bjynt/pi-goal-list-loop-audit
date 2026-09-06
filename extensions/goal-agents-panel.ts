@@ -218,7 +218,10 @@ export function assembleAgentsExtras(
 ): AgentsExtras | undefined {
   const line = renderAgentsWidgetLine(rows);
   if (!line) return undefined;
-  if (richness === "quiet" && !hasHungWorker(rows)) return undefined;
+  // Audit 2026-09-06 (DECIDED: show count line): quiet hides only when
+  // zero are tracked (line undefined above). Tracked-but-healthy keeps
+  // the compact count line — hiding healthy fan-out entirely cost ambient
+  // awareness. HUNG still surfaces via the ⚠ in the line itself.
   if (richness !== "rich") return { line, lines: [] };
   const clean = objective.replace(/\s+/g, " ").trim();
   const header = clean ? [`→ ${truncate(clean, 60)}`] : [];

@@ -56,8 +56,12 @@ test("v0.38.22 rich assembles rows + task-linkage header; compact keeps the line
   assert.ok(compact?.line.startsWith("● 2 agents"), "compact keeps the count line");
   assert.deepEqual(compact!.lines, [], "compact splices no detail rows");
 
+  // Audit 2026-09-06 (DECIDED: show count line): quiet hides only at zero
+  // tracked — tracked-but-healthy keeps the compact count line.
   const quiet = assembleAgentsExtras(rows, "quiet", "objective", 1_000_000);
-  assert.equal(quiet, undefined, "quiet hides healthy workers");
+  assert.equal(quiet?.line, assembleAgentsExtras(rows, "compact", "objective", 1_000_000)?.line, "quiet keeps the healthy count line");
+  assert.deepEqual(quiet!.lines, [], "quiet never splices detail rows");
+  assert.equal(assembleAgentsExtras([], "quiet", "objective", 1_000_000), undefined, "quiet hides when zero tracked");
 
   const hung = assembleAgentsExtras([row({ status: "hung" })], "quiet", "objective", 1_000_000);
   assert.ok(hung?.line.includes("⚠"), "HUNG is never silent, even on quiet");
