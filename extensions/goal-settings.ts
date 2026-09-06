@@ -490,6 +490,51 @@ export function normalizeLoadedSettings(settings: Settings): Settings {
   delete legacy.hourlyQuotaProbe;
   delete legacy.mainModelFallbackOnRateLimit;
   delete legacy.quotaRetryMinutes;
+  // Audit 2026-09-06: hand-edited files may carry junk for the remaining
+  // knobs. Invalid values reset to unset so the `??` consumer fallbacks
+  // apply — a garbage string must never flow into arithmetic or an enum
+  // comparison. Booleans reset to unset (undefined = default-on where
+  // the consumer checks `=== false`).
+  if (typeof settings.tokenLimit !== "number" || !Number.isFinite(settings.tokenLimit) || settings.tokenLimit < 0) {
+    delete settings.tokenLimit;
+  }
+  if (typeof settings.auditCap !== "number" || !Number.isInteger(settings.auditCap) || settings.auditCap < 0) {
+    delete settings.auditCap;
+  }
+  if (typeof settings.stuckMaxInterventions !== "number" || !Number.isInteger(settings.stuckMaxInterventions) || settings.stuckMaxInterventions < 0) {
+    delete settings.stuckMaxInterventions;
+  }
+  if (typeof settings.stallEscalationRefires !== "number" || !Number.isInteger(settings.stallEscalationRefires) || settings.stallEscalationRefires < 0) {
+    delete settings.stallEscalationRefires;
+  }
+  if (typeof settings.stallShortWords !== "number" || !Number.isInteger(settings.stallShortWords) || settings.stallShortWords <= 0) {
+    delete settings.stallShortWords;
+  }
+  if (typeof settings.stallSimilarityThreshold !== "number" || !Number.isFinite(settings.stallSimilarityThreshold) || settings.stallSimilarityThreshold < 0 || settings.stallSimilarityThreshold > 1) {
+    delete settings.stallSimilarityThreshold;
+  }
+  if (typeof settings.wedgeAlertMinutes !== "number" || !Number.isFinite(settings.wedgeAlertMinutes) || settings.wedgeAlertMinutes < 0) {
+    delete settings.wedgeAlertMinutes;
+  }
+  if (settings.carryover !== "resume" && settings.carryover !== "pause" && settings.carryover !== "clear") {
+    delete settings.carryover;
+  }
+  if (typeof settings.decisionPopup !== "boolean") delete settings.decisionPopup;
+  if (typeof settings.aggressiveMode !== "boolean") delete settings.aggressiveMode;
+  if (typeof settings.autoResume !== "boolean") delete settings.autoResume;
+  if (typeof settings.autoAcceptDrafts !== "boolean") delete settings.autoAcceptDrafts;
+  if (typeof settings.notifyCmd !== "string" || settings.notifyCmd.trim().length === 0) {
+    delete settings.notifyCmd;
+  }
+  if (typeof settings.auditorModel !== "string" || settings.auditorModel.trim().length === 0) {
+    delete settings.auditorModel;
+  }
+  if (typeof settings.drafterModel !== "string" || settings.drafterModel.trim().length === 0) {
+    delete settings.drafterModel;
+  }
+  if (typeof settings.compactorModel !== "string" || settings.compactorModel.trim().length === 0) {
+    delete settings.compactorModel;
+  }
   return settings;
 }
 
