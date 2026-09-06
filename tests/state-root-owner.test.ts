@@ -91,6 +91,15 @@ test("looksLikePi admits pi hosts, refuses sleep, abstains on unknown", () => {
   assert.equal(looksLikePi("pi\0--agent\0"), true);
   assert.equal(looksLikePi("/usr/bin/sleep\0" + "99991\0"), false);
   assert.equal(looksLikePi(null), false);
+  // Audit 2026-09-06: substring impostors must NOT pass the SIGTERM gate.
+  assert.equal(looksLikePi("/usr/bin/pip\0install\0pi-subagents\0"), false, "pip refused");
+  assert.equal(looksLikePi("/usr/local/bin/pilot\0run\0"), false, "pilot refused");
+  assert.equal(looksLikePi("/opt/episode/bin/episode\0"), false, "episode refused");
+  assert.equal(looksLikePi("/usr/bin/capital\0"), false, "capital refused");
+  // …while genuine pi shapes still admit.
+  assert.equal(looksLikePi("/usr/local/bin/pi\0"), true, "pi binary");
+  assert.equal(looksLikePi(process.execPath + "\0/tmp/pi-probe.mjs\0"), true, "pi-*.mjs probe");
+  assert.equal(looksLikePi("node\0/home/u/pi-coding-agent/run.mjs\0"), true, "source checkout");
   assert.equal(cmdlineComm("/usr/bin/sleep\0" + "99991\0"), "sleep");
   assert.equal(cmdlineComm(null), "(unknown)");
 });

@@ -103,12 +103,23 @@ export function cmdlineComm(cmdline: string | null): string {
 
 /** Does this cmdline still look like a pi host? Permissive by design — the
  * explicit user confirm is the real authority; this only hard-refuses
- * positively-identified non-pi processes. Unknown (null) is NOT pi. */
+ * positively-identified non-pi processes. Unknown (null) is NOT pi.
+ * Audit 2026-09-06: the old basename-substring gate admitted `pip`,
+ * `pilot`, `episode`, `capital` — anything containing "pi" — and the next
+ * step past this gate is SIGTERM. Match the executable NAME now (exact
+ * `pi`, `pi-…`/`pi_…` prefix, known script suffixes); anything else fails
+ * closed and the user closes it by hand. */
 export function looksLikePi(cmdline: string | null): boolean {
   if (!cmdline) return false;
   const lowered = cmdline.toLowerCase().replaceAll("\0", " ");
-  return lowered.split(" ").some((tok) => tok.split("/").pop()?.includes("pi") ?? false)
-    || lowered.includes("pi-coding-agent");
+  if (lowered.includes("pi-coding-agent")) return true;
+  return lowered.split(" ").some((tok) => {
+    const base = tok.split("/").pop() ?? "";
+    if (!base) return false;
+    if (base === "pi" || base.startsWith("pi-") || base.startsWith("pi_")) return true;
+    const stem = base.replace(/\.(exe|cmd|bat|mjs|cjs|js)$/, "");
+    return stem === "pi" || stem.startsWith("pi-") || stem.startsWith("pi_");
+  });
 }
 
 /** Normalize the owner record's `at`: current writers store ms-epoch
