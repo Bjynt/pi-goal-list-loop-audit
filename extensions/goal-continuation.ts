@@ -1118,6 +1118,10 @@ export interface TerminalCompletionNotice {
   goalId: string;
   outcome: string;
   details: string[];
+  /** Audit 2026-09-06: the session generation that produced the verdict.
+   * A stale generation (verdict applied after handoff/reload) must not
+   * fire a `✓ done` turn into the successor session's unrelated work. */
+  generation?: number;
 }
 
 /** v0.38.18 (track 3: junk-runner stale waiting-verdict): the detached
@@ -1136,6 +1140,14 @@ export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: Term
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
   if (!flags.extensionApi) return false;
   if (isForeignCtx(ctx)) return false;
+  if (typeof notice.generation === "number" && notice.generation !== flags.sessionGeneration) {
+    appendLedger(ctx.cwd, "terminal_completion_notice_stale_generation", {
+      goalId: notice.goalId,
+      noticeGeneration: notice.generation,
+      currentGeneration: flags.sessionGeneration,
+    });
+    return false;
+  }
   try {
     const already = readLedgerTail(ctx.cwd, 400, (entry) =>
       entry.type === "terminal_completion_notice_sent" &&

@@ -312,28 +312,12 @@ function customType(message: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function messageText(message: unknown): string {
-  if (typeof message !== "object" || message === null) return "";
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((block) => {
-    if (typeof block === "string") return block;
-    if (typeof block !== "object" || block === null) return "";
-    const text = (block as { text?: unknown }).text;
-    return typeof text === "string" ? text : "";
-  }).join("\n");
-}
-
-/** True for GLLA control-plane messages that may be safely bounded. */
-export function isGllaControlMessage(message: unknown): boolean {
-  const type = customType(message);
-  if (type === "goal-event" || type === AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE) return true;
-  const text = messageText(message);
-  return typeof (message as { role?: unknown } | null)?.role === "string"
-    && (text.includes("[GOAL CHECKPOINT") || text.includes("[STALL WARNING"));
-}
-
+// Audit 2026-09-06: a substring-based `isGllaControlMessage` predicate used
+// to live here (any message containing "[GOAL CHECKPOINT" / "[STALL
+// WARNING" counted as control plane). It had zero callers — the live
+// projection keys on customType only — and any future caller would inherit
+// the forgeable-substring hazard (crafted text projected out of context).
+// Deleted instead of hardened: control-plane identity is customType.
 function isGoalEventPayload(message: unknown): boolean {
   return customType(message) === "goal-event";
 }

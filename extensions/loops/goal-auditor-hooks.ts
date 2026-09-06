@@ -1480,6 +1480,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     if (origin !== "manual") {
       sendTerminalCompletionNotice(liveCtx, {
         goalId,
+        generation,
         outcome: brief.outcome,
         // v0.38.20: the transcript keeps the informing details, but the
         // stale pre-verdict `Next:` is stripped here too.
