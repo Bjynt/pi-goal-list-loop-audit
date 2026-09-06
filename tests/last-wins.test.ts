@@ -237,3 +237,27 @@ test("last-wins source pins: setGoal preserves-then-proceeds, refusal text gone"
   assert.ok(!setGoal.includes("New objective not started — the current"), "the archival-failure refusal is gone");
   assert.match(setGoal, /archiveCurrentGoal\(ctx, "aborted", replacementReason\)/, "honest archive is still attempted first");
 });
+
+test("audit-2026-09-06: same-session lineage reclaims quietly — no steal event", async () => {
+  const cwd = tmpCwd();
+  const prev = spawnSleep();
+  await new Promise((r) => setTimeout(r, 100));
+  writeOwner(cwd, { pid: prev.pid, at: Date.now(), ownerSessionId: "same-session" });
+  const out = supersedeLiveOwnerRoot(cwd, { isMainHost: true, bySession: "same-session" });
+  assert.equal(out, "reclaimed");
+  assert.equal(readOwnerFile(cwd)?.pid, process.pid);
+  assert.equal(readLedger(cwd).filter((l) => l.type === "owner_superseded").length, 0, "no dethrone event for our own lineage");
+  assert.equal(prev.kill(0), true, "previous holder never signaled");
+});
+
+test("audit-2026-09-06: anonymous claimant cannot dethrone a live owner", async () => {
+  const cwd = tmpCwd();
+  const prev = spawnSleep();
+  await new Promise((r) => setTimeout(r, 100));
+  writeOwner(cwd, { pid: prev.pid, at: Date.now(), ownerSessionId: "real-session" });
+  assert.equal(supersedeLiveOwnerRoot(cwd, { isMainHost: true, bySession: "unknown-session" }), "refused");
+  assert.equal(supersedeLiveOwnerRoot(cwd, { isMainHost: true }), "refused", "bySession omitted");
+  assert.equal(readOwnerFile(cwd)?.pid, prev.pid, "live owner undisturbed");
+  assert.match(JSON.stringify(readLedger(cwd)), /"owner_supersede_refused"/);
+  assert.equal(prev.kill(0), true);
+});

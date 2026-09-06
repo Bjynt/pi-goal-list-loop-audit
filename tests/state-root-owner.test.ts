@@ -348,3 +348,30 @@ test("source pins the new escape hatches on both read-only warnings", () => {
   assert.match(session, /a newer pi session owns this working-directory state root/);
   assert.match(session, /Start a fresh session to take it back/);
 });
+
+test("audit-2026-09-06: takeover re-verifies the occupant at signal time", async () => {
+  const cwd = tmpCwd();
+  const child = spawnSleep("99994");
+  await new Promise((r) => setTimeout(r, 100));
+  writeOwner(cwd, { pid: child.pid, at: Date.now() });
+  let signaled = 0;
+  let reads = 0;
+  const r = await takeoverOwnerRoot({
+    cwd,
+    record: readOwnerFile(cwd),
+    confirmed: true,
+    deps: {
+      // First read (gate) sees pi; the pre-signal re-read sees the
+      // occupant turned over into sleep — the signal must not fire.
+      readCmdline: () => (++reads === 1 ? "pi\0--agent\0" : "/usr/bin/sleep\x0099994\x00"),
+      signal: () => { signaled++; },
+      sleepMs: () => Promise.resolve(),
+      settleMs: 300,
+    },
+  });
+  assert.equal(r.outcome, "refused");
+  assert.equal((r as any).reason, "claim-lost");
+  assert.equal(signaled, 0, "the turned-over occupant is never signaled");
+  assert.equal(child.kill(0), true, "occupant survives");
+  assert.match(readLedger(cwd), /"owner_takeover_refused"/);
+});
