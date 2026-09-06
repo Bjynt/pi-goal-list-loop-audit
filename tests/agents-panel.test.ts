@@ -13,7 +13,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetToolActivity } from "../extensions/loops/goal.js";
 import { upsertSubagentHangProbe, markSubagentHangProgress, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
 import { renderAgentsPanel, renderAgentsWidgetLine, renderAgentsWidgetLines, tailChildTranscript, formatTranscriptEntry, truncate, TRANSCRIPT_SCAN_MAX_BYTES, type AgentsPanelRow } from "../extensions/goal-agents-panel.js";
 import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.js";
@@ -396,6 +396,8 @@ test("audit-2026-09-06: panel renders the doc-promised blocks row and Recent han
 test("audit-2026-09-06: snapshot labels live rows with the observed parent wait only", async () => {
   const hb = await import("../extensions/goal-heartbeat.js");
   const ctx = gllaCtx(tmpCwd());
+  // Order-independent: earlier tests may leave in-flight tool calls behind.
+  __testOnlyResetToolActivity();
   hb.__testOnlyClearSubagentHangProbes();
   hb.upsertSubagentHangProbe("probe-blocked-1", "scout", "check stuff", Date.now());
   try {
@@ -416,5 +418,6 @@ test("audit-2026-09-06: snapshot labels live rows with the observed parent wait 
   } finally {
     hb.endSubagentHangProbe("probe-blocked-1");
     hb.__testOnlyClearSubagentHangProbes();
+    __testOnlyResetToolActivity();
   }
 });
