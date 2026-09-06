@@ -109,17 +109,30 @@ export function cmdlineComm(cmdline: string | null): string {
  * step past this gate is SIGTERM. Match the executable NAME now (exact
  * `pi`, `pi-…`/`pi_…` prefix, known script suffixes); anything else fails
  * closed and the user closes it by hand. */
+/** Basenames of JS runtimes — `node script.mjs` shapes identify by argv[1]. */
+const PI_RUNTIME_BASENAMES: ReadonlySet<string> = new Set(["node", "bun", "deno", "qjs", "tjs"]);
+
+function executableNameLooksLikePi(base: string): boolean {
+  if (!base) return false;
+  if (base === "pi" || base.startsWith("pi-") || base.startsWith("pi_")) return true;
+  const stem = base.replace(/\.(exe|cmd|bat|mjs|cjs|js)$/, "");
+  return stem === "pi" || stem.startsWith("pi-") || stem.startsWith("pi_");
+}
+
 export function looksLikePi(cmdline: string | null): boolean {
   if (!cmdline) return false;
   const lowered = cmdline.toLowerCase().replaceAll("\0", " ");
   if (lowered.includes("pi-coding-agent")) return true;
-  return lowered.split(" ").some((tok) => {
-    const base = tok.split("/").pop() ?? "";
-    if (!base) return false;
-    if (base === "pi" || base.startsWith("pi-") || base.startsWith("pi_")) return true;
-    const stem = base.replace(/\.(exe|cmd|bat|mjs|cjs|js)$/, "");
-    return stem === "pi" || stem.startsWith("pi-") || stem.startsWith("pi_");
-  });
+  const toks = lowered.split(" ").filter(Boolean);
+  const argv0 = toks[0]?.split("/").pop() ?? "";
+  if (executableNameLooksLikePi(argv0)) return true;
+  // `node|bun|deno <script>` launches: the SCRIPT names the process.
+  const argv0Stem = argv0.replace(/\.(exe|cmd|bat)$/, "");
+  if (PI_RUNTIME_BASENAMES.has(argv0Stem)) {
+    const argv1 = toks[1]?.split("/").pop() ?? "";
+    if (executableNameLooksLikePi(argv1)) return true;
+  }
+  return false;
 }
 
 /** Normalize the owner record's `at`: current writers store ms-epoch
