@@ -14,10 +14,16 @@
 // (hydrateListQueueFromDisk), so the very next lifecycle boundary heals
 // the surface without a restart.
 
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { __testOnlyResetAuditorSurface } from "../extensions/loops/goal-auditor-surface.js";
+
+// Audit 2026-09-06: cold-restore runs suppress the auditor surface via
+// process-local module state — release it after every test so co-resident
+// files (display.test.ts) see unsuppressed feedback.
+afterEach(() => __testOnlyResetAuditorSurface());
 
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.ts";
