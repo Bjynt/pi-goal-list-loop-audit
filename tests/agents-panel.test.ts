@@ -13,7 +13,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetToolActivity, __testOnlyRememberCtx } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
 import { upsertSubagentHangProbe, markSubagentHangProgress, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
 import { renderAgentsPanel, renderAgentsWidgetLine, renderAgentsWidgetLines, tailChildTranscript, formatTranscriptEntry, truncate, TRANSCRIPT_SCAN_MAX_BYTES, type AgentsPanelRow } from "../extensions/goal-agents-panel.js";
 import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.js";
@@ -395,25 +395,22 @@ test("audit-2026-09-06: panel renders the doc-promised blocks row and Recent han
 
 test("audit-2026-09-06: snapshot labels live rows with the observed parent wait only", async () => {
   const hb = await import("../extensions/goal-heartbeat.js");
-  const ctx = gllaCtx(tmpCwd());
-  // Order-independent: earlier tests may leave in-flight tool calls behind,
-  // and their shutdown may leave this fresh ctx classified foreign (the
-  // production tool_call gate then correctly drops the event). Rebind like
-  // a real session_start would.
-  __testOnlyResetStaleFlag();
-  __testOnlyResetToolActivity();
-  __testOnlyRememberCtx(ctx);
+  // Order-independent: set the in-flight map directly (the event→map path
+  // is already pinned by behavioral-orchestrator; here the production
+  // tool_call gate would correctly drop events for this foreign fixture
+  // ctx after earlier tests' shutdown). Clean up in finally.
+  const flight = (globalThis as any).inFlightToolCalls as Map<string, { name: string; at: number }>;
+  flight.set("wait-blocks-1", { name: "subagent", at: Date.now() });
   hb.__testOnlyClearSubagentHangProbes();
   hb.upsertSubagentHangProbe("probe-blocked-1", "scout", "check stuff", Date.now());
   try {
-    await pi.fire("tool_call", { toolName: "subagent", toolCallId: "wait-blocks-1", input: {} }, ctx);
     const snap = hb.getSubagentAgentsSnapshot(Date.now());
     assert.equal(
       snap.agents.find((a) => a.recordId === "probe-blocked-1")?.blockedBy,
       "parent subagent wait (subagent)",
       "live row names the observed wait",
     );
-    await pi.fire("tool_result", { toolName: "subagent", toolCallId: "wait-blocks-1", output: "done" }, ctx);
+    flight.delete("wait-blocks-1");
     const cleared = hb.getSubagentAgentsSnapshot(Date.now());
     assert.equal(
       cleared.agents.find((a) => a.recordId === "probe-blocked-1")?.blockedBy,
@@ -421,8 +418,8 @@ test("audit-2026-09-06: snapshot labels live rows with the observed parent wait 
       "no in-flight wait → no blocks label",
     );
   } finally {
+    flight.delete("wait-blocks-1");
     hb.endSubagentHangProbe("probe-blocked-1");
     hb.__testOnlyClearSubagentHangProbes();
-    __testOnlyResetToolActivity();
   }
 });
