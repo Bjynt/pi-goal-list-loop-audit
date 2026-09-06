@@ -1005,3 +1005,5 @@
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":2363049},"at":"2026-09-06T15:43:00.938Z"}
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":2378050},"at":"2026-09-06T15:43:15.939Z"}
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":2393051},"at":"2026-09-06T15:43:30.940Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":2408051},"at":"2026-09-06T15:43:45.940Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":2423051},"at":"2026-09-06T15:44:00.940Z"}
