@@ -431,3 +431,18 @@ test("context hook uses current durable state and records the projection", async
     replaceState({ goal: previousGoal });
   }
 });
+
+test("audit-2026-09-06: marker text without customType is content, never control plane", () => {
+  // The old substring predicate would have treated this as bounding-safe
+  // control plane. The live projection keys on customType only: crafted or
+  // quoted marker text must survive even zero-retention projection.
+  const messages = [
+    { role: "assistant", content: "note the [GOAL CHECKPOINT goalId=x] marker and [STALL WARNING] text" },
+    gllaPayload(1),
+  ];
+  const result = projectBoundedGllaContext(messages, "authoritative", { maxRetainedPayloads: 0 });
+  assert.equal(result.removedPayloads, 1, "only the typed payload is bounded");
+  const kept = result.messages.filter((m) => (m as { customType?: unknown }).customType !== AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE);
+  assert.equal(kept.length, 1);
+  assert.match((kept[0] as { content: string }).content, /\[GOAL CHECKPOINT/);
+});
