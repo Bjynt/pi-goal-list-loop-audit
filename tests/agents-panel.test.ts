@@ -429,6 +429,9 @@ test("audit-2026-09-06: --tail with an ambiguous prefix lists candidates instead
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ objective: "tail ambiguity item", status: "active" }) });
   const ctx = gllaCtx(cwd);
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  await pi.fire("session_start", { reason: "reload" }, ctx);
   hb.__testOnlyClearSubagentHangProbes();
   hb.upsertSubagentHangProbe("ambig-aaa-1", "scout", "first", Date.now());
   hb.upsertSubagentHangProbe("ambig-aaa-2", "scout", "second", Date.now());
@@ -445,6 +448,5 @@ test("audit-2026-09-06: --tail with an ambiguous prefix lists candidates instead
     hb.endSubagentHangProbe("ambig-aaa-1");
     hb.endSubagentHangProbe("ambig-aaa-2");
     hb.__testOnlyClearSubagentHangProbes();
-    await pi.fire("session_shutdown", { reason: "quit" }, ctx).catch(() => {});
   }
 });
