@@ -999,7 +999,7 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * injected after the literal `glla:` prefix so no per-branch edit can
  * forget it and a future branch inherits it for free. */
 export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras, width?: number): string | undefined {
-  const base = buildStatusTextBase(state, audit, now, theme, extras);
+  const base = buildStatusTextBase(state, audit, now, theme, extras, width);
   // The footer gets only the compact worst-child summary. Detailed rows live
   // in the widget; the detached auditor remains a separate verification HUD.
   const withAgentSummary = base && extras?.agents?.line && state.goal?.status !== "auditing"
@@ -1019,7 +1019,7 @@ function truncateStatusToWidth(line: string | undefined, width?: number): string
   return tuiTruncateToWidth(line, width, "…");
 }
 
-function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
+function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras, width?: number): string | undefined {
   if (state.loop?.active) {
     const l = state.loop;
     // v0.26.1: surface the refire streak — a spinning supervisor is the
@@ -1053,7 +1053,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
-    if ((state.list?.length ?? 0) > 0) return waitingListStatus(state, now, theme);
+    if ((state.list?.length ?? 0) > 0) return waitingListStatus(state, now, theme, width);
     return undefined;
   }
   if (g.status === "auditing") {
@@ -1336,12 +1336,21 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   return lines;
 }
 
-function waitingListStatus(state: State, _now: number, theme?: DisplayTheme): string {
+function waitingListStatus(state: State, _now: number, theme?: DisplayTheme, width?: number): string {
   const queue = state.list ?? [];
   const head = queue[0];
   const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
   const hold = typeof state.loadHoldAt === "number" ? " · held on restore" : "";
-  return `glla: ${paint(theme, "accent", "LIST QUEUED")} · ${queue.length} waiting · next: ${truncate(objective, 72)} · /glla resume${hold}`;
+  // Audit 2026-09-06: the width budget truncates the END of the status
+  // line — the `/glla resume` action must survive, so the OBJECTIVE takes
+  // the cut, not the action. Budget the objective against the fixed
+  // prefix/suffix instead of a flat 72.
+  const suffix = ` · /glla resume${hold}`;
+  const prefix = `glla: ${paint(theme, "accent", "LIST QUEUED")} · ${queue.length} waiting · next: `;
+  const objectiveBudget = width && width > 0
+    ? Math.max(12, width - visibleLen(prefix) - visibleLen(suffix) - 1)
+    : 72;
+  return `${prefix}${truncate(objective, objectiveBudget)}${suffix}`;
 }
 
 function waitingListLines(state: State, theme?: DisplayTheme, width?: number): string[] {
