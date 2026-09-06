@@ -521,3 +521,57 @@ test("audit-2026-09-06: settings TUI tabs row is truncated to terminal width", a
     assert.ok(visibleWidth(line) <= 80, `menu line fits 80 cols: ${JSON.stringify(line).slice(0, 90)}`);
   }
 });
+
+test("audit 2026-09-06: normalizeLoadedSettings resets junk numerics/enums/strings to unset", async () => {
+  const { normalizeLoadedSettings } = await import("../extensions/goal-settings.ts");
+  const out = normalizeLoadedSettings({
+    tokenLimit: -5,
+    auditCap: 2.5,
+    stuckMaxInterventions: "many",
+    stallEscalationRefires: -1,
+    stallShortWords: 0,
+    stallSimilarityThreshold: 7,
+    wedgeAlertMinutes: Number.NaN,
+    carryover: "sometimes",
+    decisionPopup: "yes",
+    aggressiveMode: 1,
+    notifyCmd: "   ",
+    auditorModel: "",
+    drafterModel: 42,
+    compactorModel: "  ",
+  } as any);
+  for (const key of [
+    "tokenLimit", "auditCap", "stuckMaxInterventions", "stallEscalationRefires",
+    "stallShortWords", "stallSimilarityThreshold", "wedgeAlertMinutes", "carryover",
+    "decisionPopup", "aggressiveMode", "notifyCmd", "auditorModel", "drafterModel",
+    "compactorModel",
+  ] as const) {
+    assert.equal(out[key], undefined, `${key} resets to unset`);
+  }
+  // Valid values survive untouched.
+  const kept = normalizeLoadedSettings({
+    tokenLimit: 1000, auditCap: 0, stuckMaxInterventions: 3, stallShortWords: 20,
+    stallSimilarityThreshold: 0.8, wedgeAlertMinutes: 0, carryover: "clear",
+    decisionPopup: false, aggressiveMode: false, notifyCmd: "notify-send hi",
+    auditorModel: "test/model",
+  } as any);
+  assert.equal(kept.tokenLimit, 1000);
+  assert.equal(kept.carryover, "clear");
+  assert.equal(kept.decisionPopup, false);
+  assert.equal(kept.auditorModel, "test/model");
+});
+
+test("audit 2026-09-06: legacy reviewer block migrates to postaudit", async () => {
+  const { loadSettings, projectSettingsPath } = await import("../extensions/goal-settings.ts");
+  const { tmpCwd } = await import("./harness/mock-pi.ts");
+  const { default: path } = await import("node:path");
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.dirname(projectSettingsPath(cwd)), { recursive: true });
+  fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ reviewer: { mode: "on" } }));
+  const loaded = loadSettings(cwd);
+  assert.deepEqual(loaded.postaudit, { mode: "on" });
+  assert.equal((loaded as any).reviewer, undefined, "legacy key does not survive load");
+  // postaudit wins when both are present.
+  fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ reviewer: { mode: "on" }, postaudit: { mode: "off" } }));
+  assert.deepEqual(loadSettings(cwd).postaudit, { mode: "off" });
+});
