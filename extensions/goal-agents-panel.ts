@@ -11,7 +11,7 @@
 // in tailChildTranscript through an injected reader so tests stay hermetic.
 
 import * as path from "node:path";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateCells } from "./goal-loop-display.js";
 import { sanitizeDisplayText } from "./goal-loop-core.js";
 
 /** v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of each
@@ -91,9 +91,9 @@ function rowStateWord(row: AgentsPanelRow, now: number): string {
 }
 
 export function truncate(text: string, max: number): string {
-  // Audit 2026-09-06: cell-aware via pi-tui — the char slice overran on
+  // Audit 2026-09-06: cell-aware shared helper — the char slice overran on
   // wide glyphs and could split surrogate pairs. ASCII contract unchanged.
-  return truncateToWidth(text, max, "…");
+  return truncateCells(text, max);
 }
 
 function fmtDuration(ms: number): string {

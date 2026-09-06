@@ -15,6 +15,7 @@ import {
   fmtElapsed,
   fmtTokens,
   truncate,
+  wrap,
   MAIN_HOST_LABEL,
   WORKER_TEXT_SPACER,
 } from "../extensions/goal-loop-display.ts";

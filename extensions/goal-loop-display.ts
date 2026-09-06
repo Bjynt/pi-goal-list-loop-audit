@@ -59,10 +59,28 @@ export function fmtTokens(n: number): string {
 }
 
 export function truncate(s: string, max: number): string {
-  // Audit 2026-09-06: cell-aware via pi-tui — byte/char slicing overran
-  // budgets on CJK/emoji and could split surrogate pairs. Contract is
-  // unchanged for printable ASCII (fast path inside truncateToWidth).
-  return tuiTruncateToWidth(compactDisplayText(s), max, "…");
+  // Audit 2026-09-06: cell-aware, code-point walk — char slicing overran
+  // budgets on CJK/emoji and could split surrogate pairs. (pi-tui's
+  // truncateToWidth was tried first but wraps the ellipsis in ANSI resets
+  // even for plain text, polluting ledger/chat/prompt consumers.)
+  return truncateCells(compactDisplayText(s), max);
+}
+
+/** Cell-aware truncation that never emits ANSI codes. Whole string is
+ * returned untouched when it already fits; otherwise code points (never
+ * surrogate halves) accumulate to max-1 cells plus an ellipsis. */
+export function truncateCells(s: string, max: number): string {
+  if (tuiVisibleWidth(s) <= max) return s;
+  const budget = Math.max(0, max - 1);
+  let out = "";
+  let w = 0;
+  for (const ch of s) {
+    const cw = tuiVisibleWidth(ch);
+    if (w + cw > budget) break;
+    out += ch;
+    w += cw;
+  }
+  return `${out}…`;
 }
 
 function displayPauseReason(reason: string): string {
@@ -194,7 +212,8 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
   const out = all.slice(0, maxLines);
   // The last kept line already fits within width — truncate() would leave it
   // unmarked, so force the ellipsis to signal "more in /goal status".
-  out[maxLines - 1] = tuiTruncateToWidth(out[maxLines - 1]!, width, "…");
+  // truncateCells (not pi-tui's truncateToWidth): no ANSI resets appended.
+  out[maxLines - 1] = truncateCells(out[maxLines - 1]!, width);
   return out;
 }
 
