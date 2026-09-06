@@ -559,3 +559,10 @@ test("audit-2026-09-06: headless /glla fallback shows compactor + display-richne
   assert.match(src, /compactorModelFallbacks: \$\{formatMainModelFallbacks/, "compactor fallbacks row present");
   assert.match(src, /fmt\("subagentDisplayRichness", "subagentDisplayRichness"\)/, "display richness row present");
 });
+
+test("audit 2026-09-06: docs/SETTINGS.md covers every SETTINGS_KEYS entry", async () => {
+  const { SETTINGS_KEYS } = await import("../extensions/goal-settings.ts");
+  const doc = fs.readFileSync(path.join(import.meta.dirname, "..", "docs", "SETTINGS.md"), "utf-8");
+  const missing = (SETTINGS_KEYS as string[]).filter((key) => !doc.includes(`\`${key}\``));
+  assert.deepEqual(missing, [], `settings reference drift: ${missing.join(", ")}`);
+});

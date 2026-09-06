@@ -7,6 +7,7 @@ import * as path from "node:path";
 
 import {
   COMPACTOR_BRIEF_MAX_CHARS,
+  COMPACTOR_KILL_GRACE_MS,
   __testOnlyResetCompactor,
   __testOnlySetSpawnWorker,
   buildBriefPacket,
@@ -136,6 +137,14 @@ test("audit 2026-09-06: compactor one-shot survives a restart mid-episode", asyn
   const third = await runEmergencyCompactorIfDue(ctx, true, deps);
   assert.equal(third.fired, true, "next episode fires again");
   assert.equal(spawns, 2);
+});
+
+test("audit 2026-09-06: worker timeout escalates SIGTERM to SIGKILL", () => {
+  assert.equal(COMPACTOR_KILL_GRACE_MS, 5_000);
+  const source = fs.readFileSync(new URL("../extensions/goal-compactor.ts", import.meta.url), "utf-8");
+  assert.match(source, /child\.kill\("SIGTERM"\)/);
+  assert.match(source, /child\.kill\("SIGKILL"\)/, "SIGTERM-only kill leaves zombies");
+  assert.match(source, /COMPACTOR_KILL_GRACE_MS/);
 });
 
 test("brief scope: packet bounded, sections present, worker tool-less", () => {

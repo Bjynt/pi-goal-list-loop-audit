@@ -78,7 +78,10 @@ try {
       "@earendil-works/pi-ai": path.join(nodeModules, "@earendil-works/pi-ai"),
       "@earendil-works/pi-coding-agent": path.join(nodeModules, "@earendil-works/pi-coding-agent"),
       "@earendil-works/pi-tui": path.join(nodeModules, "@earendil-works/pi-tui"),
-      "@tintinweb/pi-subagents": path.join(nodeModules, "@tintinweb/pi-subagents"),
+      // Audit 2026-09-06: the @tintinweb/pi-subagents alias was stale
+      // tintinweb-era drift — nothing imports the scoped name and the
+      // package depends on unscoped pi-subagents (which no extension
+      // imports directly, so no alias is needed).
       // TypeBox exposes only an ESM `exports` entry; point Jiti at that
       // concrete module because the disposable install intentionally omits
       // peer dependencies.

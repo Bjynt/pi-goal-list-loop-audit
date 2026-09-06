@@ -33,6 +33,9 @@ export const COMPACTOR_BRIEF_MAX_CHARS = 2000;
 export const COMPACTOR_PACKET_MAX_CHARS = 6000;
 /** Worker wall clock: a brief is one completion, not an agentic loop. */
 export const COMPACTOR_TIMEOUT_MS = 180_000;
+/** Audit 2026-09-06: grace between SIGTERM and SIGKILL when the worker
+ * overruns its timeout — SIGTERM alone can leave a stuck child alive. */
+export const COMPACTOR_KILL_GRACE_MS = 5_000;
 /** The compactor reasons as little as possible: compression, not judgment. */
 export const COMPACTOR_THINKING = "minimal";
 
@@ -149,7 +152,19 @@ function defaultSpawnWorker(script: string, jobDir: string, request: Record<stri
     }
     const child = nodeSpawn(process.execPath, [script, "--job-dir", jobDir], { stdio: "ignore" });
     const timer = setTimeout(() => {
-      try { child.kill("SIGTERM"); } catch {}
+      // Audit 2026-09-06: SIGTERM first, SIGKILL fallback — a stuck worker
+      // must not survive the timeout as a zombie holding the job dir.
+      try {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGTERM");
+          const killTimer = setTimeout(() => {
+            try {
+              if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+            } catch { /* already gone */ }
+          }, COMPACTOR_KILL_GRACE_MS);
+          killTimer.unref?.();
+        }
+      } catch { /* already gone */ }
       done({ ok: false, error: "compactor worker timed out" });
     }, (typeof request.timeoutMs === "number" && request.timeoutMs > 0 ? request.timeoutMs : COMPACTOR_TIMEOUT_MS) + 15_000);
     timer.unref?.();

@@ -577,6 +577,19 @@ test("multi-model-picker set mode: brackets are a no-op (no reordering)", () => 
   assert.deepEqual(p.comp.getSelected(), before);
 });
 
+test("audit 2026-09-06: capped initialSelected names the omitted refs", () => {
+  const items = buildModelPickItems(MODELS, "none/none");
+  const p = makePicker(items, [
+    "minimax/MiniMax-M3",
+    "minimax/MiniMax-M2.7",
+    "anthropic/claude-opus-4-7",
+  ], 2);
+  assert.deepEqual(p.comp.initialOmitted, ["anthropic/claude-opus-4-7"]);
+  const lines = p.comp.render(80);
+  assert.ok(lines.some((l) => l.includes("+1 saved not shown (max 2)")), JSON.stringify(lines));
+  assert.ok(lines.some((l) => l.includes("anthropic/claude-opus-4-7")), "omitted ref is named");
+});
+
 test("multi-model-picker set mode: initial selection is canonicalized to item order", () => {
   const items = buildModelPickItems(MODELS, "none/none");
   const p = makeSetPicker(items, ["openrouter/anthropic/claude-sonnet-4.5", "anthropic/claude-opus-4-7"]);

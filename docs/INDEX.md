@@ -35,6 +35,7 @@ For shipped docs, the relevant entry points are:
 
 ## Entry points
 - `../README.md` — what the plugin is, install, quickstart
+- `SETTINGS.md` — canonical settings reference (files, precedence, every key)
 - `../INSTALL.md` — source install / local development setup
 - `../CHANGELOG.md` — user-facing changelog; the first versioned heading is
   the current released package version (use `/glla version` to compare with
