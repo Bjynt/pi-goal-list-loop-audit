@@ -10,7 +10,7 @@
  * ctx.ui.setStatus/setWidget with whatever these return.
  */
 
-import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth, sliceByColumn as tuiSliceByColumn } from "@earendil-works/pi-tui";
 
 import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
 import { auditVerdictLabel, buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
@@ -59,8 +59,10 @@ export function fmtTokens(n: number): string {
 }
 
 export function truncate(s: string, max: number): string {
-  const safe = compactDisplayText(s);
-  return safe.length <= max ? safe : safe.slice(0, Math.max(0, max - 1)) + "…";
+  // Audit 2026-09-06: cell-aware via pi-tui — byte/char slicing overran
+  // budgets on CJK/emoji and could split surrogate pairs. Contract is
+  // unchanged for printable ASCII (fast path inside truncateToWidth).
+  return tuiTruncateToWidth(compactDisplayText(s), max, "…");
 }
 
 function displayPauseReason(reason: string): string {
@@ -172,9 +174,18 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
   let cur = "";
   for (let w of words) {
     const next = cur ? `${cur} ${w}` : w;
-    if (next.length <= width) { cur = next; continue; }
+    // Audit 2026-09-06: compare terminal cells, not JS chars — CJK/emoji
+    // words previously packed past the budget and broke line-break math.
+    if (tuiVisibleWidth(next) <= width) { cur = next; continue; }
     if (cur) all.push(cur);
-    while (w.length > width) { all.push(w.slice(0, width)); w = w.slice(width); }
+    // Column-based hard split (surrogate/wide-safe); the chunk is an exact
+    // string prefix of w, so slice() recovers the remainder losslessly.
+    while (tuiVisibleWidth(w) > width) {
+      const chunk = tuiSliceByColumn(w, 0, width);
+      if (!chunk) break;
+      all.push(chunk);
+      w = w.slice(chunk.length);
+    }
     cur = w;
   }
   if (cur) all.push(cur);
@@ -183,7 +194,7 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
   const out = all.slice(0, maxLines);
   // The last kept line already fits within width — truncate() would leave it
   // unmarked, so force the ellipsis to signal "more in /goal status".
-  out[maxLines - 1] = out[maxLines - 1]!.slice(0, Math.max(0, width - 1)) + "…";
+  out[maxLines - 1] = tuiTruncateToWidth(out[maxLines - 1]!, width, "…");
   return out;
 }
 

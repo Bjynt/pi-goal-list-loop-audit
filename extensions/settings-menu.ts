@@ -828,12 +828,14 @@ export class SettingsMenuComponent implements Component {
     // count says where the settings live at a glance.
     const tabLabel = (s: { id: SettingsSectionId; label: string }): string =>
       settingsTabLabel(s.label, this.rows.filter((r) => r.section === s.id).length);
+    // Audit 2026-09-06: the 8 `label (count)` tabs exceed 80 cols joined —
+    // truncate like the title and cells (ANSI-aware, so per-tab colors survive).
     lines.push(
-      SETTINGS_SECTIONS.map((s, i) =>
+      truncateToWidth(SETTINGS_SECTIONS.map((s, i) =>
         i === this.activeSectionIdx
           ? this.theme.fg("accent", this.theme.bold(tabLabel(s)))
           : this.theme.fg("dim", tabLabel(s)),
-      ).join("  "),
+      ).join("  "), Math.max(20, width - 2), "…"),
     );
 
     const headerCells = [

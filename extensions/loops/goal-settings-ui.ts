@@ -19,6 +19,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 // v0.34.109 (decomposition step 1): the state singleton and the persistence
@@ -735,7 +736,10 @@ async function promptSettingsMenu(
   // Headless / no custom shard — fall back to the legacy flat-row select
   // for any environment that lacks the new primitive. This is rare and
   // effectively an emergency hatch; the new UI is the supported path.
-  const flat = rows.map((r) => `[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`);
+  // Audit 2026-09-06: bound the flat option strings — full VALUE +
+  // DESCRIPTION previously rendered unbounded. The resolution prefix
+  // (`[section] label —`) sits at the head, so tail truncation is safe.
+  const flat = rows.map((r) => truncateToWidth(`[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`, 120, "…"));
   flat.push("Done");
   const v = await ctx.ui.select(title, flat);
   if (!v || v === "Done") return undefined;
