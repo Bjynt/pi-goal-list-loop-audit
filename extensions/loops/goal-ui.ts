@@ -1,6 +1,10 @@
 /**
  * pi-goal-list-loop-audit — v0.1.0
- * extensions/loops/goal.ts
+ * extensions/loops/goal-ui.ts
+ *
+ * Live-TUI refresh: status-line + above/below-editor widget repaint wiring.
+ * (Split out of extensions/loops/goal.ts during decomposition — the header
+ * below used to describe the parent module.)
  *
  * The goal loop. The agent continues working, and on complete_goal,
  * an isolated auditor verifies the work.

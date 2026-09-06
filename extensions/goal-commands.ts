@@ -2459,11 +2459,19 @@ function cmdAgents(args: string, ctx: ExtensionContext): void {
   const tailMatch = args.match(/--tail\s+(\S+)/);
   if (tailMatch) {
     const id = tailMatch[1]!;
-    const row = agents.find((a) => a.recordId === id || a.recordId.startsWith(id));
-    if (!row) {
+    // Audit 2026-09-06: an ambiguous prefix used to silently pick the
+    // first match — name every candidate and let the user disambiguate.
+    const exact = agents.find((a) => a.recordId === id);
+    const cands = exact ? [exact] : agents.filter((a) => a.recordId.startsWith(id));
+    if (cands.length === 0) {
       ctx.ui.notify(`No tracked subagent matches "${id}". /glla agents lists the current ids.`, "warning");
       return;
     }
+    if (cands.length > 1) {
+      ctx.ui.notify(`"${id}" matches ${cands.length} tracked subagents — be more specific:\n${cands.map((a) => `  ${a.recordId} (${a.agentType ?? "subagent"}, ${a.status})`).join("\n")}`, "warning");
+      return;
+    }
+    const row = cands[0]!;
     const linesMatch = args.match(/--lines\s+(\d+)/);
     // v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of
     // each transcript instead of up to 25 FULL files synchronously on the

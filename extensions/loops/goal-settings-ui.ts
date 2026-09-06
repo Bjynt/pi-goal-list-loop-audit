@@ -1,6 +1,9 @@
 /**
  * pi-goal-list-loop-audit — v0.1.0
- * extensions/loops/goal.ts
+ * extensions/loops/goal-settings-ui.ts
+ *
+ * Settings menu UI (TUI table + headless fallback) and per-key dispatch.
+ * (Split out of extensions/loops/goal.ts during decomposition.)
  *
  * The goal loop. The agent continues working, and on complete_goal,
  * an isolated auditor verifies the work.

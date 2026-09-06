@@ -423,3 +423,28 @@ test("audit-2026-09-06: snapshot labels live rows with the observed parent wait 
     hb.__testOnlyClearSubagentHangProbes();
   }
 });
+
+test("audit-2026-09-06: --tail with an ambiguous prefix lists candidates instead of picking silently", async () => {
+  const hb = await import("../extensions/goal-heartbeat.js");
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ objective: "tail ambiguity item", status: "active" }) });
+  const ctx = gllaCtx(cwd);
+  hb.__testOnlyClearSubagentHangProbes();
+  hb.upsertSubagentHangProbe("ambig-aaa-1", "scout", "first", Date.now());
+  hb.upsertSubagentHangProbe("ambig-aaa-2", "scout", "second", Date.now());
+  try {
+    await pi.command("glla", "agents --tail ambig-aaa", ctx);
+    const msg = ctx.ui.notifies.at(-1)!.message;
+    assert.match(msg, /matches 2 tracked subagents/, "ambiguity is announced");
+    assert.match(msg, /ambig-aaa-1/, "first candidate named");
+    assert.match(msg, /ambig-aaa-2/, "second candidate named");
+    // Exact id still resolves directly.
+    await pi.command("glla", "agents --tail ambig-aaa-1", ctx);
+    assert.doesNotMatch(ctx.ui.notifies.at(-1)!.message, /matches 2 tracked/, "exact id skips disambiguation");
+  } finally {
+    hb.endSubagentHangProbe("ambig-aaa-1");
+    hb.endSubagentHangProbe("ambig-aaa-2");
+    hb.__testOnlyClearSubagentHangProbes();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx).catch(() => {});
+  }
+});
