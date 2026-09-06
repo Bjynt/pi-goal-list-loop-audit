@@ -964,15 +964,25 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * lifecycle branch (active/auditing/paused/loop/recovery). The chip is
  * injected after the literal `glla:` prefix so no per-branch edit can
  * forget it and a future branch inherits it for free. */
-export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
+export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras, width?: number): string | undefined {
   const base = buildStatusTextBase(state, audit, now, theme, extras);
   // The footer gets only the compact worst-child summary. Detailed rows live
   // in the widget; the detached auditor remains a separate verification HUD.
   const withAgentSummary = base && extras?.agents?.line && state.goal?.status !== "auditing"
     ? `${base} · ${extras.agents.line.replace(/^●\s*/, "")}`
     : base;
-  if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return withAgentSummary;
-  return withAgentSummary.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`);
+  if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return truncateStatusToWidth(withAgentSummary, width);
+  return truncateStatusToWidth(withAgentSummary.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`), width);
+}
+
+/** Status-line width budget — the auditing/paused/loop branches concatenate
+ * meter, tally, badges, verdict age, and the worst-child summary with no
+ * truncation, so a narrow terminal wrapped the trailing segment into a
+ * stray next line. Cell/ANSI-aware via pi-tui (CJK-safe); width omitted
+ * keeps the legacy untruncated line for headless/test callers. */
+function truncateStatusToWidth(line: string | undefined, width?: number): string | undefined {
+  if (!line || !width || width <= 0) return line;
+  return tuiTruncateToWidth(line, width, "…");
 }
 
 function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
@@ -1255,7 +1265,10 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   if (detailedAgents.length > 0) {
     const agentLines = detailedAgents.map((line, index) => {
       const continuation = line.startsWith("  ");
-      const text = continuation ? line.trimStart() : `agent: ${line}`;
+      // The task-linkage header (`→ <objective>`) is a group label, not an
+      // agent row — prefixing it with `agent: ` mislabels it.
+      const header = line.startsWith("→ ");
+      const text = continuation ? line.trimStart() : header ? line : `agent: ${line}`;
       return `${index === 0 ? "├─" : "│ "} ${text}`;
     });
     if (inner) {

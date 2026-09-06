@@ -821,7 +821,7 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
       ...(durableDeferRecommendation ? { durableDeferRecommendation } : {}),
       ...(lastAuditorQuietStretch ? { auditorQuietStretch: lastAuditorQuietStretch } : {}),
     };
-    const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras);
+    const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras, width);
     const widgetLines = buildWidgetLines(state, latestAuditProgress, now, theme, width, extras);
     const widgetKey = widgetLines?.join("\n") ?? "";
     const statusChanged = contextChanged || statusText !== lastUIStatusText;

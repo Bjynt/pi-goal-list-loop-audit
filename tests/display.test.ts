@@ -2128,3 +2128,24 @@ test("v0.34.96/v0.34.128: complete_goal detects 'already shipped' / 'verified vX
   // The ledger event is recorded for both paths.
   assert.match(loops, /complete_goal_already_shipped/, "the ledger event is recorded");
 });
+
+test("audit-2026-09-06: widget task-linkage header is not mislabeled as an agent row", () => {
+  const state = { goal: goalOf(), list: [] } as any;
+  const lines = buildWidgetLines(state, null, NOW, undefined, 120, {
+    agents: { line: "1 agent", lines: ["→ Run ONE project audit pass", "scout · id bb6d267e", "  RUNNING · silent 0s"] },
+  } as any)!;
+  const text = lines.join("\n");
+  assert.match(text, /├─ → Run ONE project audit pass/, "header renders as a group label");
+  assert.doesNotMatch(text, /agent: →/, "header is never prefixed with 'agent: '");
+  assert.match(text, /agent: scout · id bb6d267e/, "real agent rows keep the prefix");
+});
+
+test("audit-2026-09-06: status line honors the width budget", () => {
+  const state = { goal: goalOf(), list: [] } as any;
+  const longExtras = { agents: { line: "9 agents · scout silent 0s " + "very-long-detail ".repeat(10), lines: [] } } as any;
+  const full = buildStatusText(state, null, NOW, undefined, longExtras)!;
+  const narrow = buildStatusText(state, null, NOW, undefined, longExtras, 40)!;
+  assert.ok(narrow.length <= 41, `narrow status fits 40 cols (got ${narrow.length})`);
+  assert.ok(full.length > narrow.length || full.length <= 41, "width only truncates, never expands");
+  assert.match(narrow, /…/, "truncation is signaled with an ellipsis");
+});
