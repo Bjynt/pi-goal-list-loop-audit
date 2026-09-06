@@ -212,8 +212,12 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
   const out = all.slice(0, maxLines);
   // The last kept line already fits within width — truncate() would leave it
   // unmarked, so force the ellipsis to signal "more in /goal status".
-  // truncateCells (not pi-tui's truncateToWidth): no ANSI resets appended.
-  out[maxLines - 1] = truncateCells(out[maxLines - 1]!, width);
+  // The last kept line already fits within width — truncateCells would
+  // leave it unmarked, so force the ellipsis to signal "more in
+  // /goal status" (truncateCells, not pi-tui's truncateToWidth: the
+  // latter appends ANSI resets even to plain text).
+  const capped = out[maxLines - 1]!;
+  out[maxLines - 1] = tuiVisibleWidth(capped) < width ? `${capped}…` : truncateCells(capped, width);
   return out;
 }
 
