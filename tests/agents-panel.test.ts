@@ -392,3 +392,29 @@ test("audit-2026-09-06: panel renders the doc-promised blocks row and Recent han
   const bare = renderAgentsPanel([row({ recordId: "x", status: "running", phase: "active" })], Date.now(), true);
   assert.doesNotMatch(bare.join("\n"), /blocks:|Recent hangs/, "no wait + no hangs → neither row");
 });
+
+test("audit-2026-09-06: snapshot labels live rows with the observed parent wait only", async () => {
+  const hb = await import("../extensions/goal-heartbeat.js");
+  const ctx = gllaCtx(tmpCwd());
+  hb.__testOnlyClearSubagentHangProbes();
+  hb.upsertSubagentHangProbe("probe-blocked-1", "scout", "check stuff", Date.now());
+  try {
+    await pi.fire("tool_call", { toolName: "subagent", toolCallId: "wait-blocks-1", input: {} }, ctx);
+    const snap = hb.getSubagentAgentsSnapshot(Date.now());
+    assert.equal(
+      snap.agents.find((a) => a.recordId === "probe-blocked-1")?.blockedBy,
+      "parent subagent wait (subagent)",
+      "live row names the observed wait",
+    );
+    await pi.fire("tool_result", { toolName: "subagent", toolCallId: "wait-blocks-1", output: "done" }, ctx);
+    const cleared = hb.getSubagentAgentsSnapshot(Date.now());
+    assert.equal(
+      cleared.agents.find((a) => a.recordId === "probe-blocked-1")?.blockedBy,
+      undefined,
+      "no in-flight wait → no blocks label",
+    );
+  } finally {
+    hb.endSubagentHangProbe("probe-blocked-1");
+    hb.__testOnlyClearSubagentHangProbes();
+  }
+});
