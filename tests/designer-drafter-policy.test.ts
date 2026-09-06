@@ -155,6 +155,22 @@ test("drafter resolution skips forbidden candidates without inspecting provider 
   assert.notEqual(resolved.selected?.model, backup);
 });
 
+test("audit 2026-09-06: drafter session-last-resort refuses a forbidden session model", () => {
+  const { ctx, session } = fakeContext();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-drafter-forbidden-"));
+  const resolved = resolveDrafterModel({ ...ctx, cwd }, {
+    drafterModel: "test/missing",
+    drafterModelFallbacks: [],
+    forbiddenModels: ["test/session"],
+  });
+  assert.deepEqual(resolved.candidates.map((candidate) => candidate.ref), []);
+  assert.equal(resolved.selected, undefined);
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  assert.match(ledger, /forbidden_model_switch/);
+  assert.match(ledger, /session-last-resort/);
+  void session;
+});
+
 test("drafter keeps a configured current primary so its fallback remains reachable", () => {
   const { ctx, session, backup } = fakeContext();
   const resolved = resolveDrafterModel(ctx, {

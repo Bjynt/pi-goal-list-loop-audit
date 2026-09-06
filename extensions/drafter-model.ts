@@ -98,7 +98,14 @@ export function resolveDrafterModel(ctx: ExtensionContext, settings: Pick<Settin
     candidates.push({ ref: selected.ref, model: selected.model, via: "configured" });
   }
   if (ctx.model && currentRef && !candidates.some((candidate) => candidate.ref.toLowerCase() === currentRef.toLowerCase())) {
-    candidates.push({ ref: currentRef, model: ctx.model, via: "session-last-resort" });
+    // Audit 2026-09-06: the session last resort must not bypass the
+    // forbiddenModels gate — a forbidden session model is refused (and
+    // ledgered) instead of being leased silently.
+    if (forbidden(currentRef)) {
+      appendLedger(ctx.cwd, "forbidden_model_switch", { scope: "drafter", ref: currentRef, via: "session-last-resort", blocked: true });
+    } else {
+      candidates.push({ ref: currentRef, model: ctx.model, via: "session-last-resort" });
+    }
   }
   return { configuredRefs, candidates, selected: candidates[0] };
 }

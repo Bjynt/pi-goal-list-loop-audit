@@ -194,12 +194,32 @@ test("request allowedExtensions rides the hashed payload with resolved paths", (
 });
 
 test("auditorExtensionArgs only emits args for a non-empty allowlist", () => {
-  assert.deepEqual(auditorExtensionArgs(undefined), []);
-  assert.deepEqual(auditorExtensionArgs([]), []);
-  assert.deepEqual(auditorExtensionArgs(["/resolved/path/one", "/resolved/path/two"]), [
-    "--extension", "/resolved/path/one",
-    "--extension", "/resolved/path/two",
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "glla-audx-home-"));
+  assert.deepEqual(auditorExtensionArgs(undefined, home), []);
+  assert.deepEqual(auditorExtensionArgs([], home), []);
+  const one = path.join(home, "ext-one");
+  const two = path.join(home, "ext-two");
+  fs.mkdirSync(one, { recursive: true });
+  fs.mkdirSync(two, { recursive: true });
+  assert.deepEqual(auditorExtensionArgs([one, two], home), [
+    "--extension", one,
+    "--extension", two,
   ]);
+});
+
+test("audit 2026-09-06: auditorExtensionArgs drops raw npm: specs fail-closed", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "glla-audx-raw-"));
+  // No managed install exists under this scratch home, so the raw spec
+  // resolves to nothing and must not be emitted (offline it would
+  // silently vanish; online it would trigger a network install).
+  assert.deepEqual(auditorExtensionArgs(["npm:pi-webaio"], home), []);
+});
+
+test("audit 2026-09-06: allowlist normalize dedups case-insensitively", () => {
+  assert.deepEqual(
+    normalizeAuditorAllowedExtensions(["npm:Pi-WebAIO", "npm:pi-webaio", "NPM:PI-WEBAIO"]),
+    ["npm:Pi-WebAIO"],
+  );
 });
 
 test("v0.35.72: offline auditor validation uses Node timeout support, not POSIX timeout", () => {

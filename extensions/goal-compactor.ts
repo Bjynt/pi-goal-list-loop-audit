@@ -192,12 +192,37 @@ function pruneOldJobDirs(cwd: string, now = Date.now()): void {
  * model (chain → plan B → skip), persists the brief, notifies + pages.
  * Fire-and-forget safe: never throws.
  */
+/** Durable one-shot marker — audit 2026-09-06: the in-memory refuse
+ * transition is process-local, so a restart mid-episode would re-fire the
+ * brief + page. The marker survives restarts; recovery (shouldRefuse=false)
+ * removes it to re-arm the next episode. */
+export function compactorFiredMarkerPath(cwd: string): string {
+  return path.join(piGlaDir(cwd), "compactor-fired.json");
+}
+
 export async function runEmergencyCompactorIfDue(
   ctx: Pick<ExtensionContext, "cwd" | "model" | "modelRegistry" | "getContextUsage">,
   shouldRefuseNow: boolean,
   deps: CompactorDeps = {},
 ): Promise<{ fired: boolean; briefChars?: number; via?: string }> {
-  if (!claimCompactorRefuseTransition(shouldRefuseNow)) return { fired: false };
+  if (!shouldRefuseNow) {
+    claimCompactorRefuseTransition(false);
+    try { fs.rmSync(compactorFiredMarkerPath(ctx.cwd), { force: true }); } catch { /* re-arm best effort */ }
+    return { fired: false };
+  }
+  // Restart mid-episode: the marker says this episode already fired.
+  // Converge the in-memory transition (claim it) and stay silent.
+  let alreadyFired = false;
+  try { alreadyFired = fs.existsSync(compactorFiredMarkerPath(ctx.cwd)); } catch { alreadyFired = false; }
+  if (alreadyFired) {
+    claimCompactorRefuseTransition(true);
+    return { fired: false };
+  }
+  if (!claimCompactorRefuseTransition(true)) return { fired: false };
+  try {
+    fs.mkdirSync(piGlaDir(ctx.cwd), { recursive: true });
+    fs.writeFileSync(compactorFiredMarkerPath(ctx.cwd), JSON.stringify({ at: new Date().toISOString() }) + "\n");
+  } catch { /* marker write is best effort; in-memory one-shot still holds this process */ }
   try {
     return await runEmergencyCompactor(ctx, deps);
   } catch (error) {
