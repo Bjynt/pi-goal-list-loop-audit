@@ -2150,3 +2150,18 @@ test("audit-2026-09-06: status line honors the width budget", () => {
   assert.ok(visibleWidth(full) >= visibleWidth(narrow), "width only truncates, never expands");
   assert.match(narrow, /…/, "truncation is signaled with an ellipsis");
 });
+
+test("audit-2026-09-06: truncate/wrap are cell-aware (CJK/emoji + surrogate-safe)", async () => {
+  const { visibleWidth } = await import("@earendil-works/pi-tui");
+  // Wide glyphs: 4 CJK chars = 8 cells; budget 5 must cut, not overrun.
+  const t = truncate("日本語テスト", 5);
+  assert.ok(visibleWidth(t) <= 5, `CJK truncate fits budget (got ${visibleWidth(t)})`);
+  assert.match(t, /…/, "CJK truncation is signaled");
+  // Surrogate safety: no lone surrogate halves.
+  const e = truncate("😀abc", 3);
+  assert.doesNotMatch(e, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/, "no split surrogate pairs");
+  assert.ok(visibleWidth(e) <= 3, "emoji truncate fits budget");
+  // Wrap packs by cells: CJK words break onto their own lines within width.
+  const lines = wrap("日本語 テストです ok", 8, 5);
+  for (const line of lines) assert.ok(visibleWidth(line) <= 8, `wrap line fits 8 cells: ${line}`);
+});

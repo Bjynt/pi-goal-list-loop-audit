@@ -503,3 +503,21 @@ test("v0.28.20: no bracket/paren chrome — VALUE and SOURCE render bare", () =>
   );
   assert.doesNotMatch(eff.valueText, /\(|\)/, `no parens in composite: ${eff.valueText}`);
 });
+
+test("audit-2026-09-06: settings TUI tabs row is truncated to terminal width", async () => {
+  const { SettingsMenuComponent } = await import("../extensions/settings-menu.ts");
+  const { visibleWidth } = await import("@earendil-works/pi-tui");
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
+  const passthrough = new Proxy({}, { get: (_t, prop) => (s: string) => String(s) }) as any;
+  const menu = new SettingsMenuComponent(
+    { rows, title: "Settings", initialSection: undefined },
+    () => {},
+    passthrough,
+    {} as any,
+    () => {},
+  );
+  const lines = menu.render(80);
+  for (const line of lines) {
+    assert.ok(visibleWidth(line) <= 80, `menu line fits 80 cols: ${JSON.stringify(line).slice(0, 90)}`);
+  }
+});

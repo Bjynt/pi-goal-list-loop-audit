@@ -149,3 +149,13 @@ test("the ✓ done chat notifies use the line block; external keeps the single l
   assert.equal(tools.match(/buildApprovalChatLines\(\{/g)?.length ?? 0, 2, "both tool ✓ done notifies use the approval voice");
   assert.match(tools, /notifyExternal\(ctx, `Goal complete \(auditor approved\): \$\{recap\}`\)/, "external notify keeps the compact line");
 });
+
+test("audit-2026-09-06: completionSummaryLines honors the optional line-width budget", async () => {
+  const { completionSummaryLines } = await import("../extensions/completion-summary.ts");
+  const { visibleWidth } = await import("@earendil-works/pi-tui");
+  const text = "Outcome: did the thing. Changed: " + "x".repeat(300) + ". Evidence: y. Tests: z. Unresolved: none. Next: none.";
+  const wide = completionSummaryLines(text);
+  const narrow = completionSummaryLines(text, 240, 40);
+  assert.ok(wide.some((l) => visibleWidth(l) > 40), "default lines can exceed 40 cells");
+  for (const line of narrow) assert.ok(visibleWidth(line) <= 40, `budgeted line fits 40 cells: ${line.slice(0, 60)}`);
+});
