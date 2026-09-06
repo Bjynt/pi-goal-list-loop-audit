@@ -361,9 +361,9 @@ test("audit-2026-09-06: takeover re-verifies the occupant at signal time", async
     record: readOwnerFile(cwd),
     confirmed: true,
     deps: {
-      // First read (gate) sees pi; the pre-signal re-read sees the
+      // describeOwner + the gate see pi; the pre-signal re-read sees the
       // occupant turned over into sleep — the signal must not fire.
-      readCmdline: () => (++reads === 1 ? "pi\0--agent\0" : "/usr/bin/sleep\x0099994\x00"),
+      readCmdline: () => (++reads <= 2 ? "pi\0--agent\0" : "/usr/bin/sleep\x0099994\x00"),
       signal: () => { signaled++; },
       sleepMs: () => Promise.resolve(),
       settleMs: 300,
