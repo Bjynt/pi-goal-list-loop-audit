@@ -2509,10 +2509,12 @@ function cmdAgents(args: string, ctx: ExtensionContext): void {
       .slice(-3)
       .map((e) => {
         const v = (e.value ?? {}) as { agentType?: string; recordId?: string; at?: string };
-        const age = e.at ? ageShort(now - Date.parse(e.at)) : "?";
+        const ms = e.at ? now - Date.parse(e.at) : Number.NaN;
+        const age = Number.isFinite(ms) && ms >= 0
+          ? ms < 3_600_000 ? `${Math.max(0, Math.round(ms / 60_000))}m` : `${Math.floor(ms / 3_600_000)}h${String(Math.floor(ms / 60_000) % 60).padStart(2, "0")}m`
+          : "?";
         return `${v.agentType ?? "subagent"} ${age} ago`;
-      })
-      .filter((s) => !s.startsWith("subagent ? ago") || true);
+      });
   } catch { recentHangs = []; }
   ctx.ui.notify(`glla agents${managerAvailable ? "" : " (pi-subagents manager registry not present — event evidence only)"}\n${renderAgentsPanel(agents, Date.now(), managerAvailable, recentHangs).join("\n")}`, "info");
 }

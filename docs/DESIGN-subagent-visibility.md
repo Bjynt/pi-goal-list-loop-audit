@@ -29,14 +29,29 @@ holds (no new instrumentation):
 - Ledger history of `subagent_hang_detected` for the "Recent hangs" footer
   of the panel.
 
-Row shape:
+Row shape (shipped two-line: v0.38.22 rich rows keep identity/purpose and
+liveness on separate short lines so narrow terminals never truncate the
+silence age; audit 2026-09-06 verified this against the doc and kept the
+code — the doc, not the pins, was stale):
 
 ```
-● explore   map-model-picker   RUNNING 4m12s   tools 18 · out 2.1k · silent 0m
-● plan      audit-contract     HUNG? 31m       tools 6 → frozen · out 890 · silent 26m
-  └ blocks: foreground subagent call (zombie stand-down active)
-✓ explore   schema-check       ENDED ok 3m44s
+● explore · map-model-picker · id a1b2c3
+  RUNNING · ACTIVE · silent 0s
+● plan · audit-contract · id d4e5f6
+  HUNG? · HUNG · silent 26m · record-frozen
+  └ check the Agents panel: a child whose counters stopped moving is hung, not thinking
+  └ blocks: parent subagent wait (Agent) (zombie stand-down active)
+✓ explore · schema-check · id 9a8b7c
+  ENDED ok · silent 3m44s
+… 2 more (oldest ended trimmed — cap 20)
+Recent hangs: plan 31m ago · explore 2h05m ago
 ```
+
+The `└ blocks:` row renders only from an OBSERVED in-flight parent
+subagent wait (tool args carry no run id, so per-row correlation is
+impossible — the wait NAME is named, never inferred). The "Recent hangs"
+footer reads the durable `subagent_hang_detected` ledger (last 3, absent
+when empty — never a placeholder).
 
 Hung classification reuses `classifyHungSubagents` semantics (record-frozen
 vs event-only evidence). Cap display at ~20 rows; prune ended probes per
