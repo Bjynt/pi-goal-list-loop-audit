@@ -14,6 +14,7 @@
  *   /glla (settings UI) | /glla <action>
  */
 
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -1173,7 +1174,10 @@ function archiveCurrentGoal(
   // renameSync's replacement semantics.
   const archived = runPersistStep("archiveCurrentGoal", () => {
     ensureDirs(ctx.cwd);
-    const temp = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 10)}.tmp`;
+    // Audit 2026-09-06: randomUUID instead of Math.random — temp names
+    // must not be guessable by a sibling writer (the wx flag already
+    // mitigates, this removes the predictability too).
+    const temp = `${target}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
     try {
       fs.writeFileSync(temp, md, { encoding: "utf-8", flag: "wx" });
       fs.linkSync(temp, target);

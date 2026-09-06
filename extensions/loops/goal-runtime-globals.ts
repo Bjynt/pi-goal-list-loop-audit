@@ -354,11 +354,35 @@ export type GoalRuntimeDescriptor<Name extends GoalRuntimeGlobalName> = Omit<Pro
   set?: (value: GoalRuntimeGlobals[Name]) => void;
 };
 
+// Audit 2026-09-06: overwrite detection. Last-write-wins stays the
+// semantics (a module re-execution must replace stale closures), but every
+// registration is counted on a globalThis-held map so a copy-paste double
+// registration is observable — the contract test asserts single
+// registration per process. The map lives on globalThis (not module
+// state) so even a full module re-execution cannot reset the evidence.
+const REGISTRATION_COUNTS_KEY = "__gllaRuntimeGlobalRegistrationCounts";
+function registrationCounts(): Map<string, number> {
+  const holder = globalThis as Record<string, unknown>;
+  let counts = holder[REGISTRATION_COUNTS_KEY] as Map<string, number> | undefined;
+  if (!counts) {
+    counts = new Map<string, number>();
+    holder[REGISTRATION_COUNTS_KEY] = counts;
+  }
+  return counts;
+}
+
 export function defineGoalRuntimeGlobal<Name extends GoalRuntimeGlobalName>(
   name: Name,
   descriptor: GoalRuntimeDescriptor<Name>,
 ): void {
+  const counts = registrationCounts();
+  counts.set(name, (counts.get(name) ?? 0) + 1);
   Object.defineProperty(globalThis, name, { configurable: true, ...descriptor });
+}
+
+/** Test-only: how many times each runtime global was registered this process. */
+export function goalRuntimeGlobalRegistrationCounts(): ReadonlyMap<string, number> {
+  return registrationCounts();
 }
 
 declare global {

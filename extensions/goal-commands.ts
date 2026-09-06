@@ -2731,6 +2731,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("visionAssist", "visionAssist"),
       fmt("auditorModel", "auditorModel"),
       fmt("auditorThinkingLevel", "thinking"),
+      // Audit 2026-09-06: the headless fallback omitted these — headless
+      // operators could not see the compactor chain or display richness.
+      fmt("compactorModel", "compactorModel"),
+      `compactorModelFallbacks: ${formatMainModelFallbacks(effectiveSettings.compactorModelFallbacks)}  [${prov.compactorModelFallbacks?.source ?? "default"}]`,
+      fmt("subagentDisplayRichness", "subagentDisplayRichness"),
       fmt("notifyCmd", "notify"),
       fmt("tokenLimit", "tokenLimit"),
       fmt("autoResume", "autoResume"),
