@@ -44,6 +44,10 @@ export interface AgentsPanelRow {
   outputTokens: number;
   silentMs: number;
   evidence: "record-frozen" | "event-only" | "live";
+  /** In-flight parent tool wait this live child holds (audit 2026-09-06:
+   * the doc-promised `└ blocks:` row). Set only from observed
+   * in-flight subagent-wait tool calls — never inferred. */
+  blockedBy?: string;
   action?: "abort-requested" | "unavailable" | "failed";
   endedOk?: boolean;
   endedAt?: number;
@@ -119,9 +123,17 @@ function orderedRows(rows: AgentsPanelRow[]): AgentsPanelRow[] {
   return [...rows].sort((a, b) => rowRank(a) - rowRank(b) || b.silentMs - a.silentMs);
 }
 
+/** Compose the `└ blocks:` label from observed in-flight parent waits.
+ * Pure helper so the snapshot assembly and tests share the wording. */
+export function blockedByLabel(waitNames: string[]): string | undefined {
+  const names = [...new Set(waitNames.filter(Boolean))];
+  if (names.length === 0) return undefined;
+  return `parent subagent wait (${names.join("/")})`;
+}
+
 /** Render the /glla agents table. Hung/running/queued first, then ended;
  * capped at PANEL_ROW_CAP rows with an explicit truncation notice. */
-export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAvailable: boolean): string[] {
+export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAvailable: boolean, recentHangs: string[] = []): string[] {
   if (rows.length === 0) {
     return ["No subagents tracked yet — spawn one via the `subagent` tool and it appears here.", "(evidence: glla's event probes" + (managerAvailable ? " + pi-subagents manager records" : "") + ")"];
   }
@@ -141,9 +153,21 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
     } else if (row.status === "hung") {
       lines.push("  └ check the Agents panel: a child whose counters stopped moving is hung, not thinking");
     }
+    // Audit 2026-09-06: the doc-promised `└ blocks:` row — only rendered
+    // from an observed in-flight wait (blockedBy set at snapshot time).
+    if (row.blockedBy && row.status !== "ended") {
+      lines.push(`  └ blocks: ${truncate(row.blockedBy, 80)} (zombie stand-down active)`);
+    }
   }
   if (ordered.length > shown.length) {
     lines.push(`… ${ordered.length - shown.length} more (oldest ended trimmed — cap ${PANEL_ROW_CAP})`);
+  }
+  // Audit 2026-09-06: the doc-promised "Recent hangs" footer, fed from
+  // the durable subagent_hang_detected ledger by the caller. Absent when
+  // there is nothing to show — never a placeholder row.
+  const hangs = recentHangs.filter(Boolean).slice(-3);
+  if (hangs.length > 0) {
+    lines.push(`Recent hangs: ${hangs.map((h) => truncate(h, 60)).join(" · ")}`);
   }
   return lines;
 }

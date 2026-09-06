@@ -2499,7 +2499,22 @@ function cmdAgents(args: string, ctx: ExtensionContext): void {
     ctx.ui.notify([header, ...result.lines, ...(result.ok ? [] : [result.detail])].join("\n"), result.ok ? "info" : "warning");
     return;
   }
-  ctx.ui.notify(`glla agents${managerAvailable ? "" : " (pi-subagents manager registry not present — event evidence only)"}\n${renderAgentsPanel(agents, Date.now(), managerAvailable).join("\n")}`, "info");
+  // Audit 2026-09-06: the doc-promised "Recent hangs" footer — last 3
+  // durable subagent_hang_detected events. Best-effort: a missing ledger
+  // yields no footer, never an error row.
+  let recentHangs: string[] = [];
+  try {
+    const now = Date.now();
+    recentHangs = readLedgerTail(ctx.cwd, 25, (e) => e.type === "subagent_hang_detected")
+      .slice(-3)
+      .map((e) => {
+        const v = (e.value ?? {}) as { agentType?: string; recordId?: string; at?: string };
+        const age = e.at ? ageShort(now - Date.parse(e.at)) : "?";
+        return `${v.agentType ?? "subagent"} ${age} ago`;
+      })
+      .filter((s) => !s.startsWith("subagent ? ago") || true);
+  } catch { recentHangs = []; }
+  ctx.ui.notify(`glla agents${managerAvailable ? "" : " (pi-subagents manager registry not present — event evidence only)"}\n${renderAgentsPanel(agents, Date.now(), managerAvailable, recentHangs).join("\n")}`, "info");
 }
 
 // v0.29.8: /glla status — the unified "what's running" surface (user: "we
