@@ -18,6 +18,7 @@ import {
   MAIN_HOST_LABEL,
   WORKER_TEXT_SPACER,
 } from "../extensions/goal-loop-display.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import type { Goal, State } from "../extensions/goal-loop-core.ts";
 import type { LoopState } from "../extensions/goal-loop-forever.ts";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
@@ -2145,7 +2146,7 @@ test("audit-2026-09-06: status line honors the width budget", () => {
   const longExtras = { agents: { line: "9 agents · scout silent 0s " + "very-long-detail ".repeat(10), lines: [] } } as any;
   const full = buildStatusText(state, null, NOW, undefined, longExtras)!;
   const narrow = buildStatusText(state, null, NOW, undefined, longExtras, 40)!;
-  assert.ok(narrow.length <= 41, `narrow status fits 40 cols (got ${narrow.length})`);
-  assert.ok(full.length > narrow.length || full.length <= 41, "width only truncates, never expands");
+  assert.ok(visibleWidth(narrow) <= 40, `narrow status fits 40 cells (got ${visibleWidth(narrow)})`);
+  assert.ok(visibleWidth(full) >= visibleWidth(narrow), "width only truncates, never expands");
   assert.match(narrow, /…/, "truncation is signaled with an ellipsis");
 });
