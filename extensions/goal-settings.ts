@@ -550,6 +550,16 @@ function migrateLegacySettings(value: Partial<Settings>): Record<string, unknown
       : undefined;
   }
   delete migrated.auditorModelFallback;
+  // Audit 2026-09-06: migrate the legacy `reviewer` block to `postaudit`
+  // (postaudit wins when both present) so stale reviewer-only config is
+  // not immortal — reads already prefer postaudit.
+  if (migrated.postaudit === undefined
+      && Object.prototype.hasOwnProperty.call(value, "reviewer")
+      && typeof migrated.reviewer === "object"
+      && migrated.reviewer !== null) {
+    migrated.postaudit = migrated.reviewer;
+  }
+  delete migrated.reviewer;
   if (migrated.hourlyRetryProbe === undefined && typeof migrated.hourlyQuotaProbe === "boolean") {
     migrated.hourlyRetryProbe = migrated.hourlyQuotaProbe;
   }
