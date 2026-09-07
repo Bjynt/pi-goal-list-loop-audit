@@ -172,27 +172,31 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
   return lines;
 }
 
-/** Detailed worker rows for the above-editor widget. The widget receives every
- * active row up to a bounded display cap; the remainder has an explicit
- * /glla agents escape hatch rather than disappearing silently. */
+/** Single-line glyph-first worker rows for the below-chat widget (v0.38.23
+ * Option-2 shape). One row per tracked child: state reads from the leading
+ * glyph (▶ running, ◉ abort in flight, ⚠ hung/unavailable/failed) so no
+ * state word is needed for the healthy case; the silence age sits before
+ * any trailing suffix so narrow-terminal truncation cuts the least
+ * important field first. Ids live in the /glla agents table, not here.
+ * Overflow names its count without a command hint (v0.38.23: extension
+ * meta is noise). Silence ages stay bucketed — raw per-second values
+ * churn the widget key and re-layout the editor every tick (v0.37.1). */
 export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now(), maxRows = WIDGET_AGENT_ROW_CAP): string[] {
   const active = orderedRows(rows.filter((r) => r.status !== "ended"));
   const shown = active.slice(0, Math.max(1, maxRows));
   const lines: string[] = [];
   for (const row of shown) {
-    // Keep identity/purpose and liveness fields on separate short lines so a
-    // narrow terminal does not truncate the silence age—the field that tells
-    // the user whether a worker is actually making progress.
-    lines.push(`${rowLabel(row)} · id ${cleanField(row.recordId, 10)}`);
+    const glyph = row.status === "hung" ? "⚠"
+      : row.action === "abort-requested" ? "◉"
+      : (row.action === "unavailable" || row.action === "failed") ? "⚠"
+      : "▶";
+    const action = row.action === "abort-requested" ? " · aborting"
+      : row.action === "unavailable" ? " · abort unavailable"
+      : row.action === "failed" ? " · abort failed" : "";
     const evidence = row.evidence !== "live" ? ` · ${row.evidence}` : "";
-    const action = row.action === "abort-requested" ? " · aborting" : row.action === "unavailable" ? " · abort unavailable" : row.action === "failed" ? " · abort failed" : "";
-    // v0.38.22 (display unification): bucket the silence age like the
-    // compact line — raw per-second values churn the widget key and
-    // re-layout the editor every tick (the v0.37.1 jumping, reintroduced
-    // the moment rich lines render ambiently).
-    lines.push(`  ${rowStateWord(row, now)} · silent ${fmtDuration(bucketSilentMs(row.silentMs))}${evidence}${action}`);
+    lines.push(`${glyph} ${rowLabel(row)} · silent ${fmtDuration(bucketSilentMs(row.silentMs))}${action}${evidence}`);
   }
-  if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents · /glla agents`);
+  if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents`);
   return lines;
 }
 
@@ -223,9 +227,11 @@ export function assembleAgentsExtras(
   // the compact count line — hiding healthy fan-out entirely cost ambient
   // awareness. HUNG still surfaces via the ⚠ in the line itself.
   if (richness !== "rich") return { line, lines: [] };
-  const clean = objective.replace(/\s+/g, " ").trim();
-  const header = clean ? [`→ ${truncate(clean, 60)}`] : [];
-  return { line, lines: [...header, ...renderAgentsWidgetLines(rows, now)] };
+  // v0.38.23: no task-linkage header — the card head already names the
+  // objective (`● <objective> · active · …`), so `→ <objective>` repeated
+  // it verbatim on the next row.
+  void objective;
+  return { line, lines: renderAgentsWidgetLines(rows, now) };
 }
 
 /** The compact footer summary: count + the least-live child.
