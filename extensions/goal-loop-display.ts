@@ -1299,8 +1299,9 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   if (detailedAgents.length > 0) {
     const agentLines = detailedAgents.map((line, index) => {
       const continuation = line.startsWith("  ");
-      // The task-linkage header (`→ <objective>`) is a group label, not an
-      // agent row — prefixing it with `agent: ` mislabels it.
+      // A `→ ` group label is not an agent row — prefixing it with
+      // `agent: ` would mislabel it. (No producer emits one since
+      // v0.38.23; the branch stays as tolerance.)
       const header = line.startsWith("→ ");
       const text = continuation ? line.trimStart() : header ? line : `agent: ${line}`;
       return `${index === 0 ? "├─" : "│ "} ${text}`;

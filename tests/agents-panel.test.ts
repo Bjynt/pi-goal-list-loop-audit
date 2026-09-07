@@ -90,23 +90,20 @@ test("v0.35.29 #15: the compact worker summary hides at zero and warns on the le
   assert.ok(line!.endsWith("⚠"), "hung busiest child raises the warning glyph");
 });
 
-test("v0.35.65: detailed widget rows expose identity, purpose, evidence-backed phase, elapsed, silence, and overflow", () => {
+test("v0.38.23: detailed widget rows are single-line glyph-first with age, plus a command-free overflow", () => {
   const active = row({ recordId: "active-1", agentType: "Explore", summary: "inspect auth flow", phase: "active", startedAt: NOW - 3 * MIN, silentMs: 5_000 });
   const detail = renderAgentsWidgetLines([active], NOW, 1);
-  assert.match(detail[0]!, /Explore · inspect auth flow · id active-1/);
-  assert.match(detail[1]!, /RUNNING · ACTIVE · 3m00s · silent 5s/);
+  assert.deepEqual(detail, ["▶ Explore · inspect auth flow · silent 5s"]);
 
   const lines = renderAgentsWidgetLines([
     active,
     row({ recordId: "hung-2", agentType: "Plan", summary: "audit recovery", status: "hung", phase: "hung", silentMs: 26 * MIN }),
     row({ recordId: "queued-3", agentType: "Plan", summary: "wait for slot", status: "queued", phase: "queued", silentMs: 2_000 }),
   ], NOW, 2);
-  assert.equal(lines.length, 5, "two two-line rows plus an explicit overflow affordance");
-  assert.match(lines[0]!, /Plan · audit recovery · id hung-2/);
-  assert.match(lines[1]!, /HUNG\? · HUNG/);
-  assert.match(lines[2]!, /Explore · inspect auth flow · id active-1/);
-  assert.match(lines[3]!, /RUNNING · ACTIVE/);
-  assert.match(lines[4]!, /1 more agents · \/glla agents/);
+  assert.equal(lines.length, 3, "two single-line rows plus an explicit overflow count");
+  assert.match(lines[0]!, /^⚠ Plan · audit recovery · silent 26m00s$/, "hung sorts first with the warning glyph");
+  assert.match(lines[1]!, /^▶ Explore · inspect auth flow · silent 5s$/);
+  assert.equal(lines[2], "… 1 more agents", "overflow names its count, no command hint");
 });
 
 test("v0.35.66: --tail matches the exact child identity and formats entries tolerantly", () => {
@@ -334,12 +331,15 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
   const auditStatus = buildStatusText({ ...stateRecord, goal: { ...stateRecord.goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
   assert.doesNotMatch(auditStatus, /2 agents/);
   const agentAt = withAgents.findIndex((l) => l.includes("agent: Explore · inspect auth"));
+  assert.ok(agentAt >= 0, "worker detail stays inside the card");
   const footerAt = withAgents.findIndex((l) => l.startsWith("└─"));
-  assert.ok(agentAt >= 0 && agentAt < footerAt, "worker detail stays inside the card before its footer");
+  // v0.38.23: empty queue means no card footer at all — when a footer
+  // exists (queued depth) the detail must precede it.
+  assert.ok(footerAt === -1 || agentAt < footerAt, "detail precedes any footer");
 
-  const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["Explore · inspect auth · id active-1 · RUNNING · ACTIVE · 3m00s · silent 5s"] } })!;
+  const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["▶ Explore · inspect auth · silent 5s"] } })!;
   assert.match(agentOnly[0]!, /active workers/);
-  assert.match(agentOnly.at(-1)!, /\/glla agents/);
+  assert.equal(agentOnly.at(-1), "├─ agent: ▶ Explore · inspect auth · silent 5s", "v0.38.23: orphan detail ends the card, no command-hint footer");
 });
 
 // v0.35.45 (audit finding): /glla agents --tail rendered child-transcript

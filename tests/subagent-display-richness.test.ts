@@ -51,8 +51,8 @@ test("v0.38.23 rich assembles single-line glyph rows, no header; compact keeps t
   // v0.38.23 Option-2: one glyph-first row per worker, no task-linkage
   // header (the card head already names the objective), no ids.
   assert.equal(rich!.lines.length, 2, "one row per worker");
-  assert.match(rich!.lines[0]!, /^▶ worker ui fixes · silent 30s$/, "healthy row: glyph + name + age, no state word");
-  assert.match(rich!.lines[1]!, /^▶ worker art batch · silent 1m$/, "age sits before any suffix so truncation cuts last");
+  assert.match(rich!.lines[0]!, /^▶ worker · art batch · silent 1m00s$/, "stalest first within rank; age before any suffix");
+  assert.match(rich!.lines[1]!, /^▶ worker · ui fixes · silent 30s$/, "healthy row: glyph + name + age, no state word");
   assert.ok(!rich!.lines.some((l) => l.includes("rec-")), "ids live in /glla agents, not the widget");
   assert.ok(rich!.line.startsWith("● 2 agents"), "count line kept");
 
