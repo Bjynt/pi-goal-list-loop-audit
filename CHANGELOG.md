@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.24 — audit pass: abort-latch send guards, ownership compare-and-swap, auditor inherit parity (2026-09-07)
+
+### Fixed
+- Full display/lifecycle/settings audit pass (goal `20260907131550-12ddoy`, three parallel read-only scouts): 44 findings → 0 open. Display decisions (user-grilled): head owns liveness (status drops the `LIVE` capsule/tails, keeps `[WORKING]` + counts), exceptions-only `quiet` default (troubled rows + count line; healthy fan-out lives on the fleet panel), `active {age}` / `quiet {age}` worker labels.
+- Lifecycle HIGH: `sendContinuation` / `sendStallEscalation` / `sendLengthContinue` refuse on `flags.abortedStandDown`; terminal-notice refusal scoped to the abort latch so transcript closure still wins; zombie retry routes on the abort-closure owner (loop abort no longer stranded by a goal started mid-delay); cycle-reset consumes budget (`attempts+1`) and honors the 24h horizon while the probe turn stays prompt per the v0.34.132 contract.
+- Lifecycle MED/LOW: fallback `agent_start`/`turn_start` acks refuse on intervening user messages; successor absorb + self-heal share `clearDeadGenerationDispatch` (no more idle behind a "re-armed" lie); ownership refresh is compare-and-swap (live foreign claims never clobbered; dead records still refresh for heartbeat reclaim); command entry forces a fresh ownership read past the background throttle; length-continue lost its stale-classifier exemption.
+- Settings: `stallShortWords: 0` (= off) survives normalization; auditor thinking gains the drafter's `session — inherit` row + non-reasoning picks clear stale overrides; bare `/glla fallbacks` reads on stale handles (only `clear/off/unset/none` mutates); typing `auto` in the notify editor round-trips to unset; v0.38.23 comment/doc drift swept (richness/quiet copy, reviewer write→migrate lifecycle, DESIGN one-line rows, SETTINGS wedge vs aggressive default). Full audit: `audit/AUDIT-PASS-2026-09-07.md`. Coverage: `release:check` 1979 pass / 0 fail.
+
 ## 0.38.23 — below-chat widget: forced placement, single-line rows, evidence lifesign (2026-09-07)
 
 ### Fixed

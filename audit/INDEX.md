@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-07):**
+- `AUDIT-PASS-2026-09-07.md` — v0.38.24: full display/lifecycle/settings audit pass (goal `20260907131550-12ddoy`), 44 findings → 0 open; head-owns-liveness + exceptions-only `quiet` default (user-grilled); send-side abort-latch guards, zombie closure-routing, ownership compare-and-swap, auditor inherit/clear parity, `stallShortWords` 0 = off, arg-aware fallbacks gate
 - `BELOW-CHAT-LIFESIGN-2026-09-07.md` — v0.38.23: forced `belowEditor` pin (swap fix), extension-meta footers deleted (`N queued` kept), Option-2 single-line glyph rows (header gone, ids stay in `/glla agents`), evidence-gated breathing head + `stream {age}` readout, semantic ramp on head + rows only (queued caps amber, monochrome = shape + number)
 
 **Earlier (2026-09-05):**
