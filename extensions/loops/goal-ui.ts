@@ -801,13 +801,12 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
     const extras = {
       stalls: consecutiveStalls,
       recent: recentActions,
-      // v0.38.22 (display unification): richness ladder for ambient
-      // workers — `rich` (default) restores the detailed rows the v0.37.1
-      // jitter fix removed, now safe because silence ages are bucketed
-      // (widget key only changes on genuine state transitions, not every
-      // tick) plus the task-linkage header native UI can never show.
-      // `compact` keeps the single line; `quiet` surfaces hung/aborting
-      // workers only (HUNG is never silent at any level).
+      // Audit 2026-09-07 (DECIDED: exceptions-only by default): `quiet`
+      // (default) renders troubled rows only — healthy fan-out lives on
+      // the native fleet panel. `rich` restores all detailed rows (safe:
+      // ages are bucketed so the widget key moves on genuine state
+      // transitions, not every tick); `compact` keeps the single line.
+      // HUNG is never silent at any level.
       ...(() => {
         try {
           const { agents } = getSubagentAgentsSnapshot();

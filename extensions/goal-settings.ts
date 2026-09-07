@@ -245,11 +245,12 @@ export interface Settings {
   /** v0.27.5: post-completion audit config. Same shape as `reviewer`. */
   postaudit?: Record<string, unknown>;
   subagentModelStrategy?: SubagentModelStrategy;
-  /** v0.38.22 (display unification): ambient worker richness. `rich`
-   * (default) shows detailed worker rows + the task-linkage header;
-   * `compact` shows the single count line; `quiet` shows worker presence
-   * only when a child is hung/aborting — HUNG is never silent at any
-   * level. `/glla agents` keeps full detail regardless. */
+  /** v0.38.22 (display unification): ambient worker richness. Audit
+   * 2026-09-07 (DECIDED: exceptions-only by default — the native fleet
+   * panel already shows healthy workers in more detail): `quiet`
+   * (default) shows troubled (non-fresh) worker rows only; `rich` shows
+   * all worker rows; `compact` shows the single count line. HUNG is never
+   * silent at any level. `/glla agents` keeps full detail regardless. */
   subagentDisplayRichness?: SubagentDisplayRichness;
   /** Per-agent-type model pin, e.g. { "scout": "minimax/MiniMax-M3" }.
    * Always wins over subagentModelStrategy — the managed override is written
@@ -355,7 +356,9 @@ export const DEFAULT_SETTINGS: Settings = {
   subagentModelStrategy: "inherit-parent",
   // v0.38.22 (display unification): rich by default — full worker rows +
   // task linkage; trimmable to compact/quiet, never silent on hangs.
-  subagentDisplayRichness: "rich",
+  // Audit 2026-09-07 (DECIDED: exceptions-only by default): quiet. Rich
+  // stays one setting flip away for operators who want full rows.
+  subagentDisplayRichness: "quiet",
   auditFeedbackChars: DEFAULT_AUDIT_FEEDBACK_CHARS,
   // v0.34.141: keep-going is the production default. Set false explicitly
   // for the conservative pause-first policy; the dial flips DEFAULTS, never
@@ -418,7 +421,7 @@ export function normalizeLoadedSettings(settings: Settings): Settings {
   if (settings.subagentDisplayRichness !== "rich"
       && settings.subagentDisplayRichness !== "compact"
       && settings.subagentDisplayRichness !== "quiet") {
-    settings.subagentDisplayRichness = "rich";
+    settings.subagentDisplayRichness = "quiet";
   }
   if (settings.mainModelFailback !== "auto" && settings.mainModelFailback !== "sticky") {
     settings.mainModelFailback = "auto";

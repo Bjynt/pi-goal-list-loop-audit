@@ -234,7 +234,16 @@ export function assembleAgentsExtras(
   // zero are tracked (line undefined above). Tracked-but-healthy keeps
   // the compact count line — hiding healthy fan-out entirely cost ambient
   // awareness. HUNG still surfaces via the ⚠ in the line itself.
-  if (richness !== "rich") return { line, lines: [] };
+  // Audit 2026-09-07 (DECIDED: exceptions-only by default): quiet renders
+  // troubled (non-fresh-band) rows only — healthy fan-out lives on the
+  // native fleet panel, which shows it in more detail. The count line
+  // stays at every level (2026-09-06 ambient-awareness decision); HUNG is
+  // never silent at any level.
+  if (richness === "compact") return { line, lines: [] };
+  if (richness === "quiet") {
+    const troubled = rows.filter((r) => lifesignBandFor(r) !== "fresh");
+    return { line, lines: renderAgentsWidgetLines(troubled, now, WIDGET_AGENT_ROW_CAP, theme) };
+  }
   return { line, lines: renderAgentsWidgetLines(rows, now, WIDGET_AGENT_ROW_CAP, theme) };
 }
 
