@@ -104,12 +104,16 @@ test("helper: stall warning with active goal is not stale", () => {
   assert.equal(reason, null);
 });
 
-test("helper: length continue is never stale (generic truncation recovery)", () => {
-  resetState();
+test("helper: length continue delivers with live supervision, stale without (audit 2026-09-07)", () => {
+  // The old "never stale" pin encoded the bug: a queued length nudge with
+  // NO supervision is an unowned turn (queued before archival) and must
+  // sanitize like any other marker-less goal-event. A truncated turn
+  // implies a live turn, which implies active supervision — so the live
+  // case still delivers and no live nudge is dropped.
   const cwd = tmpCwd();
   const content = "Your previous response was cut off at the model's per-response output token limit. Continue EXACTLY where you stopped";
-  const reason = __testOnlyClassifyStaleContinuation(content, cwd);
-  assert.equal(reason, null, "length continue must pass even with no supervision");
+  resetState();
+  assert.match(__testOnlyClassifyStaleContinuation(content, cwd)!, /no active supervision/);
   // also with active goal
   replaceState({ goal: seedGoal({ status: "active" }), list: [], loop: null } as any);
   assert.equal(__testOnlyClassifyStaleContinuation(content, cwd), null);
@@ -141,25 +145,4 @@ test("helper: raw continuation source is correctly identified as stale when arch
   const reason = __testOnlyClassifyStaleContinuation(raw, cwd);
   assert.ok(reason, "raw pasted continuation must be stale when no active goal");
   assert.match(reason!, /no active goal/);
-});
-
-test("audit 2026-09-07 MEDIUM: queued length nudge with no supervision is stale (no exemption)", () => {
-  const cwd = tmpCwd();
-  resetState(); // archived/idle: the finding's case
-  const reason = __testOnlyClassifyStaleContinuation(
-    "Your previous response was cut off at the model's per-response output token limit. Continue EXACTLY where you stopped.",
-    cwd,
-  );
-  assert.ok(reason, "stale");
-  assert.match(reason!, /no active supervision/);
-});
-
-test("audit 2026-09-07 MEDIUM: length nudge with live supervision still delivers", () => {
-  const cwd = tmpCwd();
-  replaceState({ goal: seedGoal({ status: "active" }), list: [], loop: null } as any);
-  const reason = __testOnlyClassifyStaleContinuation(
-    "Your previous response was cut off at the model's per-response output token limit. Continue EXACTLY where you stopped.",
-    cwd,
-  );
-  assert.equal(reason, null, "live supervision delivers the nudge");
 });
