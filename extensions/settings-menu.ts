@@ -564,7 +564,7 @@ export function buildSettingsRows(
     valueText: show("subagentDisplayRichness", "quiet"),
     sourceText: src("subagentDisplayRichness"),
     description:
-      "quiet shows troubled workers only (default — healthy fan-out lives on the fleet panel); rich shows all worker rows; compact shows the count line — HUNG is never silent",
+      "quiet shows troubled workers only + the count line (default — healthy fan-out lives on the fleet panel); rich shows all worker rows; compact shows the count line only — HUNG is never silent",
   });
   for (const name of OVERRIDABLE_AGENT_TYPES) {
     rows.push({

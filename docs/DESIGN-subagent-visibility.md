@@ -29,23 +29,22 @@ holds (no new instrumentation):
 - Ledger history of `subagent_hang_detected` for the "Recent hangs" footer
   of the panel.
 
-Row shape (shipped two-line: v0.38.22 rich rows keep identity/purpose and
-liveness on separate short lines so narrow terminals never truncate the
-silence age; audit 2026-09-06 verified this against the doc and kept the
-code — the doc, not the pins, was stale):
+Row shape (shipped one-glyph-line since v0.38.23: age-first single lines
+replace the v0.38.22 two-line shape — footers deleted, ids live in
+`/glla agents`; audit 2026-09-07 verified this against the doc and kept
+the code — the doc, not the pins, was stale):
 
 ```
-● explore · map-model-picker · id a1b2c3
-  RUNNING · ACTIVE · silent 0s
-● plan · audit-contract · id d4e5f6
-  HUNG? · HUNG · silent 26m · record-frozen
-  └ check the Agents panel: a child whose counters stopped moving is hung, not thinking
-  └ blocks: parent subagent wait (Agent) (zombie stand-down active)
-✓ explore · schema-check · id 9a8b7c
-  ENDED ok · silent 3m44s
-… 2 more (oldest ended trimmed — cap 20)
-Recent hangs: plan 31m ago · explore 2h05m ago
+▶ explore · map-model-picker · active 8s
+▶ plan · audit-contract · quiet 26m
+⚠ plan · stuck-render · HUNG · quiet 31m · id e5f6…
 ```
+
+Troubled rows append the short id; healthy rows stay self-contained
+without the fleet panel (the v0.38.22 `└ check the Agents panel` footer
+is gone — the row itself says what is wrong). `/glla agents` keeps the
+full detail view (recent hangs read the durable `subagent_hang_detected`
+ledger, absent when empty — never a placeholder).
 
 The `└ blocks:` row renders only from an OBSERVED in-flight parent
 subagent wait (tool args carry no run id, so per-row correlation is

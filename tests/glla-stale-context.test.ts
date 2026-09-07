@@ -186,6 +186,27 @@ test("v0.34.52: /glla status, log, stats, audits stay usable on a stale handle (
   assert.equal(probes - beforeProbes, 4, "each read-only command got its entry probe trail");
 });
 
+test("audit 2026-09-07 (LOW, finding 399): bare `/glla fallbacks` is a read-only display — allowed on a stale handle; `fallbacks clear` still mutates and is refused", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {});
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+  const before = ledgerText(cwd);
+  invalidateHostSession(pi, ctx);
+
+  await pi.command("glla", "fallbacks", ctx);
+  await tick();
+  assert.ok(ctx.ui.matching("fallback models").length >= 1, "the read-only chain display still renders");
+  assert.ok(!ledgerText(cwd).includes('"settings_mutation_refused_stale"', before.length), "bare display is not refused");
+
+  await pi.command("glla", "fallbacks clear", ctx);
+  await tick();
+  const after = ledgerText(cwd);
+  assert.ok(after.includes('"settings_mutation_refused_stale"'), "the mutating clear is refused and ledgered");
+  assert.ok(!after.includes('"settings_saved"'), "clear wrote nothing");
+});
+
 test("v0.34.52: the standard recovery — a fresh session reopens the settings UI and owns the next /glla", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
@@ -233,7 +254,10 @@ test("v0.34.52: source — cmdSettings captures the entry probe and gates the se
   const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdSettings moved
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
   assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/glla"\);/, "entry probe result is captured");
-  assert.match(SRC, /if \(staleEntry && \(verb === "ui" \|\| SETTINGS_MUTATING_ACTIONS\.has\(verb\)\)\) \{/, "settings-entry + action gate");
+  // Audit 2026-09-07 (LOW, finding 399): the gate is arg-aware for the
+  // mixed `fallbacks` verb — bare display reads only, clear mutates.
+  assert.match(SRC, /fallbacksReadOnly = verb === "fallbacks"/, "bare fallbacks display carves out of the mutating gate");
+  assert.match(SRC, /if \(staleEntry && \(verb === "ui" \|\| \(!fallbacksReadOnly && SETTINGS_MUTATING_ACTIONS\.has\(verb\)\)\)\) \{/, "settings-entry + action gate");
   assert.match(SRC, /appendLedger\(ctx\.cwd, "settings_mutation_refused_stale", \{ sub: verb \}\)/, "refusal is ledgered with the verb");
   assert.match(CORE, /SETTINGS_MUTATING_ACTIONS = new Set\(\[/, "the action set lives in core next to the /list gate");
   for (const verb of ["wipe", "reset", "cancel", "resume", "reviewer", "postaudit", "tooloverride"]) {

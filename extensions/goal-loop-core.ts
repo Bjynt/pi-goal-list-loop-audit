@@ -636,6 +636,9 @@ export const LIST_MUTATING_SUBCOMMANDS = new Set([
  * table choice writes state. wipe/reset/cancel/resume/reviewer/postaudit/
  * tooloverride mutate directly. Read-only surfaces (status, log, stats,
  * audits) and the unknown-action notice stay available for inspection.
+ * `fallbacks` is mixed: bare display reads only (allowed on a stale
+ * handle), while clear/off/unset/none mutates (refused) — the call site
+ * in goal-commands.ts arg-gates it (audit 2026-09-07, finding 399).
  */
 export const SETTINGS_MUTATING_ACTIONS = new Set([
   "wipe",

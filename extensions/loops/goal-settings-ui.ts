@@ -1603,7 +1603,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const v = await ctx.ui.select("Subagent display richness (ambient worker UI)", [
       "rich — all worker rows",
       "compact — the count line only",
-      "quiet — troubled workers only (default, HUNG is never silent)",
+      "quiet — troubled workers only + the count line (default, HUNG is never silent)",
       ]);
       if (v) {
         const richness: SubagentDisplayRichness = v.startsWith("compact") ? "compact" : v.startsWith("quiet") ? "quiet" : "rich";
@@ -1618,7 +1618,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     case "notifyCmd": {
       const v = await ctx.ui.input("Notify command — the event message is passed as $1", "custom command · empty = auto-detect (notify-send/osascript) · 'off' = silent");
-      if (v !== undefined) saveSettings("global", ctx.cwd, { notifyCmd: v.trim() || undefined });
+      // Audit 2026-09-07 (LOW, finding 400): the menu VALUE column shows
+      // `auto` for unset — typing that visible word must round-trip to
+      // unset, not persist a shell command literally named `auto`.
+      if (v !== undefined) {
+        const raw = v.trim();
+        const auto = /^(auto(?:-detect)?|default)$/i.test(raw);
+        saveSettings("global", ctx.cwd, { notifyCmd: !raw || auto ? undefined : raw });
+      }
       return;
     }
     case "tokenLimit": {

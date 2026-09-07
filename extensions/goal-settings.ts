@@ -249,7 +249,9 @@ export interface Settings {
    * 2026-09-07 (DECIDED: exceptions-only by default — the native fleet
    * panel already shows healthy workers in more detail): `quiet`
    * (default) shows troubled (non-fresh) worker rows only; `rich` shows
-   * all worker rows; `compact` shows the single count line. HUNG is never
+   * all worker rows; `compact` shows the single count line. The count
+   * line stays at every level (2026-09-06 ambient-awareness decision) —
+   * `quiet` hides only when zero workers are tracked. HUNG is never
    * silent at any level. `/glla agents` keeps full detail regardless. */
   subagentDisplayRichness?: SubagentDisplayRichness;
   /** Per-agent-type model pin, e.g. { "scout": "minimax/MiniMax-M3" }.
@@ -354,10 +356,11 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.24.6: subagents inherit the session model by default, avoiding a
   // surprise provider/model pin from the upstream default agent.
   subagentModelStrategy: "inherit-parent",
-  // v0.38.22 (display unification): rich by default — full worker rows +
-  // task linkage; trimmable to compact/quiet, never silent on hangs.
-  // Audit 2026-09-07 (DECIDED: exceptions-only by default): quiet. Rich
-  // stays one setting flip away for operators who want full rows.
+  // v0.38.22 (display unification): full ambient worker rows; trimmable
+  // to compact/quiet, never silent on hangs.
+  // Audit 2026-09-07 (DECIDED: exceptions-only by default): quiet —
+  // troubled rows + the count line; healthy fan-out lives on the native
+  // fleet panel. Rich stays one setting flip away for full rows.
   subagentDisplayRichness: "quiet",
   auditFeedbackChars: DEFAULT_AUDIT_FEEDBACK_CHARS,
   // v0.34.141: keep-going is the production default. Set false explicitly
@@ -649,7 +652,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "stallSimilarityThreshold",
   "postaudit",
   "toolOverrides",
-  "reviewer", // v0.33.1: legacy alias — menu saves can write it; provenance must know it exists
+  "reviewer", // v0.33.1: legacy alias — menu saves can still write it (when postaudit is unset) and load-migration consolidates it into postaudit on the next read; provenance must know it exists or reviewer-sourced values report "unknown"
 ];
 
 /** Where each effective setting comes from (for the /glla display). */
