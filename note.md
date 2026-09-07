@@ -9,8 +9,14 @@ updating uiux
 ##
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
+##
+aduit pass no summary
+/home/dracon/Pictures/Screenshots/Screenshot_20260907_153747.png 
+
 ## 
 we need a perfect post objective summary much like how others do it lets resesarch other harnesses for this 
+
+
 
 # Later
 
