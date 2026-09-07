@@ -243,6 +243,7 @@ import {
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import { buildTerminalApprovalRender, compactCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels } from "../completion-summary.js";
+import { isApprovalContextIdle, persistApprovalRender } from "../approval-render-store.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,

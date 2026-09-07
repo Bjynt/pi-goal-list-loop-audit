@@ -124,6 +124,7 @@ isGoalRevisionCurrent,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
+import { replayUndeliveredApprovalRenders } from "../approval-render-store.js";
 import {
   createContinuationDispatch,
   dispatchMatchesOwner,
@@ -778,12 +779,18 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      replayUndeliveredApprovalRenders(ctx);
       return cmdGoal(args, ctx);
     },
   });
   const settingsHandler = (args: string, ctx: ExtensionContext) => {
     rememberCtx(ctx);
     if (refuseForeignCommand(ctx)) return Promise.resolve();
+    // v0.38.25: live contact — replay any approval render that landed
+    // with no live turn (persist-first, never silent).
+    replayUndeliveredApprovalRenders(ctx);
     return cmdSettings(args, ctx);
   };
   pi.registerCommand("glla", {
@@ -812,6 +819,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      replayUndeliveredApprovalRenders(ctx);
       return cmdReview(args, ctx);
     },
   });
@@ -838,6 +848,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      replayUndeliveredApprovalRenders(ctx);
       return cmdList(args, ctx);
     },
   });
@@ -859,6 +872,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      replayUndeliveredApprovalRenders(ctx);
       return cmdLoop(args, ctx);
     },
   });
