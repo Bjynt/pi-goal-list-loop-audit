@@ -1616,6 +1616,14 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   staleTerminalDone = false;
   sessionHandoffPending = false;
   sessionGeneration++; // a dead generation's delayed callbacks must not fire into the new owner
+  // Audit 2026-09-07 (MEDIUM): the dead generation's accepted dispatch can
+  // never settle here (generation fence) and blocks the tail's fresh
+  // schedule — clear it so the new session doesn't idle behind it.
+  if (pendingContinuationDispatchRef()) {
+    appendLedger(ctx.cwd, "successor_absorb_cleared_stale_dispatch", { generation: sessionGeneration });
+    clearContinuationStartWatchdog();
+    clearDispatchRecord(ctx.cwd);
+  }
   clearDraftingState(); // the old interview belongs to the disposed generation
   appendLedger(ctx.cwd, "session_rebind_via_live_ctx", { via, generation: sessionGeneration });
   let auditRetryStarted = false;
