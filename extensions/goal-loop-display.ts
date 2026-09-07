@@ -1297,13 +1297,14 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   const detailedAgents = extras?.agents?.lines ?? (extras?.agents?.line ? [extras.agents.line] : []);
   let withAgents: string[] | undefined = inner;
   if (detailedAgents.length > 0) {
+    // Audit 2026-09-07: rows render bare and glyph-first (the approved
+    // Option-2 shape — `├─ ▶ worker · art batch · quiet 31m`). The `agent: `
+    // prefix burned ~7 cells before narrow-terminal truncation and told the
+    // reader nothing the card context doesn't already say. Continuation
+    // lines still trim their indent so wrapped detail aligns under the row.
     const agentLines = detailedAgents.map((line, index) => {
       const continuation = line.startsWith("  ");
-      // A `→ ` group label is not an agent row — prefixing it with
-      // `agent: ` would mislabel it. (No producer emits one since
-      // v0.38.23; the branch stays as tolerance.)
-      const header = line.startsWith("→ ");
-      const text = continuation ? line.trimStart() : header ? line : `agent: ${line}`;
+      const text = continuation ? line.trimStart() : line;
       return `${index === 0 ? "├─" : "│ "} ${text}`;
     });
     if (inner) {
@@ -1509,7 +1510,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     ? headLifesign(extras?.agentRows)
     : undefined;
   if (headLive) {
-    const ageColor = headLive.band === "fresh" ? "dim" : headLive.band === "aging" ? "warning" : "error";
+    // Audit 2026-09-07: the fresh age text rides the documented success
+    // ramp (head glyph + age text + row glyphs are success <5m) — dim
+    // belongs to idle surfaces, not live evidence.
+    const ageColor = headLive.band === "fresh" ? "success" : headLive.band === "aging" ? "warning" : "error";
     headSegs.push(paint(theme, ageColor, `stream ${fmtDuration(bucketSilentMs(headLive.freshestMs))}`));
   }
   // v0.28.30: the type stays visible — v0.33.0 names it via the "list item"
@@ -1912,9 +1916,14 @@ function goalDurationMs(g: Goal, now: number): number {
 function completedGoalLines(g: Goal, now: number, theme?: DisplayTheme, width?: number): string[] {
   const done = g.status === "complete";
   const why = g.status === "aborted" ? (g.stopReason ?? g.pauseReason) : undefined;
-  const segs = `${done ? "✓ done" : "✗ aborted"} · ${why ? `${truncate(sanitizeDisplayText(why).replace(/\s+/g, " "), 28)} · ` : ""}took ${fmtElapsed(goalDurationMs(g, now))}`;
+  // Audit 2026-09-07: the outcome word appeared twice (`✓ done · recap ·
+  // ✓ done · took X`) — it leads once now. The recap budget accounts for
+  // every fixed adornment around it (`─ ` + outcome + ` · ` + ` · ` +
+  // tail); the old flat `-4` omitted ~8 cells so the recap truncated early.
+  const outcome = done ? "✓ done" : "✗ aborted";
+  const tail = `${why ? `${truncate(sanitizeDisplayText(why).replace(/\s+/g, " "), 28)} · ` : ""}took ${fmtElapsed(goalDurationMs(g, now))}`;
   const objBudget = width && width > 0
-    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 4 - visibleLen(segs))
+    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 2 - visibleLen(outcome) - 3 - 3 - visibleLen(tail))
     : 44;
   // v0.34.91/v0.36.0: every newly archived terminal path carries a useful
   // recap — including abort/cancel/impossible-derived archives — while the
@@ -1922,7 +1931,7 @@ function completedGoalLines(g: Goal, now: number, theme?: DisplayTheme, width?: 
   const recap = g.completionSummary?.trim()
     ? g.completionSummary.replace(/\s+/g, " ").trim()
     : g.objective.replace(/\s+/g, " ");
-  return [`${paint(theme, "dim", "─")} ${paint(theme, "dim", `${done ? "✓ done" : "✗ aborted"} · ${truncate(recap, objBudget)} · ${segs}`)}`];
+  return [`${paint(theme, "dim", "─")} ${paint(theme, "dim", `${outcome} · ${truncate(recap, objBudget)} · ${tail}`)}`];
 }
 
 function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] {

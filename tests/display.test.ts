@@ -433,6 +433,29 @@ test("widget truncation is width-aware (v0.22.2)", () => {
   assert.ok(tiny.length <= 70, `tiny head must stay near the terminal width, got ${tiny.length}`);
 });
 
+test("audit 2026-09-07: worker rows splice before the auditor block, never inside it", () => {
+  const g = goalOf({
+    status: "auditing",
+    policy: "goal",
+    pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-splice" },
+  });
+  const lines = buildWidgetLines(
+    { goal: g, list: [] },
+    { phase: "running", label: "running", currentTool: "read" },
+    NOW,
+    undefined,
+    120,
+    { agents: { line: "1 agent", lines: ["▶ worker · old work · quiet 31m"] } },
+  )!;
+  const text = lines.join("\n");
+  const agentAt = lines.findIndex((l) => l.includes("▶ worker"));
+  const auditorAt = lines.findIndex((l) => l.includes("├─ auditor: "));
+  assert.ok(agentAt >= 0 && auditorAt >= 0, `both surfaces present:\n${text}`);
+  assert.ok(agentAt < auditorAt, "worker rows precede the auditor block");
+  const between = lines.slice(auditorAt).join("\n");
+  assert.doesNotMatch(between, /▶ worker/, "no worker row lands between auditor observations and its footer");
+});
+
 test("widget lines reserve pi-tui's horizontal padding", () => {
   const g = goalOf({
     status: "auditing",
@@ -772,6 +795,9 @@ test("v0.34.91: completed goal summary shows the agent's completion recap, not t
   assert.equal(lines.length, 1, "still ONE dim line");
   assert.match(lines[0]!, /✓ done/);
   assert.match(lines[0]!, /Audited all 9 deathrun routes/, "the recap tells what happened");
+  // Audit 2026-09-07: the outcome word leads once — never the
+  // `✓ done · recap · ✓ done · took X` stutter.
+  assert.equal((lines[0]!.match(/✓ done/g) ?? []).length, 1, "outcome appears exactly once");
   assert.doesNotMatch(lines.join("\n"), /Create x\.txt/, "the objective echo is gone — it read like a ticket title, not a recap");
   assert.match(lines[0]!, /took 1h 45m/);
 });
@@ -2146,15 +2172,15 @@ test("v0.34.96/v0.34.128: complete_goal detects 'already shipped' / 'verified vX
   assert.match(loops, /complete_goal_already_shipped/, "the ledger event is recorded");
 });
 
-test("audit-2026-09-06: widget task-linkage header is not mislabeled as an agent row", () => {
+test("audit-2026-09-07: widget worker rows render bare glyph-first, no `agent: ` prefix", () => {
   const state = { goal: goalOf(), list: [] } as any;
   const lines = buildWidgetLines(state, null, NOW, undefined, 120, {
     agents: { line: "1 agent", lines: ["→ Run ONE project audit pass", "scout · id bb6d267e", "  RUNNING · quiet 0s"] },
   } as any)!;
   const text = lines.join("\n");
-  assert.match(text, /├─ → Run ONE project audit pass/, "header renders as a group label");
-  assert.doesNotMatch(text, /agent: →/, "header is never prefixed with 'agent: '");
-  assert.match(text, /agent: scout · id bb6d267e/, "real agent rows keep the prefix");
+  assert.match(text, /├─ → Run ONE project audit pass/, "group label renders as-is");
+  assert.match(text, /│ scout · id bb6d267e/, "real agent rows render bare (approved Option-2 shape)");
+  assert.doesNotMatch(text, /agent: /, "no row carries the `agent: ` prefix");
 });
 
 test("audit-2026-09-06: status line honors the width budget", () => {

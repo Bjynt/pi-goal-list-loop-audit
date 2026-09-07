@@ -336,7 +336,7 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
   // hung/aborting child must never hide behind the audit (HUNG-never-silent).
   const auditStatus = buildStatusText({ ...stateRecord, goal: { ...stateRecord.goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore quiet 26m", lines: [] } })!;
   assert.match(auditStatus, /2 agents/);
-  const agentAt = withAgents.findIndex((l) => l.includes("agent: Explore · inspect auth"));
+  const agentAt = withAgents.findIndex((l) => l.includes("Explore · inspect auth"));
   assert.ok(agentAt >= 0, "worker detail stays inside the card");
   const footerAt = withAgents.findIndex((l) => l.startsWith("└─"));
   // v0.38.23: empty queue means no card footer at all — when a footer
@@ -345,7 +345,7 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
 
   const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["▶ Explore · inspect auth · active 5s"] } })!;
   assert.match(agentOnly[0]!, /active workers/);
-  assert.equal(agentOnly.at(-1), "├─ agent: ▶ Explore · inspect auth · active 5s", "v0.38.23: orphan detail ends the card, no command-hint footer");
+  assert.equal(agentOnly.at(-1), "├─ ▶ Explore · inspect auth · active 5s", "audit 2026-09-07: orphan detail renders bare glyph-first, no `agent: ` prefix");
 });
 
 // v0.35.45 (audit finding): /glla agents --tail rendered child-transcript
