@@ -47,7 +47,7 @@ function isValidRender(entry: unknown): entry is PendingApprovalRender {
     && (e.deliveredAt === undefined || typeof e.deliveredAt === "string");
 }
 
-function readRenders(cwd: string): PendingApprovalRender[] | undefined {
+function readRenders(cwd: string): PendingApprovalRender[] {
   let raw: string;
   try {
     raw = fs.readFileSync(approvalRenderStorePath(cwd), "utf-8");
@@ -91,7 +91,7 @@ export function persistApprovalRender(cwd: string, render: {
   delivered: boolean;
 }): boolean {
   const at = nowIso();
-  const existing = readRenders(cwd) ?? [];
+  const existing = readRenders(cwd);
   const entry: PendingApprovalRender = {
     goalId: render.goalId,
     objective: render.objective.slice(0, 300),
@@ -99,11 +99,14 @@ export function persistApprovalRender(cwd: string, render: {
     createdAt: at,
     ...(render.delivered ? { deliveredAt: at } : {}),
   };
+  // The cap trims DELIVERED history only: undelivered renders are never
+  // dropped (each is ~1KB and any user command replays them, so the
+  // undelivered tail is self-draining in practice).
   const undelivered = existing.filter((e) => !e.deliveredAt);
-  const delivered = [...existing.filter((e) => e.deliveredAt), ...(render.delivered ? [entry] : [])]
-    .slice(-(MAX_STORED_RENDERS - undelivered.length - (render.delivered ? 0 : 1)));
-  const next = [...undelivered, ...(render.delivered ? [] : [entry]), ...delivered];
-  if (!writeRenders(cwd, next.slice(-MAX_STORED_RENDERS))) return false;
+  const delivered = [...existing.filter((e) => e.deliveredAt), ...(render.delivered ? [entry] : [])];
+  const deliveredBudget = Math.max(0, MAX_STORED_RENDERS - undelivered.length - (render.delivered ? 0 : 1));
+  const next = [...undelivered, ...(render.delivered ? [] : [entry]), ...delivered.slice(-deliveredBudget)];
+  if (!writeRenders(cwd, next)) return false;
   appendLedger(cwd, "terminal_approval_render_persisted", {
     goalId: render.goalId,
     delivered: render.delivered,
@@ -118,7 +121,7 @@ export function persistApprovalRender(cwd: string, render: {
  * throws. */
 export function replayUndeliveredApprovalRenders(ctx: { cwd: string; ui: { notify: (message: string, type?: "info" | "warning" | "error") => void } }): number {
   const renders = readRenders(ctx.cwd);
-  if (!renders || renders.length === 0) return 0;
+  if (renders.length === 0) return 0;
   const pending = renders.filter((e) => !e.deliveredAt).slice(0, MAX_REPLAY_PER_CONTACT);
   if (pending.length === 0) return 0;
   const at = nowIso();
