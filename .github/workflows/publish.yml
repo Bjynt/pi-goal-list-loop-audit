@@ -9,8 +9,15 @@ on:
 permissions:
   contents: read
 
+# Audit 2026-09-07 (v0.38.24 ship): the dracon-sync daemon pushes goal-
+# state commits ~every minute, and GitHub cancels all but the newest QUEUED
+# run in a concurrency group. Sharing one group serialized the slow quality
+# gate (~10 min) with publish, so every release run queued behind quality
+# and died superseded within a minute — publish could never fire (npm stuck
+# at 0.38.22 while tags advanced). Separate groups: push/PR validation
+# churns in its own lane; publish (rare, fast) queues only behind publish.
 concurrency:
-  group: npm-publish
+  group: glla-quality
   cancel-in-progress: false
 
 jobs:
@@ -39,6 +46,11 @@ jobs:
         run: npm run release:check
 
   publish:
+    # Own lane (see top-of-file note): release publishes must never queue
+    # behind per-push quality churn, or daemon pushes supersede-cancel them.
+    concurrency:
+      group: npm-publish
+      cancel-in-progress: false
     if: github.event_name == 'release'
     permissions:
       contents: read
