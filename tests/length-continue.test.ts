@@ -86,7 +86,7 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
 
 test("sendLengthContinue: stale-api terminal guard + admitted-session reset", () => {
   assert.match(CONT, /function sendLengthContinue\(ctx: ExtensionContext, consecutive: number\)/); // decomposition step 5: moved
-  assert.match(CONT, /if \(flags\.sessionHandoffPending \|\| flags\.initialSessionLoadPending \|\| !flags\.extensionApi \|\| flags\.extensionApiStale \|\| continuationDispatchStoodDown \|\| pendingContinuationDispatch\) return;/, "lifecycle, blank-start, stale-runtime, and in-flight dispatch guards short-circuit the send (flags accessor re-spelling)");
+  assert.match(CONT, /if \(flags\.sessionHandoffPending \|\| flags\.initialSessionLoadPending \|\| !flags\.extensionApi \|\| flags\.extensionApiStale \|\| continuationDispatchStoodDown \|\| pendingContinuationDispatch \|\| flags\.abortedStandDown\) return;/, "lifecycle, blank-start, stale-runtime, in-flight dispatch, and abort-latch guards short-circuit the send (flags accessor re-spelling; audit 2026-09-07 task 5 added the latch)");
   assert.match(CONT, /kind: "length",\s*\n\s*marker: LENGTH_CONTINUE_TEXT\.slice\(0, 80\)/, "length sends use the dispatch proof state machine");
   assert.match(CONT, /flags\.extensionApi\.sendMessage\(\{\s*\n\s*customType: GOAL_EVENT_ENTRY,\s*\n\s*content: LENGTH_CONTINUE_TEXT/);
   assert.match(CONT, /appendLedger\(ctx\.cwd, "length_continue_sent", \{ consecutive, attemptId: attempt\.id \}\)/);
