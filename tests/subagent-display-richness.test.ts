@@ -89,15 +89,14 @@ test("v0.38.22 hasHungWorker covers hung + aborting, ignores ended", () => {
   assert.equal(hasHungWorker([]), false, "zero workers, zero presence");
 });
 
-test("v0.38.22 every rich line is width-safe and header truncates long objectives", () => {
+test("v0.38.23 every rich line is width-safe; long summaries truncate cell-aware", () => {
   const wide = assembleAgentsExtras(
     [row({ summary: "a".repeat(100), recordId: "r".repeat(60) })],
     "rich",
-    "x".repeat(200),
     1_000_000,
   )!;
   for (const line of [wide.line, ...wide.lines]) {
     assert.ok(line.length <= 100, `width-safe: ${line.length} chars`);
   }
-  assert.ok(wide.lines[0]!.length <= 64, "linkage header truncated");
+  assert.match(wide.lines[0]!, /^▶ worker · a+… · silent 30s$/, "long summary truncates, age survives");
 });
