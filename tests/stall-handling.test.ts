@@ -407,7 +407,7 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   assert.match(settings, /"autoResume",/);
 });
 
-test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset rides the backoff envelope", () => {
+test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset consumes budget and honors the horizon", () => {
   // 1. The retry timer must route on its closure goalId, never live state —
   //    `|| goal` sent a loop retry into the goal branch whenever any goal
   //    object existed, stranding the loop paused forever with budget left.
@@ -420,13 +420,11 @@ test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset
   assert.ok(resetAt >= 0, "cycle-reset ledger site exists");
   const resetHead = RECOVERY.slice(Math.max(0, resetAt - 600), resetAt);
   assert.match(resetHead, /attempted: \[current\][\s\S]{0,200}?attempts: recovery\.attempts \+ 1/, "each new cycle consumes backoff budget");
-  const resetEnd = RECOVERY.indexOf("return;", resetAt);
-  assert.ok(resetEnd > resetAt, "cycle-reset block ends");
+  const resetEnd = RECOVERY.indexOf('mode: "cycle-reset"', resetAt);
+  assert.ok(resetEnd > resetAt, "cycle-reset probe ledger ends the block");
   const resetBlock = RECOVERY.slice(resetAt, resetEnd);
-  assert.match(resetBlock, /resumeCurrent: true/, "the probe intent survives: the timer-driven probe resumes the supervised turn on current");
-  assert.match(resetBlock, /setMainModelRecoveryPause\(ctx, next, delay\)/, "the reset parks through the envelope");
-  assert.match(resetBlock, /scheduleMainModelRecoveryTimer\(ctx, delay\)/, "the timer re-drives the probe");
-  assert.ok(!resetBlock.includes("scheduleContinuation(ctx, true, 1_000)"), "no immediate 1s re-activation");
+  assert.match(resetBlock, /holdMainModelRecovery\(ctx, next/, "past the horizon the reset holds for manual resume instead of resurrecting");
+  assert.match(resetBlock, /scheduleContinuation\(ctx, true, 1_000\)/, "the probe turn still resumes synchronously (v0.34.132 contract: the turn IS the health check)");
 });
 
 test("v0.35.x — zombie-run watchdog: busy + zero stream events gets bounded abort and recovery guidance", () => {

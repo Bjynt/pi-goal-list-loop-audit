@@ -1325,19 +1325,38 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     // The ordered chain has been visited for this recovery cycle. Start a
     // deliberate new cycle by retrying the currently selected model; the
     // next failure can then walk primary → backup 1 → … again.
-    // Audit 2026-09-07 (HIGH): the reset rides the standard delayed-retry
-    // envelope (growing backoff + 24h horizon + manual hold) instead of
-    // re-activating after a flat 1s with an unincremented attempts count —
-    // a fast-failing `current` otherwise spun the bounded recovery with no
-    // backoff growth and no horizon check at reset time. The probe itself
-    // is preserved: resumeCurrent parks the intent, and the timer-driven
-    // probe resumes the supervised turn on `current` (that turn IS the
-    // health check), so each new cycle costs a backoff delay and consumes
-    // horizon instead of firing hot.
-    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: true, pendingModelSwitch: undefined, attempts: recovery.attempts + 1 };
+    // Audit 2026-09-07 (HIGH, scoped): each new cycle consumes backoff
+    // budget (attempts+1, so the next failure's envelope delay grows) and
+    // honors the 24h horizon (past the wall the reset holds for manual
+    // resume instead of resurrecting a turn). The probe turn itself stays
+    // prompt by design — the backoff wait is served between failure and
+    // probe by the park+timer envelope, the hourly ticker's extra probe is
+    // an explicit queue-jump, and the resumed supervised turn on `current`
+    // IS the health check (v0.34.132 executable contract pins the
+    // synchronous scheduleContinuation; deferring it strands the probe).
+    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined, attempts: recovery.attempts + 1 };
     appendLedger(ctx.cwd, "main_model_fallback_cycle_reset", { current, attempted: recovery.attempted, attempts: next.attempts });
-    const delay = mainModelRetryDelayMs(next.attempts, loadGlobalSettings().mainModelRetryMinutes);
-    if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
+    const aggressive = (() => {
+      try { return resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode; } catch { return false; }
+    })();
+    const horizonMs = next.autoRetryUntil ? Date.parse(next.autoRetryUntil) : Number.NaN;
+    if (next.manualResumeRequired || (!aggressive && Number.isFinite(horizonMs) && Date.now() >= horizonMs)) {
+      holdMainModelRecovery(ctx, next, "the 24h automatic recovery horizon was reached");
+      return;
+    }
+    state.mainModelRecovery = next;
+    persistState(ctx);
+    flags.continuationDispatchStoodDown = false;
+    if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
+      updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
+      scheduleContinuation(ctx, true, 1_000);
+    } else if (recovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
+      state.loop = { ...state.loop, active: true, stopReason: undefined };
+      persistState(ctx);
+      scheduleLoopTick(ctx);
+    }
+    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: next.attempts, mode: "cycle-reset" });
+    ctx.ui.notify(`Main model recovery probe: retrying ${current} after visiting the configured fallback chain.`, "info");
     return;
   }
   // A candidate can be registered but still unusable (no configured auth or
