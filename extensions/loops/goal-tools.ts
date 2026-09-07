@@ -1286,6 +1286,7 @@ function registerAgentTools(pi: any): void {
             : [],
         });
         const manualObjective = state.goal.objective;
+        const manualGoalId = state.goal.id;
         const archived = archiveCurrentGoal(ctx, "complete", terminalReason);
         if (!archived) {
           // The archive helper preserves the live objective and emits the
@@ -1307,7 +1308,7 @@ function registerAgentTools(pi: any): void {
         ctx.ui.notify(manualRender.chatLines.join("\n"), "info");
         notifyExternal(ctx, `Goal complete (auditor approved): ${manualRender.recap}`);
         persistApprovalRender(ctx.cwd, {
-          goalId: state.goal?.id ?? goalId,
+          goalId: manualGoalId,
           objective: manualObjective,
           chatLines: manualRender.chatLines,
           delivered: !isApprovalContextIdle(ctx),

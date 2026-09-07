@@ -202,10 +202,10 @@ export function buildAuditCountsLine(goal: Goal, auditNote?: string): string {
     ? `${telemetry.turns} turns · ${telemetry.fileWrites} file writes · ${telemetry.bashCalls} bash calls`
     : "no execution telemetry was recorded";
   const history = goal.auditHistory ?? [];
-  const audit = auditNote ?? (history.length === 0
+  const latest = history.length > 0 ? history[history.length - 1] : undefined;
+  const audit = auditNote ?? (latest === undefined
     ? "no auditor verdict was recorded"
     : (() => {
-      const latest = history[history.length - 1];
       const verdict = latest.approved ? "approved" : latest.impossible ? "impossible" : latest.disapproved ? "disapproved" : "no verdict";
       return `auditor ${verdict} (${history.length} verdict${history.length === 1 ? "" : "s"})`;
     })());
