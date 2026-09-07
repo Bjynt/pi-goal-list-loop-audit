@@ -44,26 +44,30 @@ test("v0.38.22 richness defaults to rich and normalizes junk", () => {
   assert.equal(unset.subagentDisplayRichness, "rich", "unset means rich");
 });
 
-test("v0.38.22 rich assembles rows + task-linkage header; compact keeps the line; quiet hides healthy workers", () => {
+test("v0.38.23 rich assembles single-line glyph rows, no header; compact keeps the line; quiet hides healthy workers", () => {
   const rows = [row(), row({ recordId: "rec-abcdef", summary: "art batch", silentMs: 65_000 })];
-  const rich = assembleAgentsExtras(rows, "rich", "Execute the note.md Now batch for the music tab", 1_000_000);
+  const rich = assembleAgentsExtras(rows, "rich", 1_000_000);
   assert.ok(rich, "rich shows workers");
-  assert.match(rich!.lines[0]!, /^→ Execute the note\.md/, "first line links workers to their task");
-  assert.ok(rich!.lines.length >= 5, "detailed rows present");
+  // v0.38.23 Option-2: one glyph-first row per worker, no task-linkage
+  // header (the card head already names the objective), no ids.
+  assert.equal(rich!.lines.length, 2, "one row per worker");
+  assert.match(rich!.lines[0]!, /^▶ worker ui fixes · silent 30s$/, "healthy row: glyph + name + age, no state word");
+  assert.match(rich!.lines[1]!, /^▶ worker art batch · silent 1m$/, "age sits before any suffix so truncation cuts last");
+  assert.ok(!rich!.lines.some((l) => l.includes("rec-")), "ids live in /glla agents, not the widget");
   assert.ok(rich!.line.startsWith("● 2 agents"), "count line kept");
 
-  const compact = assembleAgentsExtras(rows, "compact", "objective", 1_000_000);
+  const compact = assembleAgentsExtras(rows, "compact", 1_000_000);
   assert.ok(compact?.line.startsWith("● 2 agents"), "compact keeps the count line");
   assert.deepEqual(compact!.lines, [], "compact splices no detail rows");
 
   // Audit 2026-09-06 (DECIDED: show count line): quiet hides only at zero
   // tracked — tracked-but-healthy keeps the compact count line.
-  const quiet = assembleAgentsExtras(rows, "quiet", "objective", 1_000_000);
-  assert.equal(quiet?.line, assembleAgentsExtras(rows, "compact", "objective", 1_000_000)?.line, "quiet keeps the healthy count line");
+  const quiet = assembleAgentsExtras(rows, "quiet", 1_000_000);
+  assert.equal(quiet?.line, assembleAgentsExtras(rows, "compact", 1_000_000)?.line, "quiet keeps the healthy count line");
   assert.deepEqual(quiet!.lines, [], "quiet never splices detail rows");
-  assert.equal(assembleAgentsExtras([], "quiet", "objective", 1_000_000), undefined, "quiet hides when zero tracked");
+  assert.equal(assembleAgentsExtras([], "quiet", 1_000_000), undefined, "quiet hides when zero tracked");
 
-  const hung = assembleAgentsExtras([row({ status: "hung" })], "quiet", "objective", 1_000_000);
+  const hung = assembleAgentsExtras([row({ status: "hung" })], "quiet", 1_000_000);
   assert.ok(hung?.line.includes("⚠"), "HUNG is never silent, even on quiet");
   assert.deepEqual(hung!.lines, [], "quiet never splices detail rows");
 });

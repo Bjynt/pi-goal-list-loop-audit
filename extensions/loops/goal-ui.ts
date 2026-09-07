@@ -812,7 +812,7 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
         try {
           const { agents } = getSubagentAgentsSnapshot();
           const rows = agents as AgentsPanelRow[];
-          const extras = assembleAgentsExtras(rows, settings.subagentDisplayRichness ?? "rich", state.goal?.objective ?? "", now);
+          const extras = assembleAgentsExtras(rows, settings.subagentDisplayRichness ?? "rich", now);
           return extras ? { agents: extras } : {};
         } catch { return {}; }
       })(),

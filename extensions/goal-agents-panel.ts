@@ -209,15 +209,16 @@ export function hasHungWorker(rows: AgentsPanelRow[]): boolean {
 export type AgentsExtras = { line: string; lines: string[] };
 
 /** v0.38.22 (display unification): the pure richness switch behind the
- * widget/status worker presence. Rich restores detailed rows (capped,
- * bucketed — the widget key only moves on genuine state transitions)
- * plus the task-linkage header native UI can never show; compact keeps
- * the count line; quiet surfaces hung/aborting workers only. Pure and
- * hermetic for tests; the caller supplies rows + richness + objective. */
+ * widget/status worker presence. Rich restores detailed single-line rows
+ * (capped, bucketed — the widget key only moves on genuine state
+ * transitions); compact keeps the count line; quiet surfaces
+ * hung/aborting workers only. Pure and hermetic for tests; the caller
+ * supplies rows + richness. v0.38.23: the task-linkage header is gone —
+ * the card head already names the objective, so `→ <objective>` only
+ * repeated it verbatim on the next row. */
 export function assembleAgentsExtras(
   rows: AgentsPanelRow[],
   richness: "rich" | "compact" | "quiet",
-  objective: string,
   now = Date.now(),
 ): AgentsExtras | undefined {
   const line = renderAgentsWidgetLine(rows);
@@ -227,10 +228,6 @@ export function assembleAgentsExtras(
   // the compact count line — hiding healthy fan-out entirely cost ambient
   // awareness. HUNG still surfaces via the ⚠ in the line itself.
   if (richness !== "rich") return { line, lines: [] };
-  // v0.38.23: no task-linkage header — the card head already names the
-  // objective (`● <objective> · active · …`), so `→ <objective>` repeated
-  // it verbatim on the next row.
-  void objective;
   return { line, lines: renderAgentsWidgetLines(rows, now) };
 }
 
