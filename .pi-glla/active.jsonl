@@ -1994,3 +1994,5 @@
 {"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"OpenAI API error (429): {\"param\":null,\"code\":\"rate_limit_exceeded\",\"type\":\"rate_limit_error\",\"message\":\"Error from provider (Console Go): Upstream request faile","generation":435},"at":"2026-09-07T23:15:00.481Z"}
 {"type":"subagent_session","value":{"sessionId":"/home/dracon/.pi/agent/sessions/--home-dracon-Dev-pi-plugins-pi-goal-list-loop-audit--/2026-08-30T21-53-34-335Z_01a054a9-e07f-705b-87a1-9421f9b906dc.jsonl","agentType":"researcher","summary":"single","at":"2026-09-07T23:15:08.173Z"},"at":"2026-09-07T23:15:08.173Z"}
 {"type":"context_hygiene_compaction_input","value":{"dropped":4,"generation":435},"at":"2026-09-07T23:15:08.183Z"}
+{"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"OpenAI API error (429): {\"param\":null,\"code\":\"rate_limit_exceeded\",\"type\":\"rate_limit_error\",\"message\":\"Error from provider (Console Go): Upstream request faile","generation":435},"at":"2026-09-07T23:15:45.794Z"}
+{"type":"context_hygiene_compaction_input","value":{"dropped":4,"generation":435},"at":"2026-09-07T23:15:52.613Z"}
