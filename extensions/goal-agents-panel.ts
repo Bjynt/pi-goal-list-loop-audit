@@ -103,6 +103,16 @@ export function truncate(text: string, max: number): string {
 const PANEL_ROW_CAP = 20;
 export const WIDGET_AGENT_ROW_CAP = 8;
 
+/** Audit 2026-09-07 (field screenshots): the age label never says "silent" — that
+ * noun reads as a state claim ("this child is silent") while the child is
+ * visibly working. Fresh bands read `active {age}`, everything else
+ * `quiet {age}`: both are time-since-last-evidence, matching the band
+ * colors. Exported for the count line + panel detail sharing. */
+export function activeAgeLabel(row: AgentsPanelRow): string {
+  const d = fmtDuration(bucketSilentMs(row.silentMs));
+  return lifesignBandFor(row) === "fresh" ? `active ${d}` : `quiet ${d}`;
+}
+
 function rowRank(row: AgentsPanelRow): number {
   if (row.status === "hung") return 0;
   if (row.status === "running") return 1;
@@ -134,7 +144,7 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
   for (const row of shown) {
     const glyph = row.status === "ended" ? "✓" : row.status === "hung" ? "⚠" : "●";
     lines.push(`${glyph} ${rowLabel(row)}  ${rowStateWord(row, now)}`);
-    lines.push(`  id ${cleanField(row.recordId, 18)} · silent ${fmtDuration(row.silentMs)} · tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens}${row.evidence !== "live" ? ` · ${row.evidence}` : ""}`);
+    lines.push(`  id ${cleanField(row.recordId, 18)} · ${activeAgeLabel(row)} · tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens}${row.evidence !== "live" ? ` · ${row.evidence}` : ""}`);
     if (row.action === "abort-requested") {
       lines.push("  └ child-specific abort requested; partial output remains available while it settles");
     } else if (row.action === "unavailable") {
@@ -190,7 +200,7 @@ export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now()
       : row.action === "unavailable" ? " · abort unavailable"
       : row.action === "failed" ? " · abort failed" : "";
     const evidence = row.evidence !== "live" ? ` · ${row.evidence}` : "";
-    lines.push(`${paint(theme, color, glyph)} ${rowLabel(row)} · silent ${fmtDuration(bucketSilentMs(row.silentMs))}${action}${evidence}`);
+    lines.push(`${paint(theme, color, glyph)} ${rowLabel(row)} · ${activeAgeLabel(row)}${action}${evidence}`);
   }
   if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents`);
   return lines;
@@ -242,7 +252,7 @@ export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefin
     : busiest.status === "hung"
       ? " ⚠"
       : "";
-  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} silent ${fmtDuration(bucketSilentMs(busiest.silentMs))}${hung}`;
+  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} ${activeAgeLabel(busiest)}${hung}`;
 }
 
 
