@@ -1331,8 +1331,12 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
       // A worker can remain tracked while the parent card is temporarily
       // absent. Keep that activity visible instead of hiding it with the
       // rest of the empty state. v0.38.23: no command-hint footer —
-      // extension meta is noise; the rows carry the information.
-      withAgents = ["● active workers", ...agentLines];
+      // extension meta is noise; the rows carry the information. Audit
+      // 2026-09-07: no invented `● active workers` header either (headers
+      // died in v0.38.23) — the count line leads when present, else the
+      // bare rows stand alone.
+      const orphanHead = extras?.agents?.line;
+      withAgents = orphanHead ? [orphanHead, ...agentLines] : [...agentLines];
     }
   }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
@@ -1969,8 +1973,11 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
   const footer = !l.measureCmd
     ? "metricless (no plateau) · /loop stop · /loop refine" // v0.33.2: the verb exists now
     : `${l.kind === "audit" ? "metric: closed findings" : truncate(l.measureCmd, budgetFor(width, 3, 30))} · /loop stop`;
+  // Audit 2026-09-07: the branch rides a detail row BEFORE the footer —
+  // appending it after `└─` broke the footer-last tree invariant the
+  // worker-row splice relies on.
+  if (l.branchName) lines.push(`├─ ⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
   lines.push(`└─ ${paint(theme, "dim", footer)}`);
-  if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
   return lines;
 }
 

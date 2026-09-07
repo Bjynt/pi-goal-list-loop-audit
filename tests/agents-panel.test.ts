@@ -343,9 +343,13 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
   // exists (queued depth) the detail must precede it.
   assert.ok(footerAt === -1 || agentAt < footerAt, "detail precedes any footer");
 
+  // Audit 2026-09-07: no invented header — bare rows stand alone, and
+  // the count line leads when the snapshot carries one.
   const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["▶ Explore · inspect auth · active 5s"] } })!;
-  assert.match(agentOnly[0]!, /active workers/);
-  assert.equal(agentOnly.at(-1), "├─ ▶ Explore · inspect auth · active 5s", "audit 2026-09-07: orphan detail renders bare glyph-first, no `agent: ` prefix");
+  assert.equal(agentOnly[0], "├─ ▶ Explore · inspect auth · active 5s", "orphan rows render bare, no invented header");
+  assert.doesNotMatch(agentOnly.join("\n"), /active workers/);
+  const agentOnlyCounted = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { line: "● 1 agent · Explore active 5s", lines: ["▶ Explore · inspect auth · active 5s"] } })!;
+  assert.equal(agentOnlyCounted[0], "● 1 agent · Explore active 5s", "the count line leads orphan rows when present");
 });
 
 // v0.35.45 (audit finding): /glla agents --tail rendered child-transcript

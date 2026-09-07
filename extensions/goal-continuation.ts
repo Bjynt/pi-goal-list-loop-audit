@@ -1138,6 +1138,16 @@ export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: Term
   if (supervisorPaused(state)) return false;
   if (mainModelRecoveryActive()) return false;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
+  // Audit 2026-09-07 (HIGH, scoped): refuse while the user-abort latch
+  // stands — a `✓ done` turn firing under the user's hands after Esc/zombie
+  // abort violates the stand-down promise. Deliberately NOT gated on
+  // stoodDown/pending: closure wins there (a pending dispatch fences itself
+  // on the archived goal), and dropping the notice would lose transcript
+  // closure with no retry path.
+  if (flags.abortedStandDown) {
+    appendLedger(ctx.cwd, "terminal_completion_notice_refused_stood_down", { goalId: notice.goalId });
+    return false;
+  }
   if (!flags.extensionApi) return false;
   if (isForeignCtx(ctx)) return false;
   if (typeof notice.generation === "number" && notice.generation !== flags.sessionGeneration) {
@@ -1229,7 +1239,11 @@ export function sendContinuation(goalId: string): void {
   // refuses new schedules; this closes the armed-timer race.
   if (supervisorPaused(state)) return;
   if (mainModelRecoveryActive()) return;
-  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  // Audit 2026-09-07 (HIGH): an armed timer must not fire after a user-Esc
+  // or zombie abort. continuationDispatchStoodDown alone is insufficient —
+  // explicit resume paths release it while flags.abortedStandDown stays set
+  // until a schedule actually arms, so check the abort latch here too.
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch || flags.abortedStandDown) return;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!state.goal || state.goal.id !== goalId) {
@@ -1369,7 +1383,9 @@ export function sendContinuation(goalId: string): void {
 // call otherwise. display: true — the user should see the warning too.
 export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
   if (supervisorPaused(state)) return;
-  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  // Audit 2026-09-07 (HIGH): a stall nudge must not resurrect a stood-down
+  // chain — same abort-latch reasoning as sendContinuation.
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch || flags.abortedStandDown) return;
   if (!state.goal || !guardGoalBeforeContinuation(ctx, "stall-escalation")) return;
   const remaining = HEARTBEAT_MAX_NUDGES - nudges;
   const text = [
@@ -1411,7 +1427,9 @@ export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void
 // plain sessions truncate too.
 export function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
   if (supervisorPaused(state)) return;
-  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  // Audit 2026-09-07 (HIGH): a length nudge must not resurrect a stood-down
+  // chain — same abort-latch reasoning as sendContinuation.
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch || flags.abortedStandDown) return;
   if (state.goal && !guardGoalBeforeContinuation(ctx, "length-continuation")) return;
   const attempt = dispatchPrepare(ctx, {
     generation: flags.sessionGeneration,
