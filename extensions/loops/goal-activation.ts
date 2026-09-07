@@ -1389,8 +1389,16 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // destroy the only source the gate heal can re-parse.
     healGoalPolicy(ctx);
     clearMainModelRecoveryTimer();
-    mainModelAbortForRecovery = false;
-    lastMainModelFailure = null;
+    // Audit 2026-09-07 (MEDIUM): preserve the abort-settlement markers
+    // while a recovery episode owns them. An abort-for-recovery whose
+    // settlement lands after session_start would otherwise read nulled
+    // flags — the agent_settled failover continuation never fires and the
+    // loop error path misclassifies the abort as a user stop. Every
+    // recovery settle path clears both flags, so preserving cannot leak.
+    if (!state.mainModelRecovery) {
+      mainModelAbortForRecovery = false;
+      lastMainModelFailure = null;
+    }
     setContinuationDispatchStoodDownRef(false);
     clearContinuationStartWatchdog();
     const recoveredDispatch = readDispatchRecord(ctx.cwd);
