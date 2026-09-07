@@ -162,25 +162,29 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 11_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
-  assert.match(status, /^glla: \[[▁▂▄▆█]{6} LIVE · WORKING\] total 1m 09s · last stream 11s ago · 3 queued$/);
+  // Audit 2026-09-07 (DECIDED: head owns liveness): the status is a static
+  // state badge + counts. The animated capsule + `last stream` tail moved
+  // to the card-head `stream {age}` readout — one surface owns liveness.
+  assert.match(status, /^glla: \[WORKING\] total 1m 09s · 3 queued$/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
   assert.match(lines[0]!, /^● /);
   assert.match(lines[0]!, /· active ·/);
   assert.doesNotMatch(lines.join("\n"), /LIVE WORK|last stream 11s ago/);
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
-  assert.match(busy, /glla: \[BUSY\] total 1m 09s · last stream 20s ago · 3 queued/);
+  assert.match(busy, /glla: \[BUSY\] total 1m 09s · 3 queued/);
   assert.doesNotMatch(busy, /WORKING/);
 
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
   assert.match(queued, /glla: \[⏳ QUEUED\] total 1m 09s · 3 queued/);
   assert.doesNotMatch(queued, /WORKING/);
 
-  // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch and
-  // the last real activity age. A ticking timer with no freshness told the
-  // user nothing (note.md 221249 "time ticking but nothing else").
+  // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch.
+  // (The last-activity age that used to ride here moved to the card-head
+  // `stream {age}` readout per the 2026-09-07 liveness decision; note.md
+  // 221249's ticking-timer complaint is answered there, not here.)
   const queuedPending = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true, lastActivityAt: NOW - 180_000 })!;
-  assert.match(queuedPending, /\[⏳ QUEUED\] total 1m 09s · awaiting pi turn · last host activity 3m 00s ago · 3 queued/);
+  assert.match(queuedPending, /\[⏳ QUEUED\] total 1m 09s · awaiting pi turn · 3 queued/);
   // turnPending WITHOUT a known last-activity epoch still names the pending turn.
   const queuedPendingNoAge = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true })!;
   assert.match(queuedPendingNoAge, /\[⏳ QUEUED\] total 1m 09s · awaiting pi turn · 3 queued/);
@@ -242,10 +246,11 @@ test("v0.34.95: queued WITHOUT a parked recovery does NOT show quota text (no fa
   assert.doesNotMatch(status, /quota/);
 });
 
-test("v0.34.95: parked recovery on a LIVE working goal does NOT show quota text (only queued needs the WHY)", () => {
+test("v0.34.95: parked recovery on a WORKING goal does NOT show quota text (only queued needs the WHY)", () => {
   // The QUEUED state is the one the user sees without context — the
-  // LIVE/WORKING state already names the work via the live stream badge.
-  // Showing quota text on top of LIVE would be noise.
+  // The WORKING state badge already names the work (freshness lives on
+  // the card head per the 2026-09-07 decision). Showing quota text on
+  // top of WORKING would be noise.
   const liveWithRecovery = {
     goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:58:51Z" }),
     list: [{ id: "next-1", objective: "next", addedAt: "z" }],
@@ -259,7 +264,7 @@ test("v0.34.95: parked recovery on a LIVE working goal does NOT show quota text 
     },
   };
   const status = buildStatusText(liveWithRecovery, null, NOW, undefined, { activity: "working", lastStreamActivityAt: NOW - 11_000 })!;
-  assert.match(status, /LIVE · WORKING/);
+  assert.match(status, /\[WORKING\]/);
   assert.doesNotMatch(status, /waiting for quota reset/);
 });
 
@@ -298,7 +303,7 @@ test("v0.34.97: no compacting chip when lastCompactionAt is absent", () => {
   assert.doesNotMatch(status, /compacting/, "no chip when state has no lastCompactionAt");
 });
 
-test("live capsule shows a compact animated signal and truthful freshness text", () => {
+test("head owns liveness: WORKING status is static, the head carries the animated signal", () => {
   const state = { goal: goalOf(), list: [] };
   const first = buildStatusText(state, null, NOW, undefined, {
     activity: "working",
@@ -308,14 +313,18 @@ test("live capsule shows a compact animated signal and truthful freshness text",
     activity: "working",
     lastStreamActivityAt: NOW - 249,
   })!;
-  assert.match(first, /glla: \[[▁▂▄▆█]{6} LIVE · WORKING\]/);
-  assert.match(next, /glla: \[[▁▂▄▆█]{6} LIVE · WORKING\]/);
-  assert.notEqual(first.slice(0, first.indexOf(" LIVE")), next.slice(0, next.indexOf(" LIVE")), "the signal visibly advances while live");
-  assert.match(first, /last stream 1s ago/);
-  assert.doesNotMatch(first, /%|complete|progress/i, "the signal is not a fake completion meter");
+  // Audit 2026-09-07 (DECIDED: head owns liveness): the animated LIVE
+  // capsule left the status line. The status badge is a static state
+  // claim (byte-identical across a frame tick); freshness + motion live
+  // on the card head (`stream {age}` + breathing glyph, pinned in
+  // tests/lifesign.test.ts). No `last stream` tail may reappear here.
+  assert.match(first, /glla: \[WORKING\]/);
+  assert.equal(first, next, "static state badge — no per-tick motion on the status line");
+  assert.doesNotMatch(first, /LIVE|last stream/i);
+  assert.doesNotMatch(first, /%|complete|progress/i, "the badge is not a fake completion meter");
 });
 
-test("live capsule keeps semantic colors without decorative noise", () => {
+test("WORKING badge keeps semantic colors without decorative noise", () => {
   const calls: string[] = [];
   const theme = {
     fg(color: string, text: string) {
@@ -330,11 +339,10 @@ test("live capsule keeps semantic colors without decorative noise", () => {
     theme,
     { activity: "working", lastStreamActivityAt: NOW - 1_000 },
   )!;
-  assert.match(status, /<dim>\[<\/dim>(?:<muted>[▁]<\/muted>|<accent>[▂▄▆]<\/accent>|<success>[█]<\/success>){6}<dim> <\/dim><success>LIVE<\/success><dim> · <\/dim><accent>WORKING<\/accent><dim>\]<\/dim>/);
-  assert.ok(calls.some((call) => call.startsWith("success:LIVE")), "LIVE remains semantically highlighted");
+  // Static state badge: the whole `[WORKING]` rides one accent span — no animated cells.
+  assert.match(status, /<accent>\[WORKING\]<\/accent>/);
   assert.ok(calls.some((call) => call.startsWith("accent:WORKING")), "WORKING remains semantically highlighted");
-  assert.ok(calls.some((call) => call.startsWith("success:█")), "the signal peak is semantically highlighted");
-  assert.ok(calls.some((call) => call.startsWith("accent:▆")), "the signal body remains visible");
+  assert.ok(!calls.some((call) => /[\u2581-\u2588]/.test(call.split(":")[1] ?? "")), "no animated signal cells on the status line");
 });
 
 test("active goal with tasks shows progress", () => {
@@ -2141,7 +2149,7 @@ test("v0.34.96/v0.34.128: complete_goal detects 'already shipped' / 'verified vX
 test("audit-2026-09-06: widget task-linkage header is not mislabeled as an agent row", () => {
   const state = { goal: goalOf(), list: [] } as any;
   const lines = buildWidgetLines(state, null, NOW, undefined, 120, {
-    agents: { line: "1 agent", lines: ["→ Run ONE project audit pass", "scout · id bb6d267e", "  RUNNING · silent 0s"] },
+    agents: { line: "1 agent", lines: ["→ Run ONE project audit pass", "scout · id bb6d267e", "  RUNNING · quiet 0s"] },
   } as any)!;
   const text = lines.join("\n");
   assert.match(text, /├─ → Run ONE project audit pass/, "header renders as a group label");
@@ -2151,7 +2159,7 @@ test("audit-2026-09-06: widget task-linkage header is not mislabeled as an agent
 
 test("audit-2026-09-06: status line honors the width budget", () => {
   const state = { goal: goalOf(), list: [] } as any;
-  const longExtras = { agents: { line: "9 agents · scout silent 0s " + "very-long-detail ".repeat(10), lines: [] } } as any;
+  const longExtras = { agents: { line: "9 agents · scout active 0s " + "very-long-detail ".repeat(10), lines: [] } } as any;
   const full = buildStatusText(state, null, NOW, undefined, longExtras)!;
   const narrow = buildStatusText(state, null, NOW, undefined, longExtras, 40)!;
   assert.ok(visibleWidth(narrow) <= 40, `narrow status fits 40 cells (got ${visibleWidth(narrow)})`);

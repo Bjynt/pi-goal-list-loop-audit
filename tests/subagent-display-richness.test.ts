@@ -1,9 +1,10 @@
 // pi-goal-list-loop-audit — v0.38.22
 // tests/subagent-display-richness.test.ts
 //
-// Display-unification richness ladder: rich (default) restores detailed
-// rows + task linkage, compact keeps the count line, quiet surfaces
-// hung/aborting workers only. Pins: default/normalization, bucketed
+// Display-unification richness ladder: quiet (default, audit 2026-09-07 —
+// exceptions-only; healthy fan-out lives on the fleet panel) shows
+// troubled (non-fresh) rows only, rich shows all rows, compact keeps the
+// count line. Pins: default/normalization, bucketed
 // silence stability (no per-second widget-key churn — the v0.37.1 jumping
 // must not return through rich lines), the HUNG-never-silent invariant,
 // and width safety.
@@ -36,12 +37,12 @@ function row(over: Partial<AgentsPanelRow> = {}): AgentsPanelRow {
   };
 }
 
-test("v0.38.22 richness defaults to rich and normalizes junk", () => {
-  assert.equal(DEFAULT_SETTINGS.subagentDisplayRichness, "rich", "rich default");
+test("audit 2026-09-07 richness defaults to quiet (exceptions-only) and normalizes junk", () => {
+  assert.equal(DEFAULT_SETTINGS.subagentDisplayRichness, "quiet", "quiet default");
   const junk = normalizeLoadedSettings({ subagentDisplayRichness: "verbose" } as never);
-  assert.equal(junk.subagentDisplayRichness, "rich", "junk falls back to rich, never blanks the display");
+  assert.equal(junk.subagentDisplayRichness, "quiet", "junk falls back to quiet, never blanks the display");
   const unset = normalizeLoadedSettings({});
-  assert.equal(unset.subagentDisplayRichness, "rich", "unset means rich");
+  assert.equal(unset.subagentDisplayRichness, "quiet", "unset means quiet");
 });
 
 test("v0.38.23 rich assembles single-line glyph rows, no header; compact keeps the line; quiet hides healthy workers", () => {
@@ -51,8 +52,8 @@ test("v0.38.23 rich assembles single-line glyph rows, no header; compact keeps t
   // v0.38.23 Option-2: one glyph-first row per worker, no task-linkage
   // header (the card head already names the objective), no ids.
   assert.equal(rich!.lines.length, 2, "one row per worker");
-  assert.match(rich!.lines[0]!, /^▶ worker · art batch · silent 1m00s$/, "stalest first within rank; age before any suffix");
-  assert.match(rich!.lines[1]!, /^▶ worker · ui fixes · silent 30s$/, "healthy row: glyph + name + age, no state word");
+  assert.match(rich!.lines[0]!, /^▶ worker · art batch · active 1m00s$/, "stalest first within rank; age before any suffix");
+  assert.match(rich!.lines[1]!, /^▶ worker · ui fixes · active 30s$/, "healthy row: glyph + name + age, no state word");
   assert.ok(!rich!.lines.some((l) => l.includes("rec-")), "ids live in /glla agents, not the widget");
   assert.ok(rich!.line.startsWith("● 2 agents"), "count line kept");
 
@@ -62,14 +63,25 @@ test("v0.38.23 rich assembles single-line glyph rows, no header; compact keeps t
 
   // Audit 2026-09-06 (DECIDED: show count line): quiet hides only at zero
   // tracked — tracked-but-healthy keeps the compact count line.
+  // Audit 2026-09-07 (DECIDED: exceptions-only): quiet splices troubled
+  // (non-fresh) rows; fresh healthy rows live on the fleet panel.
   const quiet = assembleAgentsExtras(rows, "quiet", 1_000_000);
   assert.equal(quiet?.line, assembleAgentsExtras(rows, "compact", 1_000_000)?.line, "quiet keeps the healthy count line");
-  assert.deepEqual(quiet!.lines, [], "quiet never splices detail rows");
+  assert.deepEqual(quiet!.lines, [], "fresh healthy rows stay off the card");
   assert.equal(assembleAgentsExtras([], "quiet", 1_000_000), undefined, "quiet hides when zero tracked");
+
+  const mixed = assembleAgentsExtras(
+    [row(), row({ recordId: "rec-aging", summary: "old work", silentMs: 6 * 60_000 })],
+    "quiet",
+    1_000_000,
+  );
+  assert.equal(mixed!.lines.length, 1, "quiet splices the troubled row only");
+  assert.ok(!mixed!.lines.some((l) => l.includes("ui fixes")), "fresh row stays on the fleet panel");
 
   const hung = assembleAgentsExtras([row({ status: "hung" })], "quiet", 1_000_000);
   assert.ok(hung?.line.includes("⚠"), "HUNG is never silent, even on quiet");
-  assert.deepEqual(hung!.lines, [], "quiet never splices detail rows");
+  assert.equal(hung!.lines.length, 1, "HUNG row surfaces under quiet");
+  assert.ok(!hung!.lines.some((l) => l.includes("rec-")), "troubled rows still keep ids out of the widget");
 });
 
 test("v0.38.22 detailed lines bucket silence — identical output seconds apart", () => {
@@ -98,5 +110,5 @@ test("v0.38.23 every rich line is width-safe; long summaries truncate cell-aware
   for (const line of [wide.line, ...wide.lines]) {
     assert.ok(line.length <= 100, `width-safe: ${line.length} chars`);
   }
-  assert.match(wide.lines[0]!, /^▶ worker · a+… · silent 30s$/, "long summary truncates, age survives");
+  assert.match(wide.lines[0]!, /^▶ worker · a+… · active 30s$/, "long summary truncates, age survives");
 });
