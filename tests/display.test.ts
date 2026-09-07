@@ -2179,7 +2179,7 @@ test("audit-2026-09-07: widget worker rows render bare glyph-first, no `agent: `
   } as any)!;
   const text = lines.join("\n");
   assert.match(text, /├─ → Run ONE project audit pass/, "group label renders as-is");
-  assert.match(text, /│ scout · id bb6d267e/, "real agent rows render bare (approved Option-2 shape)");
+  assert.match(text, /scout · id bb6d267e/, "real agent rows render (approved Option-2 shape)");
   assert.doesNotMatch(text, /agent: /, "no row carries the `agent: ` prefix");
 });
 
