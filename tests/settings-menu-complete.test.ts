@@ -579,3 +579,12 @@ test("audit 2026-09-06: legacy reviewer block migrates to postaudit", async () =
   fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ reviewer: { mode: "on" }, postaudit: { mode: "off" } }));
   assert.deepEqual(loadSettings(cwd).postaudit, { mode: "off" });
 });
+
+test("audit 2026-09-07 (LOW, findings 392-394): quiet copy names the count line at every surface", () => {
+  const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  assert.match(SETTINGS, /The count\n   \* line stays at every level/, "type comment documents the count line");
+  const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
+  assert.match(MENU, /quiet shows troubled workers only \+ the count line/, "menu description names the count line");
+  const UI = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
+  assert.match(UI, /quiet — troubled workers only \+ the count line/, "picker option names the count line");
+});
