@@ -1596,6 +1596,17 @@ function isHostSuccessorContact(ctx: ExtensionContext): boolean {
  * semantics (the session never died; there was no load decision to gate).
  * Subagent workers (in-memory) and ambiguous cases (owner still live) keep
  * failing closed; a zombie-stood-down instance never reclaims the plane. */
+/** Audit 2026-09-07 (MEDIUM, findings 375+382): after a generation bump,
+ * the dead generation's accepted dispatch can never settle (generation
+ * fence) yet blocks the rebind tail's fresh schedule — clear it with a
+ * ledger so the new session doesn't idle behind a "re-armed" lie. */
+function clearDeadGenerationDispatch(ctx: ExtensionContext, via: string): void {
+  if (!pendingContinuationDispatchRef()) return;
+  appendLedger(ctx.cwd, "successor_absorb_cleared_stale_dispatch", { generation: sessionGeneration, via });
+  clearContinuationStartWatchdog();
+  clearDispatchRecord(ctx.cwd);
+}
+
 function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   if (isWorkerSessionCtx(ctx)) return false;
   if (zombieStoodDown) return false; // a successor INSTANCE owns owner.json — this instance stands down forever
@@ -1630,14 +1641,7 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   staleTerminalDone = false;
   sessionHandoffPending = false;
   sessionGeneration++; // a dead generation's delayed callbacks must not fire into the new owner
-  // Audit 2026-09-07 (MEDIUM): the dead generation's accepted dispatch can
-  // never settle here (generation fence) and blocks the tail's fresh
-  // schedule — clear it so the new session doesn't idle behind it.
-  if (pendingContinuationDispatchRef()) {
-    appendLedger(ctx.cwd, "successor_absorb_cleared_stale_dispatch", { generation: sessionGeneration });
-    clearContinuationStartWatchdog();
-    clearDispatchRecord(ctx.cwd);
-  }
+  clearDeadGenerationDispatch(ctx, "successor-absorb");
   clearDraftingState(); // the old interview belongs to the disposed generation
   appendLedger(ctx.cwd, "session_rebind_via_live_ctx", { via, generation: sessionGeneration });
   let auditRetryStarted = false;
@@ -1734,6 +1738,10 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   ownerCwd = ctx.cwd;
   lastCtx = ctx;
   sessionGeneration++; // a parked generation's delayed callbacks must not fire into the reclaimed plane
+  // Audit 2026-09-07 (MEDIUM, finding 382): same dead-dispatch clear as
+  // the absorb path — otherwise the rearm notify below fires while the
+  // tail schedule skips on the orphaned pending and the plane idles.
+  clearDeadGenerationDispatch(ctx, "self-heal");
   heartbeatStaleStreak = 0;
   clearDraftingState();
   const restoredQueue = hydrateListQueueFromDisk(ctx);
