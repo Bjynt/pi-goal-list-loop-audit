@@ -510,7 +510,10 @@ export function normalizeLoadedSettings(settings: Settings): Settings {
   if (typeof settings.stallEscalationRefires !== "number" || !Number.isInteger(settings.stallEscalationRefires) || settings.stallEscalationRefires < 0) {
     delete settings.stallEscalationRefires;
   }
-  if (typeof settings.stallShortWords !== "number" || !Number.isInteger(settings.stallShortWords) || settings.stallShortWords <= 0) {
+  // Audit 2026-09-07 (MEDIUM, findings 383-385): 0 = off is a legal saved
+  // value (the editor promises it and the consumer honors it: wordCount < 0
+  // never fires). Only negative/non-integer values normalize away.
+  if (typeof settings.stallShortWords !== "number" || !Number.isInteger(settings.stallShortWords) || settings.stallShortWords < 0) {
     delete settings.stallShortWords;
   }
   if (typeof settings.stallSimilarityThreshold !== "number" || !Number.isFinite(settings.stallSimilarityThreshold) || settings.stallSimilarityThreshold < 0 || settings.stallSimilarityThreshold > 1) {
