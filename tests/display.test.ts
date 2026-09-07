@@ -341,7 +341,7 @@ test("WORKING badge keeps semantic colors without decorative noise", () => {
   )!;
   // Static state badge: the whole `[WORKING]` rides one accent span — no animated cells.
   assert.match(status, /<accent>\[WORKING\]<\/accent>/);
-  assert.ok(calls.some((call) => call.startsWith("accent:WORKING")), "WORKING remains semantically highlighted");
+  assert.ok(calls.some((call) => call === "accent:[WORKING]"), "WORKING remains semantically highlighted");
   assert.ok(!calls.some((call) => /[\u2581-\u2588]/.test(call.split(":")[1] ?? "")), "no animated signal cells on the status line");
 });
 
