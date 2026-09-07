@@ -381,6 +381,15 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   );
   // 3. The post-compaction refire also respects it:
   assert.match(src, /isSupervising\(\) && !abortedStandDown\) \{/);
+  // 4. Audit 2026-09-07 (HIGH): every send-side entry refuses while the
+  //    abort latch stands — an armed timer, stall nudge, length nudge, or
+  //    terminal notice must not resurrect a user-Esc/zombie-aborted chain.
+  //    Explicit resume paths clear the latch themselves, so this cannot
+  //    deadlock a resume.
+  assert.match(CONT, /pendingContinuationDispatch \|\| flags\.abortedStandDown\) return;/, "sendContinuation checks the abort latch");
+  assert.match(CONT, /function sendStallEscalation[\s\S]{0,400}?flags\.abortedStandDown\) return;/, "sendStallEscalation checks the abort latch");
+  assert.match(CONT, /function sendLengthContinue[\s\S]{0,400}?flags\.abortedStandDown\) return;/, "sendLengthContinue checks the abort latch");
+  assert.match(CONT, /terminal_completion_notice_refused_stood_down/, "terminal-notice refusal is ledgered");
   // 4. autoResume is GLOBAL-only (user directive: "not supporting project
   //    level setting for it now, just global") — the restore gate and the
   //    reviewer enqueue gate read loadGlobalSettings(), never the project
