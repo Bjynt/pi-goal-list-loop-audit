@@ -1327,12 +1327,14 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     // next failure can then walk primary → backup 1 → … again.
     // Audit 2026-09-07 (HIGH): the reset rides the standard delayed-retry
     // envelope (growing backoff + 24h horizon + manual hold) instead of
-    // re-activating immediately. The old path re-armed the goal/loop with a
-    // 1s continuation and an unincremented attempts count, so a fast-failing
-    // `current` spun the bounded recovery with no backoff and no horizon.
-    // Each new cycle now costs a backoff delay and consumes horizon; the
-    // recovery timer re-drives probeMainModelRecovery when it fires.
-    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined, attempts: recovery.attempts + 1 };
+    // re-activating after a flat 1s with an unincremented attempts count —
+    // a fast-failing `current` otherwise spun the bounded recovery with no
+    // backoff growth and no horizon check at reset time. The probe itself
+    // is preserved: resumeCurrent parks the intent, and the timer-driven
+    // probe resumes the supervised turn on `current` (that turn IS the
+    // health check), so each new cycle costs a backoff delay and consumes
+    // horizon instead of firing hot.
+    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: true, pendingModelSwitch: undefined, attempts: recovery.attempts + 1 };
     appendLedger(ctx.cwd, "main_model_fallback_cycle_reset", { current, attempted: recovery.attempted, attempts: next.attempts });
     const delay = mainModelRetryDelayMs(next.attempts, loadGlobalSettings().mainModelRetryMinutes);
     if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);

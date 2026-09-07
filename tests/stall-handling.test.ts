@@ -423,6 +423,7 @@ test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset
   const resetEnd = RECOVERY.indexOf("return;", resetAt);
   assert.ok(resetEnd > resetAt, "cycle-reset block ends");
   const resetBlock = RECOVERY.slice(resetAt, resetEnd);
+  assert.match(resetBlock, /resumeCurrent: true/, "the probe intent survives: the timer-driven probe resumes the supervised turn on current");
   assert.match(resetBlock, /setMainModelRecoveryPause\(ctx, next, delay\)/, "the reset parks through the envelope");
   assert.match(resetBlock, /scheduleMainModelRecoveryTimer\(ctx, delay\)/, "the timer re-drives the probe");
   assert.ok(!resetBlock.includes("scheduleContinuation(ctx, true, 1_000)"), "no immediate 1s re-activation");
