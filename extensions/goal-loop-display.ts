@@ -888,18 +888,6 @@ function goalDisplayActivity(g: Goal, extras?: WidgetExtras, now = Date.now()): 
   return activity;
 }
 
-function hostLastActivity(extras: WidgetExtras | undefined, now: number): string {
-  const at = extras?.lastActivityAt;
-  if (at === undefined || !Number.isFinite(at)) return "";
-  return ` · last host activity ${fmtElapsed(Math.max(0, now - at))} ago`;
-}
-
-function hostLastStream(extras: WidgetExtras | undefined, now: number): string {
-  const at = extras?.lastStreamActivityAt;
-  if (at === undefined || !Number.isFinite(at)) return "";
-  return ` · last stream ${fmtElapsed(Math.max(0, now - at))} ago`;
-}
-
 /** Paused-state lifecycle projection. Pausing is durable, but it is not a
  * blank state: users need to know who owns recovery, whether queue work is
  * parked safely, when the host last made progress, and what happens next.
@@ -1189,9 +1177,12 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       return withRecovery(`glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`);
     }
     if (activity === "idle") {
+      // Audit 2026-09-07 (DECIDED: head owns liveness): the status keeps
+      // state + counts only. Freshness tails (`last host activity`,
+      // `last stream`) duplicated the card-head `stream {age}` readout —
+      // one surface owns liveness so the two can never disagree.
       const idleDetails = [
         goalTotalText(g, now),
-        hostLastActivity(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
       return withRecovery(`glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`);
@@ -1204,7 +1195,6 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       const busyDetails = [
         goalTotalText(g, now),
         g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
-        hostLastStream(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
       return withRecovery(`glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`);
@@ -1220,8 +1210,12 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const live = activity === "working";
     const queued = activity === "queued";
     const monitoring = activity === "monitoring";
+    // Audit 2026-09-07 (DECIDED: head owns liveness): WORKING is a static
+    // state badge now — the animated LIVE capsule duplicated the head
+    // lifesign on the same evidence. The evidence gate stays upstream in
+    // goalDisplayActivity: this badge only renders on real activity.
     const marker = live
-      ? activityBadge("LIVE · WORKING", now, theme)
+      ? activityStateBadge("WORKING", theme, "accent")
       : monitoring
         ? activityStateBadge("👁 MONITORING", theme, "dim")
         : queued
@@ -1240,13 +1234,13 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const details = [
       goalTotalText(g, now),
       g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
-      live ? hostLastStream(extras, now).replace(/^ · /, "") : "",
       // v0.34.124: the QUEUED "why" — an accepted dispatch that pi has not
-      // started, and the last real activity age. A ticking timer with no
-      // freshness told the user nothing (note.md 221249).
+      // started. (The last-activity age that used to ride here moved to the
+      // card head's `stream {age}` readout per the 2026-09-07 liveness
+      // decision; note.md 221249's ticking-timer complaint is answered
+      // there, not here.)
       queued && extras?.turnPending ? "awaiting pi turn" : "",
       monitoring ? "next check" : "",
-      (queued || monitoring) ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
     return withRecovery(`glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${recoverySuffix}${heldSuffix}`);
