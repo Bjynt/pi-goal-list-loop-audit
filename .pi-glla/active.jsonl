@@ -2005,3 +2005,5 @@
 {"type":"context_hygiene_compaction_input","value":{"dropped":4,"generation":435},"at":"2026-09-07T23:18:13.326Z"}
 {"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"OpenAI API error (429): {\"param\":null,\"code\":\"rate_limit_exceeded\",\"type\":\"rate_limit_error\",\"message\":\"Error from provider (Console Go): Upstream request faile","generation":435},"at":"2026-09-07T23:19:01.988Z"}
 {"type":"context_hygiene_compaction_input","value":{"dropped":4,"generation":435},"at":"2026-09-07T23:19:05.728Z"}
+{"type":"context_hygiene_dropped","value":{"dropped":4,"kept":1,"lastError":"OpenAI API error (429): {\"param\":null,\"code\":\"rate_limit_exceeded\",\"type\":\"rate_limit_error\",\"message\":\"Error from provider (Console Go): Upstream request faile","generation":435},"at":"2026-09-07T23:19:44.262Z"}
+{"type":"context_hygiene_compaction_input","value":{"dropped":4,"generation":435},"at":"2026-09-07T23:19:50.613Z"}
