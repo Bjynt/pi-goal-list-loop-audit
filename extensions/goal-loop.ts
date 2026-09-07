@@ -1032,7 +1032,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // predicate it lands in never matched the prefix, so /loop resume
       // answered "No held loop to resume" and the preserved iteration,
       // best value, and history were unreachable without re-drafting.
-      !!r?.startsWith("stopped: automatic zero-stream abort");
+      !!r?.startsWith("stopped: automatic zero-stream abort") ||
+      // v0.38.23: /loop pause is a soft-hold (parallel to /goal pause).
+      // The loop stays resumable; finishLoopGit was skipped.
+      !!r?.startsWith("paused by user (/loop pause)");
     if (stored && !stored.active && RESUMABLE_STOP(stored.stopReason)) {
       // Branch-mode stop returns HEAD to originalBranch. Refuse a resume from
       // there rather than letting the next tick commit loop work to the
@@ -1252,6 +1255,39 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     );
     notifyExternal(ctx, `Loop stopped by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"}). Recap: ${recap}`);
     announceQueuedListAfterLoopEnd(ctx);
+    return;
+  }
+
+  // v0.38.23: soft-hold, parallel to /goal pause and /glla pause. The loop
+  // stops firing iterations but stays in a resumable held state — NO
+  // finishLoopGit, NO hard-stop ledger. /loop resume picks it up. Mirrors
+  // the held-loop / RESUMABLE_STOP pattern: iteration, best value, and
+  // history are preserved verbatim.
+  if (sub === "pause") {
+    if (!state.loop) {
+      ctx.ui.notify("No loop to pause.", "info");
+      return;
+    }
+    if (!state.loop.active) {
+      ctx.ui.notify(`Loop is not active (${state.loop.stopReason ?? "held"}). Use /loop resume to continue, or /loop status to inspect.`, "info");
+      return;
+    }
+    clearLoopTimer();
+    clearToolActivityState();
+    if (state.mainModelRecovery?.kind === "loop") {
+      clearMainModelRecoveryTimer();
+      state.mainModelRecovery = undefined;
+      flags.mainModelAbortForRecovery = false;
+      flags.continuationDispatchStoodDown = false;
+    }
+    state.loop = { ...state.loop, active: false, stopReason: "paused by user (/loop pause)" };
+    persistState(ctx);
+    appendLedger(ctx.cwd, "loop_paused", { reason: "user", iterations: state.loop.iteration, best: state.loop.bestValue });
+    ctx.ui.notify(
+      `Loop paused after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.\nUse /loop resume to continue.`,
+      "info",
+    );
+    notifyExternal(ctx, `Loop paused by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"}). /loop resume to continue.`);
     return;
   }
 

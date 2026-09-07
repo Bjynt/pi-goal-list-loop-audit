@@ -841,6 +841,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       ["polish", "alias of /loop refine"],
       ["stop", "end the loop (keeps the best state)"],
       ["cancel", "alias of /loop stop — end the loop"],
+      ["pause", "hold the active loop (soft-hold, resumable via /loop resume)"],
       ["finish", "end the loop cleanly: /loop finish [reason] → stopReason 'completed: <reason>'"],
     ]),
     handler: (args: string, ctx: ExtensionContext) => {
