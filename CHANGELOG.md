@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.25 — post-objective summary: canonical approval render, persist + replay, audit-goal counts (2026-09-07)
+
+### Fixed
+- Field failure: goal `20260907131550-12ddoy` completed with a perfect six-label archive record, but the approval chat lines fired into a dead context (auditor verdict landed with no live turn) — record perfect, delivery silent. Cross-harness survey (`audit/POST-OBJECTIVE-SUMMARY-2026-09-07.md`): Codex CLI 0.147.0 and Claude Code both leave the final message to the agent and standardize only usage/session-persistence/resume; pi-goal-x (in-repo v0.26.1 source) fixes the report order (verdict → complete → task summary → detail) — validating the outcome-first shape. Nobody persists the render; GLLA now does.
+- ONE canonical builder: `buildTerminalApprovalRender` (outcome + ≤2 details + approval + counts + record) feeds chat, transcript, external, and the persisted render on all three approval paths (detached auditor, manual verify, Esc-without-audit). `buildApprovalChatLines` gains an optional `counts` slot (backward compatible); the stale pre-verdict `Next:` stays stripped everywhere.
+- Audit-goal counts line rides every render, built from durable state only: `— run: 42 turns · 17 file writes · 23 bash calls · auditor approved (1 verdict).` Absent facts are named as absent; the no-audit path says so honestly.
+- Persist + replay: renders persist to `.pi-glla/pending-approval-renders.json` at archive time with `delivered: !isIdle()` (the probe fails toward undelivered — a duplicate beats a loss). All five command handlers (`/goal /glla /review /list /loop`) replay undelivered renders on live contact, fire-once fenced via `deliveredAt`, ledgered (`terminal_approval_render_persisted/_replayed`), corrupt-store safe. Coverage: 7 new behavioral pins + updated source-grep contract.
+
 ## 0.38.24 — audit pass: abort-latch send guards, ownership compare-and-swap, auditor inherit parity (2026-09-07)
 
 ### Fixed

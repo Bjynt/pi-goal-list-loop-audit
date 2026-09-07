@@ -136,18 +136,20 @@ test("v0.38.14: terminal brief resolves through the same facts as the compact re
 
 test("the ✓ done chat notifies use the line block; external keeps the single line", () => {
   const hooks = fs.readFileSync("extensions/loops/goal-auditor-hooks.ts", "utf8");
-  assert.match(hooks, /terminalHumanBrief\(/);
-  // v0.38.20: the approval voice moved into buildApprovalChatLines — the
-  // stale pre-verdict Next: never reaches the chat on any approval path.
-  assert.match(hooks, /buildApprovalChatLines\(\{/);
-  assert.match(hooks, /withoutStaleNext\(brief\.details\)/);
+  // v0.38.25: the approval voice moved into ONE canonical builder — the
+  // detached path builds the render, persists it at archive time, and
+  // replays it on the next live contact when the verdict lands with no
+  // live turn (field 2026-09-07: record perfect, delivery silent).
+  assert.match(hooks, /buildTerminalApprovalRender\(\{/);
+  assert.match(hooks, /persistApprovalRender\(/);
+  assert.match(hooks, /isApprovalContextIdle\(/);
   assert.match(hooks, /— auditor \$\{result\.model\} approved/);
   const brief = fs.readFileSync("extensions/completion-summary.ts", "utf8");
   assert.match(brief, /✓ done — \$\{notice\.outcome\}/);
   const tools = fs.readFileSync("extensions/loops/goal-tools.ts", "utf8");
-  assert.equal(tools.match(/terminalHumanBrief\(/g)?.length ?? 0, 2, "both tool ✓ done paths use the briefing");
-  assert.equal(tools.match(/buildApprovalChatLines\(\{/g)?.length ?? 0, 2, "both tool ✓ done notifies use the approval voice");
-  assert.match(tools, /notifyExternal\(ctx, `Goal complete \(auditor approved\): \$\{recap\}`\)/, "external notify keeps the compact line");
+  assert.equal(tools.match(/buildTerminalApprovalRender\(\{/g)?.length ?? 0, 2, "both tool ✓ done paths use the canonical render");
+  assert.equal(tools.match(/persistApprovalRender\(/g)?.length ?? 0, 2, "both tool paths persist the render");
+  assert.match(tools, /notifyExternal\(ctx, `Goal complete \(auditor approved\): \$\{manualRender\.recap\}`\)/, "external notify keeps the compact line");
 });
 
 test("audit-2026-09-06: completionSummaryLines honors the optional line-width budget", async () => {
