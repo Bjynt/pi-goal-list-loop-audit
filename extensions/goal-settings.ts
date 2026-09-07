@@ -150,6 +150,12 @@ export interface Settings {
    * file lives inside the job dir, so its lifetime = the job-dir retention
    * window (auditJobRetentionMs). */
   auditorInspection?: boolean;
+  /** Global-only: when ON, the detached auditor fires on every
+   * `complete_task` call (not just on goal completion). The task's
+   * verification contract becomes the audit scope; the goal stays
+   * active so the agent can continue. Default OFF — most users want
+   * one audit per goal, not one per subtask. */
+  auditTasks?: boolean;
   /** Global-only: when main-model recovery is parked, fire an extra retry at
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
@@ -283,6 +289,7 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "auditorStallMs",
   "auditJobRetentionMs",
   "auditorInspection",
+  "auditTasks",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -338,6 +345,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.38.3: opt-in live inspection — the auditor's pi becomes a normal
   // persistent session you can tail/resume. Off = the original --no-session.
   auditorInspection: false,
+  auditTasks: false,
   // v0.34.142: an extra blind retry at :00:30 after every hour starts.
   // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.

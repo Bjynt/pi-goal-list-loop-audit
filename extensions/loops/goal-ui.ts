@@ -166,10 +166,11 @@ import {
   setLastContinuationSentPayloadRef,
   setContinuationRearmStreak,
   setContinuationRearmSince,
+  resetBusyBypassNotify,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
-export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff } from "../goal-continuation.js";
+export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff, resetBusyBypassNotify } from "../goal-continuation.js";
 import {
   LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT,
   LENGTH_CONTINUE_MAX,
@@ -469,7 +470,7 @@ let lastRealActivityAt = 0;
 
 function noteActivity(real = false): void {
   lastActivityAt = Date.now();
-  if (real) { consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; }
+  if (real) { consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; resetBusyBypassNotify(); }
 }
 
 function isSupervising(): boolean {

@@ -459,6 +459,56 @@ async function verifyTaskMilestone(
   return result.passed ? null : result;
 }
 
+/** Fire a detached per-task audit when the auditTasks setting is on. The
+ * task is the audit scope; the goal stays active. The result is recorded
+ * as a task_audit_verdict ledger event and surfaced to the agent on the
+ * next turn. */
+let __testOnlyTaskAuditRunner: ((args: Parameters<typeof runDetachedGoalCompletionAuditor>[0]) => Promise<Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>>) | undefined;
+export function __testOnlySetTaskAuditRunner(
+  runner: typeof __testOnlyTaskAuditRunner,
+): void { __testOnlyTaskAuditRunner = runner; }
+
+async function maybeAuditTask(
+  ctx: ExtensionContext,
+  task: { id: string; title: string; verificationContract?: string },
+): Promise<void> {
+  if (!state.goal) return;
+  let settings: ReturnType<typeof loadSettings>;
+  try { settings = loadSettings(ctx.cwd); } catch { return; }
+  if (settings.auditTasks !== true) return;
+  const verificationSummary = task.verificationContract?.trim()
+    || `Task ${task.id} (${task.title}) marked complete. No explicit verification contract.`;
+  const completionSummary = `Per-task audit: ${task.title} (id=${task.id})`;
+  appendLedger(ctx.cwd, "task_audit_started", { goalId: state.goal.id, taskId: task.id });
+  const runner = __testOnlyTaskAuditRunner ?? runDetachedGoalCompletionAuditor;
+  const result = await runner({
+    cwd: ctx.cwd,
+    goal: state.goal,
+    completionSummary,
+    verificationSummary,
+    model: resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallbacks, settings.auditorSameSessionSwap !== false).model as never,
+    thinkingLevel: "max",
+    allowedExtensions: settings.auditorAllowedExtensions,
+    inspection: settings.auditorInspection === true,
+  });
+  const approved = !!result.approved;
+  appendLedger(ctx.cwd, "task_audit_verdict", {
+    goalId: state.goal.id,
+    taskId: task.id,
+    approved,
+    model: result.model,
+    report: typeof result.output === "string" ? result.output.slice(0, 4000) : "",
+  });
+  if (ctx.ui?.notify) {
+    ctx.ui.notify(
+      approved
+        ? `✓ task audit passed: ${task.title}`
+        : `⚠ task audit flagged: ${task.title} — see /goal status`,
+      approved ? "info" : "warning",
+    );
+  }
+}
+
 /** Build the bounded recommendation facts that the production UI projects.
  * The explicit tool choice is itself the current judgment; optional fields
  * let the agent name the durable action and preserve the exact prior defer
@@ -2145,6 +2195,9 @@ function registerAgentTools(pi: any): void {
           }
           t.status = "complete";
           updateGoal({ taskList: tl }, ctx);
+          // v0.38.x: when auditTasks is on, fire a detached per-task audit.
+          // The goal stays active; the task is the audit scope.
+          maybeAuditTask(ctx, t).catch((e) => appendLedger(ctx.cwd, "task_audit_failed", { taskId: t.id, error: String(e) }));
           return { content: [{ type: "text", text: `Task ${p.id} marked complete.` }], details: {} };
         }
         if (t.subtasks) queue.push(...t.subtasks);

@@ -1907,6 +1907,40 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   })!;
   assert.match(lines[0]!, / · active · /);
   assert.match(lines[0]!, /1\/3 ▰▰▱▱▱/); // round(1.67)=2
+
+  // Complete parent covers its subtasks: the parent closing counts as the
+  // subtasks being done too (field: 2/24 with 6 actual tasks — 2 closed
+  // parents whose subtasks were still "pending" inflated the denominator).
+  const nested = goalOf({ taskList: { version: 1, tasks: [
+    { id: "p1", title: "parent a", status: "complete", subtasks: [
+      { id: "p1.1", title: "sub a1", status: "pending" },
+      { id: "p1.2", title: "sub a2", status: "pending" },
+      { id: "p1.3", title: "sub a3", status: "pending" },
+    ] },
+    { id: "p2", title: "parent b", status: "complete", subtasks: [
+      { id: "p2.1", title: "sub b1", status: "pending" },
+      { id: "p2.2", title: "sub b2", status: "pending" },
+    ] },
+    { id: "p3", title: "parent c", status: "pending", subtasks: [
+      { id: "p3.1", title: "sub c1", status: "pending" },
+    ] },
+    { id: "p4", title: "parent d", status: "pending" },
+    { id: "p5", title: "parent e", status: "pending" },
+    { id: "p6", title: "parent f", status: "pending" },
+  ] } });
+  const nestedLines = buildWidgetLines({ goal: nested, list: [] }, null, NOW, undefined, 120)!;
+  // 2 closed parents (1 + 3 subs + 1 + 2 subs) = 7 of 12, round(7/12)=3 cells filled
+  assert.match(nestedLines[0]!, /7\/12 ▰▰▰▱▱/);
+  // Mid-flight parent: its done subtasks count independently.
+  const mid = goalOf({ taskList: { version: 1, tasks: [
+    { id: "p1", title: "parent a", status: "in_progress", subtasks: [
+      { id: "p1.1", title: "sub a1", status: "complete" },
+      { id: "p1.2", title: "sub a2", status: "pending" },
+    ] },
+    { id: "p2", title: "parent b", status: "pending" },
+  ] } });
+  const midLines = buildWidgetLines({ goal: mid, list: [] }, null, NOW, undefined, 120)!;
+  assert.match(midLines[0]!, /1\/4 ▰▱▱▱▱/);
   // Last-action line: Claude's done-row format + the next pending task.
   assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
   assert.match(lines[lines.length - 1]!, /^└─ /);

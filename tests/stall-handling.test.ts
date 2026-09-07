@@ -473,7 +473,7 @@ test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hel
   assert.match(CONT, /if \(!record\.retryCount && retryContinuationDispatch\(current, record\)\) return;/, "exactly ONE automatic retry before unacknowledged (decomposition step 5: moved)");
   assert.match(g, /const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;/, "legacy re-alert throttle remains documented");
   // Disarm signal: real activity (agent_end/tool_call via noteActivity(true)) AFTER the last send.
-  assert.match(g, /if \(real\) \{ consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; \}/, "real activity stamps lastRealActivityAt");
+  assert.match(g, /if \(real\) \{ consecutiveStalls = 0; lastRealActivityAt = lastActivityAt;/, "real activity stamps lastRealActivityAt");
   assert.match(g, /pendingContinuationDispatch/, "accepted dispatch owns the watchdog before a generic heartbeat refire");
   assert.match(g, /dispatchStartAcknowledged\(ctx, "before_agent_start", event\?\.prompt\)/, "prompt-specific start proof");
   assert.match(CONT, /dispatchStartUnacknowledged\(current, record\)/, "missing proof fails closed (decomposition step 5: watchdog moved)");

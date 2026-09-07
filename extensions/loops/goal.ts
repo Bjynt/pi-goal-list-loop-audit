@@ -42,10 +42,12 @@ import {
   lastContinuationSentPayloadRef,
   setLastContinuationSentPayloadRef,
   resetContinuationDispatchState,
+  getLastBusyBypassAt,
+  busySilentSendMs,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
-export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff } from "../goal-continuation.js";
+export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff, getLastBusyBypassAt, busySilentSendMs } from "../goal-continuation.js";
 
 import {
   clearMainModelRecoveryTimer,
@@ -403,6 +405,8 @@ const heartbeatDeps: HeartbeatDeps = {
   continuationUnansweredMs: CONTINUATION_UNANSWERED_MS,
   continuationUnansweredThrottleMs: CONTINUATION_UNANSWERED_THROTTLE_MS,
   abortZombieRun,
+  getLastBusyBypassAt,
+  getBusySilentSendMs: busySilentSendMs,
 };
 createGoalHeartbeat(heartbeatFlags, heartbeatDeps);
 

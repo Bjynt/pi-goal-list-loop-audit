@@ -114,6 +114,15 @@ export interface HeartbeatDeps {
   continuationUnansweredThrottleMs: number;
   /** Abort and durably park the owner of a confirmed zero-stream turn. */
   abortZombieRun(ctx: ExtensionContext, generation: number, goalId: string | undefined, lastStreamActivityAt: number): boolean;
+  /** Epoch (ms) of the last busy-bypass notification, or 0 if never. When
+   * the busy-bypass has already confirmed phantom-busy, the zombie watchdog
+   * shortens its abort threshold so the session auto-retries without user
+   * input. */
+  getLastBusyBypassAt(): number;
+  /** How long a busy-but-silent session may stay silent before the busy-bypass
+   * fires. The heartbeat uses this to decide when the bypass-confirmed hang
+   * has lasted long enough to trigger the abort. */
+  getBusySilentSendMs(): number;
 }
 
 let flags: HeartbeatFlags;
@@ -139,6 +148,8 @@ let goalNoun: HeartbeatDeps["goalNoun"];
 let continuationUnansweredMs: HeartbeatDeps["continuationUnansweredMs"];
 let continuationUnansweredThrottleMs: HeartbeatDeps["continuationUnansweredThrottleMs"];
 let abortZombieRun: HeartbeatDeps["abortZombieRun"];
+let getLastBusyBypassAt: HeartbeatDeps["getLastBusyBypassAt"];
+let getBusySilentSendMs: HeartbeatDeps["getBusySilentSendMs"];
 
 export function createGoalHeartbeat(flagsArg: HeartbeatFlags, d: HeartbeatDeps): void {
   flags = flagsArg;
@@ -162,6 +173,8 @@ export function createGoalHeartbeat(flagsArg: HeartbeatFlags, d: HeartbeatDeps):
   continuationUnansweredMs = d.continuationUnansweredMs;
   continuationUnansweredThrottleMs = d.continuationUnansweredThrottleMs;
   abortZombieRun = d.abortZombieRun;
+  getLastBusyBypassAt = d.getLastBusyBypassAt;
+  getBusySilentSendMs = d.getBusySilentSendMs;
 }
 
 // ----------------------------------------------------------------------------
@@ -1399,7 +1412,15 @@ function heartbeatTick(): void {
       return;
     }
     const abortKey = `${flags.sessionGeneration}:${state.goal?.id ?? "loop"}:${flags.lastStreamActivityAt}`;
-    if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown && abortKey !== lastZombieAbortKey) {
+    // v0.38.22: when the busy-bypass has already confirmed phantom-busy, the
+    // session is definitively stuck — don't wait the full 30m zombie window.
+    // After busySilentSendMs (default 5m) of continued silence since the
+    // bypass, the queued continuation is still wedged behind a turn that
+    // will never end; trigger the abort (and its automatic retry) now.
+    const lastBypassAt = getLastBusyBypassAt();
+    const bypassSilentMs = lastBypassAt > 0 ? nowMs - lastBypassAt : 0;
+    const bypassTriggered = lastBypassAt > 0 && bypassSilentMs >= getBusySilentSendMs();
+    if ((streamSilentMs >= zombieAbortMs || bypassTriggered) && !flags.abortedStandDown && abortKey !== lastZombieAbortKey) {
       // Claim the key only after the activation-owned abort succeeds. A
       // generation/stream/goal guard can legitimately reject this attempt
       // while the heartbeat is still observing the same silent run; latching

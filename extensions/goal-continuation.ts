@@ -181,6 +181,26 @@ let activeGoalSurfaceCommand: ContinuationDeps["activeGoalSurfaceCommand"];
 let scheduleSessionTimeout: ContinuationDeps["scheduleSessionTimeout"];
 let enqueueRepairTask: ContinuationDeps["enqueueRepairTask"];
 
+/** v0.38.22: throttle for the busy-bypass user-visible warning. The bypass
+ * can fire on every rearm cycle; notify once per episode so the user sees
+ * one clear "press Esc to release the queued continuation" message instead
+ * of a flood. Reset when a real stream event advances lastRealActivityAt. */
+let lastBusyBypassNotifyAt = 0;
+let lastBusyBypassNotifySilentMs = 0;
+
+/** Reset the busy-bypass notification throttle (called on real activity). */
+export function resetBusyBypassNotify(): void {
+  lastBusyBypassNotifyAt = 0;
+  lastBusyBypassNotifySilentMs = 0;
+}
+
+/** Epoch (ms) of the last busy-bypass notification, or 0 if never.
+ * Exposed so the zombie watchdog can shorten its abort threshold when the
+ * busy-bypass has already confirmed phantom-busy. */
+export function getLastBusyBypassAt(): number {
+  return lastBusyBypassNotifyAt;
+}
+
 export function createGoalContinuation(flagsArg: ContinuationFlags, d: ContinuationDeps): void {
   flags = flagsArg;
   instanceId = d.instanceId;
@@ -1263,12 +1283,26 @@ export function sendContinuation(goalId: string): void {
     // keep the old wait path.
     if (!ctx.isIdle() && !ctx.hasPendingMessages() && busySilentBypassDue()) {
       busyBypass = true;
+      const silentMsNow = Date.now() - flags.lastRealActivityAt;
       appendLedger(ctx.cwd, "goal_continuation_send_busy_bypass", {
         goalId,
         generation: flags.sessionGeneration,
-        silentMs: Date.now() - flags.lastRealActivityAt,
+        silentMs: silentMsNow,
         rearmStreak: continuationRearmStreak,
       });
+      // v0.38.22: tell the user the session is stuck and an auto-retry is
+      // armed. The continuation is queued behind the stuck turn; the zombie
+      // watchdog will auto-abort the hang after the busy-bypass threshold
+      // (see goal-heartbeat.ts: bypassTriggered) and the auto-retry will
+      // fire without user input. One notify per episode.
+      if (lastBusyBypassNotifyAt === 0 && ctx.ui?.notify) {
+        lastBusyBypassNotifyAt = Date.now();
+        lastBusyBypassNotifySilentMs = silentMsNow;
+        ctx.ui.notify(
+          "Session appears stuck (no real activity for " + Math.floor(silentMsNow / 60_000) + "m). Auto-retry armed: a continuation is queued and will fire when the current turn ends, or the watchdog will abort the stuck turn and retry automatically.",
+          "warning",
+        );
+      }
     } else {
       continuationScheduledFor = goalId;
       // v0.28.29: backing-off cadence (was flat 50ms — 6,000 spins in 5m).

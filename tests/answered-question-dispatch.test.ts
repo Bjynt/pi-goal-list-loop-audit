@@ -147,3 +147,27 @@ test("v0.38.19 a loaded followUp queue keeps the wait path even when silent", as
   assert.equal(pi.sent.length, sendsBefore, "no stacked send onto a loaded queue");
   assert.equal(readLedger(cwd).filter((e) => e.type === "goal_continuation_send_busy_bypass").length, 0);
 });
+
+test("v0.38.22 busy-bypass notifies the user once per episode (auto-retry armed)", async () => {
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd);
+  currentCtx = ctx;
+  await pi.runTool("list_add", { items: ["notify item — done when the stuck warning fires"] }, ctx);
+
+  // Phantom-busy: answered question, idle=false, no pending, silent 6m.
+  await pi.fire("tool_call", { name: "ask_user_question", args: { questions: ["Proceed?"] } }, ctx);
+  await pi.fire("tool_result", { name: "ask_user_question", answers: ["yes"] }, ctx);
+  ctx.isIdle = () => false;
+  (ctx as { hasPendingMessages?: () => boolean }).hasPendingMessages = () => false;
+  __testOnlySetLastRealActivityAt(Date.now() - SIX_MINUTES);
+
+  // First send: notify fires once.
+  scheduleContinuation(ctx as never, true);
+  await tick(500);
+  assert.equal(ctx.ui.matching("Session appears stuck").length, 1, "first episode notifies once");
+
+  // Second send in the same episode (no real activity): no duplicate notify.
+  scheduleContinuation(ctx as never, true);
+  await tick(500);
+  assert.equal(ctx.ui.matching("Session appears stuck").length, 1, "no duplicate notification within the same episode");
+});

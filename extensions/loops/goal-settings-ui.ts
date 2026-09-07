@@ -1151,6 +1151,19 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       return;
     }
+    case "auditTasks": {
+      const v = await ctx.ui.select("Audit tasks — fire a detached auditor on every complete_task call (in addition to the goal-level audit on complete_goal). Goal stays active; task is the audit scope.", [
+        "off — one audit per goal on complete_goal (default)",
+        "on — also fire a per-task audit on every complete_task",
+      ]);
+      if (v) {
+        const on = v.startsWith("on");
+        saveSettings("global", ctx.cwd, { auditTasks: on ? true : undefined });
+        ctx.ui.notify(on ? "Audit tasks ON — every complete_task now fires a detached auditor."
+          : "Audit tasks OFF — one audit per goal on complete_goal.", "info");
+      }
+      return;
+    }
     case "hourlyRetryProbe": {
       const v = await ctx.ui.select("Hourly main-model retry — an extra blind :00:30 attempt while recovery is parked (the normal retry ladder is separate)", [
         "on — fire an extra probe at :00:30 every hour while parked (default)",
