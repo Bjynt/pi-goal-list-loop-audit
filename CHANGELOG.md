@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.26 — approval-render store: spillway cap keeps undelivered renders (2026-09-08)
+
+### Fixed
+- Post-tag review of the v0.38.25 store: the sidecar cap could trim undelivered renders past 20 entries (non-positive slice budget). The cap now applies to delivered history only — undelivered renders are never dropped (self-draining: any user command replays them). Same 7 behavioral pins green; full gate 1986 pass / 0 fail.
+
 ## 0.38.25 — post-objective summary: canonical approval render, persist + replay, audit-goal counts (2026-09-07)
 
 ### Fixed
