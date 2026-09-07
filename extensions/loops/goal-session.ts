@@ -532,14 +532,15 @@ function writeOwnerFile(cwd: string): void {
     const current = readOwnerFile(cwd);
     if (current?.pid !== undefined && current.pid !== process.pid && isProcessAlive(current.pid) && !current.shutdownAt) return;
     fs.mkdirSync(piGlaDir(cwd), { recursive: true });
-    // Audit 2026-09-07 (MEDIUM): compare-and-swap the refresh. The sole
-    // caller refreshes this process's own claim; re-read immediately
-    // before writing and abort when the record now names a foreign pid —
-    // a claimant that won the race after our first read must not be
-    // clobbered by a stale refresh. Missing record (unlinked) or our own
-    // pid still refreshes normally.
+    // Audit 2026-09-07 (MEDIUM): compare-and-swap the refresh. Re-read
+    // immediately before writing and abort when the record now names a
+    // LIVE foreign pid — a claimant that won the race after our first
+    // read must not be clobbered by a stale refresh. A dead foreign
+    // record still refreshes: the heartbeat reclaims over dead holders
+    // through this path (refreshOwnerHeartbeat), and dead records have
+    // no active writer to clobber.
     const latest = readOwnerFile(cwd);
-    if (latest && latest.pid !== process.pid) return;
+    if (latest?.pid !== undefined && latest.pid !== process.pid && isProcessAlive(latest.pid) && !latest.shutdownAt) return;
     fs.writeFileSync(ownerFilePath(cwd), JSON.stringify({ instanceId, pid: process.pid, at: Date.now() }));
   } catch {
     /* owner file is advisory — never block activation on it */

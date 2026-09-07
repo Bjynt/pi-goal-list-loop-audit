@@ -171,7 +171,10 @@ test("last-wins wiring: session_start supersedes under hostLifecycleStart, agent
   assert.match(activation, /if \(!ownsRoot && hostLifecycleStart\)/);
   assert.match(activation, /noteOwnershipStanding\(ctx\); \/\/ v0\.38\.12/);
   const session = fs.readFileSync("extensions/loops/goal-session.ts", "utf8");
-  assert.match(session, /if \(!isForeignCtx\(ctx\) && !isWorkerSessionCtx\(ctx\)\) refreshOwnershipStanding\(ctx\.cwd\);/);
+  assert.match(session, /if \(!isForeignCtx\(ctx\) && !isWorkerSessionCtx\(ctx\)\) refreshOwnershipStanding\(ctx\.cwd, Date\.now\(\), true\);/, "command entry forces a fresh ownership read past the background throttle");
+  const owner = fs.readFileSync("extensions/state-root-owner.ts", "utf8");
+  assert.match(owner, /unchangedSinceRead/, "the steal re-reads before unlinking");
+  assert.match(owner, /reason: "record-changed"/, "an actively-heartbeating owner refuses the steal");
 });
 
 // ── Part B: newest objective wins ───────────────────────────────────────
