@@ -61,7 +61,7 @@ test("head: empty/ended rows invent nothing", () => {
   assert.equal(headLifesign([row({ status: "ended" })]), undefined);
 });
 
-test("head: band follows the freshest row, breath rides evidence counters", () => {
+test("head: band follows the worst row, readout follows the freshest; breath rides evidence counters", () => {
   const a = headLifesign([row({ silentMs: 8_000, toolUses: 10, outputTokens: 100 })])!;
   assert.equal(a.band, "fresh");
   assert.equal(a.freshestMs, 8_000);
@@ -79,6 +79,23 @@ test("head: band follows the freshest row, breath rides evidence counters", () =
   assert.equal(hung.band, "hung");
   assert.equal(hung.breath, "⚠");
   assert.equal(hung.freshestMs, 8_000, "readout stays on the freshest evidence even with a hung sibling");
+  // Audit 2026-09-07: failed/unavailable triangle the head like hung —
+  // the rows render red, so the head must agree.
+  const failed = headLifesign([row({ silentMs: 8_000 }), row({ action: "failed", silentMs: 1_000 })])!;
+  assert.equal(failed.band, "hung");
+  assert.equal(failed.breath, "⚠");
+  const unavail = headLifesign([row({ action: "unavailable", silentMs: 1_000 })])!;
+  assert.equal(unavail.band, "hung");
+  // Audit 2026-09-07 (one-snapshot-never-diverging): the head band is the
+  // worst per-row band — a fresh sibling must not mask an aging one, a
+  // queued-40m head caps at aging like its row, and an aborting-10s head
+  // reads aging like its row (never fresh).
+  const mixed = headLifesign([row({ silentMs: 8_000 }), row({ silentMs: 12 * 60_000 })])!;
+  assert.equal(mixed.band, "aging", "worst row wins over the freshest");
+  assert.equal(mixed.freshestMs, 8_000, "readout still follows the freshest");
+  assert.equal(headLifesign([row({ silentMs: 8_000 }), row({ status: "queued", silentMs: 40 * 60_000 })])!.band, "aging", "queued caps at aging on the head too");
+  assert.equal(headLifesign([row({ silentMs: 8_000 }), row({ action: "abort-requested", silentMs: 10_000 })])!.band, "aging", "aborting head reads aging, never fresh");
+  assert.equal(headLifesign([row({ silentMs: 8_000 }), row({ silentMs: 31 * 60_000 })])!.band, "stale", "stale sibling surfaces on the head");
 });
 
 test("card head: active goal with workers breathes + reads out evidence age", () => {

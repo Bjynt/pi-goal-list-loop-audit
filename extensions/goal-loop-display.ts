@@ -992,9 +992,11 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * forget it and a future branch inherits it for free. */
 export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras, width?: number): string | undefined {
   const base = buildStatusTextBase(state, audit, now, theme, extras, width);
-  // The footer gets only the compact worst-child summary. Detailed rows live
-  // in the widget; the detached auditor remains a separate verification HUD.
-  const withAgentSummary = base && extras?.agents?.line && state.goal?.status !== "auditing"
+  // Audit 2026-09-07: the worker summary rides the status on EVERY branch
+  // including auditing — suppressing it there hid hung/aborting children
+  // behind the audit (HUNG is never silent). The auditor stays a distinct
+  // block inside the card; the one-segment summary does not merge them.
+  const withAgentSummary = base && extras?.agents?.line
     ? `${base} · ${extras.agents.line.replace(/^●\s*/, "")}`
     : base;
   if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return truncateStatusToWidth(withAgentSummary, width);
@@ -1307,8 +1309,15 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
     if (inner) {
       // Keep the card footer last while making worker rows part of the same
       // detailed widget rather than appending a disconnected second footer.
+      // Audit 2026-09-07: on the auditing card the worker rows used to land
+      // between the auditor observations and the auditor `└─` footer,
+      // visually attaching workers to the verifier block. Insert before the
+      // auditor block instead so its observations + footer stay contiguous.
+      const auditorAt = inner.findIndex((line) => line.includes("├─ auditor: "));
       const footerFromEnd = [...inner].reverse().findIndex((line) => line.startsWith("└─"));
-      const insertAt = footerFromEnd >= 0 ? inner.length - 1 - footerFromEnd : inner.length;
+      const insertAt = auditorAt >= 0
+        ? auditorAt
+        : footerFromEnd >= 0 ? inner.length - 1 - footerFromEnd : inner.length;
       withAgents = [...inner.slice(0, insertAt), ...agentLines, ...inner.slice(insertAt)];
     } else {
       // A worker can remain tracked while the parent card is temporarily

@@ -3732,12 +3732,23 @@ export interface HeadLifesign {
  * nothing is tracked (the head keeps its plain status glyph — no readout
  * is invented without evidence). The breather advances on evidence
  * counters, never on time. */
+const LIFESIGN_SEVERITY: Record<LifesignBand, number> = { fresh: 0, aging: 1, stale: 2, hung: 3 };
+
 export function headLifesign(rows: LifesignRow[] | undefined): HeadLifesign | undefined {
   const active = (rows ?? []).filter((r) => r.status !== "ended");
   if (active.length === 0) return undefined;
   const freshestMs = Math.min(...active.map((r) => Math.max(0, r.silentMs)));
-  if (active.some((r) => r.status === "hung")) return { band: "hung", freshestMs, breath: "⚠" };
-  const band: LifesignBand = freshestMs < LIFESIGN_FRESH_MS ? "fresh" : freshestMs < LIFESIGN_STALE_MS ? "aging" : "stale";
+  // Audit 2026-09-07: triangle on failed/unavailable too — the rows render
+  // them as red hung, so a breathing head would contradict the card.
+  if (active.some((r) => r.status === "hung" || r.action === "failed" || r.action === "unavailable")) return { band: "hung", freshestMs, breath: "⚠" };
+  // Audit 2026-09-07 (one-snapshot-never-diverging): the head band is the
+  // worst per-row band, not a freshest-age cut. Raw freshestMs let a
+  // queued-40m head read stale while its row read aging (queued caps at
+  // aging), and an aborting-10s head read fresh while its row read aging.
+  // Sharing lifesignBandFor keeps head and rows on the same snapshot.
+  const band: LifesignBand = active
+    .map((r) => lifesignBandFor(r))
+    .reduce((worst, b) => LIFESIGN_SEVERITY[b] > LIFESIGN_SEVERITY[worst] ? b : worst, "fresh" as LifesignBand);
   const total = active.reduce((n, r) => n + (r.toolUses ?? 0) + (r.outputTokens ?? 0), 0);
   const breath = band === "fresh" ? BREATH_FRAMES[total % BREATH_FRAMES.length]! : band === "aging" ? "◉" : "○";
   return { band, freshestMs, breath };

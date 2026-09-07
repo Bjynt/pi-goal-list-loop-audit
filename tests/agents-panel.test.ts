@@ -332,8 +332,10 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
   const compactStatus = buildStatusText(state, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore quiet 26m", lines: [] } })!;
   assert.match(compactStatus, /2 agents · Explore quiet 26m/);
   const stateRecord = state as unknown as { goal: Record<string, unknown>; [key: string]: unknown };
+  // Audit 2026-09-07: the summary rides the auditing status too — a
+  // hung/aborting child must never hide behind the audit (HUNG-never-silent).
   const auditStatus = buildStatusText({ ...stateRecord, goal: { ...stateRecord.goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore quiet 26m", lines: [] } })!;
-  assert.doesNotMatch(auditStatus, /2 agents/);
+  assert.match(auditStatus, /2 agents/);
   const agentAt = withAgents.findIndex((l) => l.includes("agent: Explore · inspect auth"));
   assert.ok(agentAt >= 0, "worker detail stays inside the card");
   const footerAt = withAgents.findIndex((l) => l.startsWith("└─"));
