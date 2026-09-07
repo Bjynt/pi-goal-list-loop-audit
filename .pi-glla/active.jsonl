@@ -1802,3 +1802,4 @@
 {"type":"hourly_probe_scheduled","value":{"fireAt":"2026-09-07T14:00:30.000Z","at":"2026-09-07T13:50:49.440Z"},"at":"2026-09-07T13:50:49.440Z"}
 {"type":"context_usage_sample","value":{"goalId":"20260907131550-12ddoy","provider":"opencode-go","model":"muse-spark-1.3-contributor","providerUsage":null,"contextUsage":{"tokens":144682,"contextWindow":200000,"percent":72.341}},"at":"2026-09-07T13:51:14.084Z"}
 {"type":"context_usage_sample","value":{"goalId":"20260907131550-12ddoy","provider":"opencode-go","model":"muse-spark-1.3-contributor","providerUsage":null,"contextUsage":{"tokens":169915,"contextWindow":200000,"percent":84.9575}},"at":"2026-09-07T13:56:11.125Z"}
+{"type":"context_hygiene_compaction_input","value":{"dropped":3,"generation":432},"at":"2026-09-07T13:57:59.462Z"}

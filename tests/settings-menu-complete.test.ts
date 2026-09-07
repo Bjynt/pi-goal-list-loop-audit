@@ -529,7 +529,7 @@ test("audit 2026-09-06: normalizeLoadedSettings resets junk numerics/enums/strin
     auditCap: 2.5,
     stuckMaxInterventions: "many",
     stallEscalationRefires: -1,
-    stallShortWords: 0,
+    stallShortWords: -1,
     stallSimilarityThreshold: 7,
     wedgeAlertMinutes: Number.NaN,
     carryover: "sometimes",
@@ -548,6 +548,10 @@ test("audit 2026-09-06: normalizeLoadedSettings resets junk numerics/enums/strin
   ] as const) {
     assert.equal(out[key], undefined, `${key} resets to unset`);
   }
+  // Audit 2026-09-07 (MEDIUM, findings 383-385): 0 = off is a legal saved
+  // value for stallShortWords and must survive normalization.
+  const off = normalizeLoadedSettings({ stallShortWords: 0 } as any);
+  assert.equal(off.stallShortWords, 0, "0 = off survives");
   // Valid values survive untouched.
   const kept = normalizeLoadedSettings({
     tokenLimit: 1000, auditCap: 0, stuckMaxInterventions: 3, stallShortWords: 20,
