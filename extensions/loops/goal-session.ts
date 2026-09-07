@@ -985,9 +985,11 @@ let processOwnerDeniedCwd: string | null = null;
  * stolen the root while we were working, and we must notice (and stand
  * down) instead of writing competitively forever. Audit 2026-09-06:
  * 30s left a 30s competing-writes window for background (non-command)
- * writers; 10s — a single tiny JSON read — shrinks it. Command entry
- * re-gates on every invocation anyway (refuseIfDenied), so interactive
- * writes were never the exposure. */
+ * writers; 10s — a single tiny JSON read — shrinks it. Audit 2026-09-07:
+ * command entry (warnIfStaleAtEntry) forces a fresh read — the throttle
+ * only paces background pollers now, so interactive writes were never
+ * the exposure only after the force path; before it the cache served
+ * commands too. */
 const OWNERSHIP_RECHECK_MS = 10_000;
 let lastOwnershipRecheckAt = 0;
 
@@ -997,9 +999,13 @@ let lastOwnershipRecheckAt = 0;
  * command entry refuses until ownership changes again. Dead/released
  * owners never flap the flag here (the heartbeat reclaims them quietly).
  * "deferred": sessionDir selected but unresolved — nothing is knowable. */
-export function refreshOwnershipStanding(cwd: string, now: number = Date.now()): "held" | "lost" | "deferred" {
+export function refreshOwnershipStanding(cwd: string, now: number = Date.now(), force = false): "held" | "lost" | "deferred" {
   if (stateRootPending()) return "deferred";
-  if (now - lastOwnershipRecheckAt < OWNERSHIP_RECHECK_MS) {
+  // Audit 2026-09-07 (MEDIUM): command entry forces a fresh read — a
+  // single tiny JSON read per interactive command — so a steal inside the
+  // 10s background throttle still refuses here instead of writing
+  // competitively. Background pollers keep the throttle.
+  if (!force && now - lastOwnershipRecheckAt < OWNERSHIP_RECHECK_MS) {
     return processOwnerDeniedCwd === cwd ? "lost" : "held";
   }
   lastOwnershipRecheckAt = now;
@@ -1274,7 +1280,7 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   // automatically at its own session_start. Workers skip the recheck:
   // a subagent never owns the root, so it must keep its own refusal
   // wording instead of tripping the ownership flag in its process.
-  if (!isForeignCtx(ctx) && !isWorkerSessionCtx(ctx)) refreshOwnershipStanding(ctx.cwd);
+  if (!isForeignCtx(ctx) && !isWorkerSessionCtx(ctx)) refreshOwnershipStanding(ctx.cwd, Date.now(), true);
   if (processOwnerDeniedCwd === ctx.cwd) {
     ctx.ui.notify(`glla: a newer pi session owns this working-directory state root — ${what} is refused here to prevent competing writes. Start a fresh session to take it back. /glla owner inspects the holder; /glla takeover ends it with confirmation.`, "warning");
     return true;
