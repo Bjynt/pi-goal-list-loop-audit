@@ -484,8 +484,9 @@ test("widget names a list item as such and points at /list, not /goal", () => {
     NOW,
   )!;
   assert.match(lines[0]!, /· list item · active · /); // v0.33.0: type named in the head segments
-  assert.equal(lines[lines.length - 1], "└─ 2 queued · /list · /glla");
+  assert.equal(lines[lines.length - 1], "└─ 2 queued");
   assert.ok(!lines.some(l => l.includes("/goal status")), "list item must not hint /goal status");
+  assert.ok(!lines.some(l => l.includes("/glla")), "v0.38.23: no extension-meta command hints on the card");
 });
 
 test("long-running list card shows a truthful queue trail and immediate next item", () => {
@@ -502,7 +503,7 @@ test("long-running list card shows a truthful queue trail and immediate next ite
   )!;
   assert.ok(lines.some((line) => line.includes("↳ 2 waiting · up next: write the next focused improvement")));
   assert.ok(lines.some((line) => line.includes("waiting 5m")), "valid queue timestamps get a wait age");
-  assert.equal(lines[lines.length - 1], "└─ 2 queued · /list · /glla");
+  assert.equal(lines[lines.length - 1], "└─ 2 queued");
 });
 
 test("widget list item, last in queue: no '0 queued'", () => {
@@ -511,7 +512,7 @@ test("widget list item, last in queue: no '0 queued'", () => {
     null,
     NOW,
   )!;
-  assert.equal(lines[lines.length - 1], "└─ /list · /glla");
+  assert.ok(!lines.some(l => l.startsWith("└─")), "v0.38.23: empty queue means no footer at all");
 });
 
 test("widget goal policy keeps /goal status hint + list N prefix", () => {
@@ -524,7 +525,7 @@ test("widget goal policy keeps /goal status hint + list N prefix", () => {
     NOW,
   )!;
   assert.match(lines[0]!, /^● Create x.txt containing ok · active · /); // v0.33.0: plain goal — icon + status in the head
-  assert.equal(lines[lines.length - 1], "└─ 1 queued · /goal status · /glla");
+  assert.equal(lines[lines.length - 1], "└─ 1 queued");
 });
 
 test("paused shows the reason", () => {
@@ -884,11 +885,14 @@ test("widget: nothing supervised → undefined", () => {
   assert.equal(buildWidgetLines({ goal: null, list: [] }, null, NOW), undefined);
 });
 
-test("widget: goal lines include objective, status, tokens, footer", () => {
+test("widget: goal lines include objective, status, tokens, no footer", () => {
   const lines = buildWidgetLines({ goal: goalOf(), list: [] }, null, NOW)!;
   assert.match(lines[0]!, /● Create x.txt containing ok/);
   assert.match(lines[0]!, /12\.4k\/1000k ▰/); // v0.33.0: budget segment carries a meter
-  assert.ok(lines.some((l) => l.includes("/goal status")));
+  // v0.38.23: command-hint footers are extension meta, not task info.
+  assert.ok(!lines.some((l) => l.includes("/goal status")));
+  assert.ok(!lines.some((l) => l.includes("/glla")));
+  assert.ok(!lines.some((l) => l.startsWith("└─")));
 });
 
 test("widget: paused goal shows reason + suggestion", () => {
@@ -1910,8 +1914,11 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   assert.match(lines[0]!, / · active · /);
   assert.match(lines[0]!, /1\/3 ▰▰▱▱▱/); // round(1.67)=2
   // Last-action line: Claude's done-row format + the next pending task.
+  // v0.38.23: with an empty queue there is no footer, so the last-action
+  // line is the card's last line.
   assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
-  assert.match(lines[lines.length - 1]!, /^└─ /);
+  assert.equal(lines[lines.length - 1], lines[1]);
+  assert.ok(!lines.some((l) => l.startsWith("└─")));
   // Failed action renders ✗; no ms → no time suffix.
   const failed = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 120, {
     recent: [{ name: "bash", arg: "bun test", ms: 0, ok: false }],
