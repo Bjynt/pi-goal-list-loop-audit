@@ -803,9 +803,10 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
       recent: recentActions,
       // Audit 2026-09-07 (DECIDED: exceptions-only by default): `quiet`
       // (default) renders troubled rows only — healthy fan-out lives on
-      // the native fleet panel. `rich` restores all detailed rows (safe:
-      // ages are bucketed so the widget key moves on genuine state
-      // transitions, not every tick); `compact` keeps the single line.
+      // the native fleet panel. `rich` restores all detailed rows. All ages
+      // (worker silence, head `stream`, `total` elapsed) ride the shared
+      // bucket grain, so the widget key moves on bucket boundaries + state
+      // changes, not every render tick (the v0.37.1 jumping lesson).
       // HUNG is never silent at any level.
       ...(() => {
         try {

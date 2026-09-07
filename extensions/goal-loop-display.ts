@@ -918,8 +918,15 @@ function pausedLastActivity(g: Goal, extras: WidgetExtras | undefined, now: numb
 /** The goal's total wall-clock age. This intentionally includes parked,
  * recovery, and auditor time; it is not a claim about active model compute. */
 function goalTotalText(g: Goal, now: number): string {
+  // Audit 2026-09-07: the elapsed rides the shared bucket grain (5s/15s/30s),
+  // not wall-clock seconds. A per-second `total` changed the status/widget
+  // key on every render tick, refiring setWidget into the shared belowEditor
+  // stack for no new information (the v0.37.1 jumping lesson). Floored, so
+  // the readout never over-claims elapsed; per-second precision was a
+  // liveness signal back when `total` owned one — the head `stream {age}`
+  // owns liveness now.
   const startedAt = Date.parse(g.createdAt);
-  return Number.isFinite(startedAt) ? `total ${fmtElapsed(Math.max(0, now - startedAt))}` : "";
+  return Number.isFinite(startedAt) ? `total ${fmtElapsed(bucketSilentMs(Math.max(0, now - startedAt)))}` : "";
 }
 
 function pausedNextTransition(g: Goal, state: State, now: number): string {
