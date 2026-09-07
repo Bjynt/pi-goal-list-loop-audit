@@ -98,8 +98,13 @@ safety property by other means — `renderAgentsWidgetLines` buckets silence
 ages exactly like the compact line, so the widget key only moves on genuine
 state transitions — and restores rich ambient rows behind the
 `subagentDisplayRichness` ladder (`rich` default / `compact` / `quiet`, HUNG
-never silent), plus the task-linkage header (`→ <objective>`) only GLLA can
-show. Triplication/ordering against pi-subagents native panels is upstream
+never silent), plus — until v0.38.23 — the task-linkage header
+(`→ <objective>`) only GLLA can show. v0.38.23 removes the header (the
+card head already names the objective), collapses worker rows to one
+glyph-first line each, forces the card below the chat
+(`{ placement: "belowEditor" }`), and adds the evidence lifesign
+(counter-derived breathing glyph + `stream {age}` readout + semantic
+band colors on head and rows, queued capped at amber). Triplication/ordering against pi-subagents native panels is upstream
 (nicobailon/pi-subagents#1931, read-only); GLLA owns its slot only and
 documents the native escapes. Assembly is the pure `assembleAgentsExtras`
 (pinned in `tests/subagent-display-richness.test.ts`).

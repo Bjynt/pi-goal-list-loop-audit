@@ -13,8 +13,11 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-09-05):**
-- `SUBAGENT-DISPLAY-UNIFICATION-2026-09-05.md` — v0.38.22: `subagentDisplayRichness` (`rich` default / `compact` / `quiet`, HUNG never silent) + bucketed rich lines + task-linkage header; upstream triple-render/order-swap filed as nicobailon/pi-subagents#1931; README coexistence guidance
+**Most recent (2026-09-07):**
+- `BELOW-CHAT-LIFESIGN-2026-09-07.md` — v0.38.23: forced `belowEditor` pin (swap fix), extension-meta footers deleted (`N queued` kept), Option-2 single-line glyph rows (header gone, ids stay in `/glla agents`), evidence-gated breathing head + `stream {age}` readout, semantic ramp on head + rows only (queued caps amber, monochrome = shape + number)
+
+**Earlier (2026-09-05):**
+- `SUBAGENT-DISPLAY-UNIFICATION-2026-09-05.md` — v0.38.22: `subagentDisplayRichness` (`rich` default / `compact` / `quiet`, HUNG never silent) + bucketed rich lines + task-linkage header (header removed in v0.38.23 — head already names the objective); upstream triple-render/order-swap filed as nicobailon/pi-subagents#1931; README coexistence guidance
 
 **Earlier (2026-09-04):**
 - `OBJECTION-PINNING-2026-09-04.md` — v0.38.21: PR #43 merged (observability, defaults kept) + disapproval round scoping (`superseded`/`supersededBy`, `liveDisapproval`, shared `appendAuditVerdict`, settled-rounds prompt line); honest scope — full-report surfacing already shipped in v0.35.x, this slice adds the missing round scoping; behavioral fail-before + 3/3 stable
