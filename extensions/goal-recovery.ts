@@ -1324,23 +1324,18 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     }
     // The ordered chain has been visited for this recovery cycle. Start a
     // deliberate new cycle by retrying the currently selected model; the
-    // next failure can then walk primary → backup 1 → … again. This is not a
-    // blind resend loop: it is one bounded probe per durable timer window.
-    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined };
-    state.mainModelRecovery = next;
-    persistState(ctx);
-    appendLedger(ctx.cwd, "main_model_fallback_cycle_reset", { current, attempted: recovery.attempted, attempts: recovery.attempts });
-    flags.continuationDispatchStoodDown = false;
-    if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
-      updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
-      scheduleContinuation(ctx, true, 1_000);
-    } else if (recovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
-      state.loop = { ...state.loop, active: true, stopReason: undefined };
-      persistState(ctx);
-      scheduleLoopTick(ctx);
-    }
-    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: recovery.attempts, mode: "cycle-reset" });
-    ctx.ui.notify(`Main model recovery probe: retrying ${current} after visiting the configured fallback chain.`, "info");
+    // next failure can then walk primary → backup 1 → … again.
+    // Audit 2026-09-07 (HIGH): the reset rides the standard delayed-retry
+    // envelope (growing backoff + 24h horizon + manual hold) instead of
+    // re-activating immediately. The old path re-armed the goal/loop with a
+    // 1s continuation and an unincremented attempts count, so a fast-failing
+    // `current` spun the bounded recovery with no backoff and no horizon.
+    // Each new cycle now costs a backoff delay and consumes horizon; the
+    // recovery timer re-drives probeMainModelRecovery when it fires.
+    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined, attempts: recovery.attempts + 1 };
+    appendLedger(ctx.cwd, "main_model_fallback_cycle_reset", { current, attempted: recovery.attempted, attempts: next.attempts });
+    const delay = mainModelRetryDelayMs(next.attempts, loadGlobalSettings().mainModelRetryMinutes);
+    if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
     return;
   }
   // A candidate can be registered but still unusable (no configured auth or

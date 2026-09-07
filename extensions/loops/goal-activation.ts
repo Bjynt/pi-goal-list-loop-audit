@@ -514,7 +514,13 @@ function scheduleZombieAutoRetry(
     const fresh = freshCtxForGeneration(generation);
     if (!fresh) return;
     const goal = state.goal;
-    if (goalId !== undefined || goal) {
+    // Audit 2026-09-07 (HIGH): route on the abort's closure goalId, never
+    // live state. `|| goal` sent a loop retry into the goal branch whenever
+    // any goal object existed (e.g. one started during the 90s delay) — the
+    // goal branch then returned early on the id mismatch and the loop sat
+    // paused forever with budget unspent. The abort itself is owner-stable
+    // (abortZombieRun pauses the live owner), so the retry honors it.
+    if (goalId !== undefined) {
       if (!goal || goal.status !== "paused" || goal.id !== goalId) return;
       if (goal.pauseReason !== ZOMBIE_PAUSE_REASON) return; // superseded pause — not ours to clear
       const freshLimit = loadSettings(fresh.cwd).tokenLimit ?? DEFAULT_TOKEN_LIMIT;
