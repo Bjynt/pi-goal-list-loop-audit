@@ -832,7 +832,9 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
     const widgetChanged = contextChanged || widgetKey !== lastUIWidgetKey;
     if (!statusChanged && !widgetChanged) return;
     if (statusChanged) ctx.ui.setStatus("pi-glla", statusText);
-    if (widgetChanged) ctx.ui.setWidget("pi-glla", widgetLines);
+    // v0.38.23: pin the card to the below-chat stack (same zone as the
+    // native fleet) so GLLA and fleet stop trading places across ticks.
+    if (widgetChanged) ctx.ui.setWidget("pi-glla", widgetLines, { placement: "belowEditor" });
     lastUIRenderAt = now;
     lastUIRenderContext = ctx;
     lastUIStatusText = statusText;

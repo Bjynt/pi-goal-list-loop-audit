@@ -1314,8 +1314,9 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
     } else {
       // A worker can remain tracked while the parent card is temporarily
       // absent. Keep that activity visible instead of hiding it with the
-      // rest of the empty state.
-      withAgents = ["● active workers", ...agentLines, "└─ /glla agents for full worker detail"];
+      // rest of the empty state. v0.38.23: no command-hint footer —
+      // extension meta is noise; the rows carry the information.
+      withAgents = ["● active workers", ...agentLines];
     }
   }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
@@ -1855,10 +1856,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`├─ ${paint(theme, "accent", "↳")} ${queue} waiting · up next: ${truncate(nextItem.objective, objectiveBudget)}${paint(theme, "dim", age)}`);
     }
   }
-  const footer = isList
-    ? `${queue > 0 ? `${queue} queued · ` : ""}/list · /glla`
-    : `${queue > 0 ? `${queue} queued · ` : ""}/goal status · /glla`;
-  lines.push(`└─ ${paint(theme, "dim", footer)}`);
+  // v0.38.23: the card footer keeps task info only (queue depth). The
+  // `/goal status` / `/glla` command hints were extension meta, not task
+  // information — dropped. No queue, no footer at all.
+  if (queue > 0) lines.push(`└─ ${paint(theme, "dim", `${queue} queued`)}`);
   return lines;
 }
 
