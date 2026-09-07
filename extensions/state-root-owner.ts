@@ -416,7 +416,23 @@ export function supersedeLiveOwnerRoot(
   // live owner — explicit `/glla takeover` with confirm is the path.
   const prevSession = (record as { ownerSessionId?: unknown } | null)?.ownerSessionId;
   const claimantSession = opts.bySession ?? "unknown-session";
+  // Audit 2026-09-07 (MEDIUM): compare-and-swap the unlink. Re-read before
+  // destroying the record; when pid/at/instanceId changed since the entry
+  // read, the owner is actively heartbeating and the steal must not destroy
+  // a just-refreshed live record — refuse instead. A wedged (unchanged)
+  // record still supersedes normally.
+  const unchangedSinceRead = (): boolean => {
+    const fresh = readOwnerFile(cwd);
+    return !!fresh
+      && fresh.pid === (record as { pid?: unknown } | null)?.pid
+      && (fresh as { at?: unknown }).at === (record as { at?: unknown } | null)?.at
+      && (fresh as { instanceId?: unknown }).instanceId === (record as { instanceId?: unknown } | null)?.instanceId;
+  };
   if (typeof prevSession === "string" && prevSession !== "" && prevSession === claimantSession) {
+    if (!unchangedSinceRead()) {
+      appendLedger(cwd, "owner_supersede_refused", { reason: "record-changed", prevPid });
+      return "refused";
+    }
     removeOwnerFile(cwd);
     if (!claimProcessOwner(cwd)) return "refused";
     appendLedger(cwd, "owner_takeover", { via: "same-session", signaled: false, pid: process.pid, prevPid });
@@ -424,6 +440,10 @@ export function supersedeLiveOwnerRoot(
   }
   if (!claimantSession || claimantSession === "unknown-session") {
     appendLedger(cwd, "owner_supersede_refused", { reason: "anonymous-claimant", prevPid });
+    return "refused";
+  }
+  if (!unchangedSinceRead()) {
+    appendLedger(cwd, "owner_supersede_refused", { reason: "record-changed", prevPid });
     return "refused";
   }
   removeOwnerFile(cwd);
