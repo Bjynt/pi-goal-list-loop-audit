@@ -701,8 +701,14 @@ export function __testOnlyClassifyStaleContinuation(content: string, cwd: string
   const goalIdMatch = content.match(/\[GOAL CHECKPOINT goalId=([^\]\s]+)\]/);
   const loopMatch = content.match(/\[LOOP ITERATION (\d+)\]/);
   const isStall = content.includes("[STALL WARNING");
-  const isLengthContinue = content.includes("Your previous response was cut off") || content.includes("Response hit the output-token cap");
-  if (isLengthContinue) return null;
+  // Audit 2026-09-07 (MEDIUM): no length-continue exemption. GLLA length
+  // nudges carry no [GOAL CHECKPOINT]/[LOOP ITERATION] marker, so with live
+  // supervision they already fall through to null (delivered); the only
+  // behavior the exemption changed was delivering a queued length nudge
+  // with NO supervision at all — exactly the stale case (e.g. queued
+  // before archival). A truncated turn implies a live turn, which implies
+  // active supervision, so classifying marker-less length text by the
+  // generic no-supervision rule cannot drop a live nudge.
   if (goalIdMatch) {
     const gid = goalIdMatch[1]!;
     if (!state.goal) return `no active goal (expected ${gid})`;
