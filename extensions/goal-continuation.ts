@@ -258,6 +258,20 @@ let continuationScheduledFor: string | null = null;
 
 let lastContinuationSentAt = 0;
 
+// Audit 2026-09-07 (MEDIUM): wall-clock of the last genuine user-role
+// message observed via message_start. A user message arriving after a
+// dispatch was sent means the next agent_start/turn_start belongs to the
+// user's manual turn, not the continuation — the fallback ack must refuse
+// it so a manual turn can't hide a genuine no-start. Our own continuations
+// send as customType (never role user) and our injected draft seed is
+// skipped by the caller, so only real user turns stamp this.
+let lastUserMessageAt = 0;
+
+/** Record a genuine user message (message_start, role user, not our seed). */
+export function noteUserMessageForDispatch(): void {
+  lastUserMessageAt = Date.now();
+}
+
 let queueStuckProbe: ReturnType<typeof setTimeout> | null = null;
 
 // v0.28.5 (E3): send-retry re-arm accounting. The 50ms BACKOFF_IDLE_RETRY
@@ -654,7 +668,19 @@ export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string,
   if (source === "before_agent_start") {
     if (!dispatchPromptMatches(record, prompt)) return false;
   } else if (source === "agent_start" || source === "turn_start") {
-    // fallback — no prompt to match
+    // fallback — no prompt to match. But a user message after the send
+    // means this turn is the user's manual turn, not the continuation:
+    // refuse so the watchdog keeps watching the genuine no-start.
+    // before_agent_start with the marker still acks (strongest proof).
+    if (lastUserMessageAt > record.sentAt) {
+      appendLedger(ctx.cwd, "continuation_start_ack_refused_user_turn", {
+        dispatchId: record.id,
+        source,
+        sentAt: record.sentAt,
+        lastUserMessageAt,
+      });
+      return false;
+    }
   } else {
     // message_update / agent_end / other liveness signals cannot settle
     // without an existing proof, and pending.phase !== "accepted" already

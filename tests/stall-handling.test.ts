@@ -612,3 +612,13 @@ test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported w
   assert.ok((CONT.match(/armQueueStuckProbe\(lastContinuationSentAt\);/g) ?? []).length >= 2, "armed on goal + stall sends (decomposition step 5: send paths moved)");
   assert.match(CONT, /const ctx = freshCtx\(\);\n      if \(!ctx\) return;.*no fresh lifecycle context/s, "probe resolves a fresh ctx at fire time instead of retaining the sender ctx");
 });
+
+test("audit 2026-09-07 MEDIUM: fallback ack refuses when a user message arrived after the send", () => {
+  // A manual turn inside the watchdog window must not settle the dispatch:
+  // the user message stamps lastUserMessageAt, and the agent_start /
+  // turn_start fallback refuses + ledgers instead of acknowledging.
+  assert.match(CONT, /export function noteUserMessageForDispatch/, "the stamp is exported for the message_start handler");
+  assert.match(CONT, /if \(lastUserMessageAt > record\.sentAt\)/, "fallback compares the user stamp against the dispatch send time");
+  assert.match(CONT, /continuation_start_ack_refused_user_turn/, "the refusal is ledgered");
+  assert.match(ACT, /noteUserMessageForDispatch\(\)/, "message_start stamps genuine user messages");
+});

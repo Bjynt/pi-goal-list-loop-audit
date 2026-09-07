@@ -169,6 +169,7 @@ import {
   setContinuationRearmStreak,
   setContinuationRearmSince,
   resetContinuationDispatchState,
+  noteUserMessageForDispatch,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
@@ -1017,6 +1018,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "message_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    // Audit 2026-09-07 (MEDIUM): stamp genuine user messages so the
+    // continuation fallback ack can tell a manual turn from a no-start.
+    // Our continuations send as customType (never role user); our injected
+    // draft seed arrives as role user and is skipped via draftingSeedInFlight.
+    if (event?.message?.role === "user" && !draftingSeedInFlight) noteUserMessageForDispatch();
     // v0.14.0 drafting floor: count real user replies while drafting. Our
     // own injected draft prompt arrives as a user message — skip that one.
     if (draftingTarget === null) return;
