@@ -4650,3 +4650,10 @@ test("v0.35.4: context-starved warning is one-shot per refusal episode", async (
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
 });
+
+test("audit-2026-09-06: measure test-run dialogs disclose the pre-confirm exec", () => {
+  const src = fs.readFileSync("extensions/loops/goal-tools.ts", "utf-8");
+  assert.match(src, /already ran this command ONCE to produce the baseline/, "draft dialog discloses the test-run");
+  assert.match(src, /already executed once by the orchestrator/, "refine dialog discloses the test-run");
+  assert.match(src, /already test-run once to establish the baseline/, "auto-accept notifies disclose the test-run");
+});

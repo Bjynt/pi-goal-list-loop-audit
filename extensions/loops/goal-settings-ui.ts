@@ -1,6 +1,9 @@
 /**
  * pi-goal-list-loop-audit — v0.1.0
- * extensions/loops/goal.ts
+ * extensions/loops/goal-settings-ui.ts
+ *
+ * Settings menu UI (TUI table + headless fallback) and per-key dispatch.
+ * (Split out of extensions/loops/goal.ts during decomposition.)
  *
  * The goal loop. The agent continues working, and on complete_goal,
  * an isolated auditor verifies the work.
@@ -19,6 +22,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 // v0.34.109 (decomposition step 1): the state singleton and the persistence
@@ -293,6 +297,7 @@ import {
   syncSubagentModelOverrides,
   type SubagentModelStrategy,
 } from "../goal-loop-subagents.js";
+import type { SubagentDisplayRichness } from "../goal-settings.js";
 import {
   buildSettingsRows,
   SettingsMenuComponent,
@@ -734,7 +739,10 @@ async function promptSettingsMenu(
   // Headless / no custom shard — fall back to the legacy flat-row select
   // for any environment that lacks the new primitive. This is rare and
   // effectively an emergency hatch; the new UI is the supported path.
-  const flat = rows.map((r) => `[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`);
+  // Audit 2026-09-06: bound the flat option strings — full VALUE +
+  // DESCRIPTION previously rendered unbounded. The resolution prefix
+  // (`[section] label —`) sits at the head, so tail truncation is safe.
+  const flat = rows.map((r) => truncateToWidth(`[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`, 120, "…"));
   flat.push("Done");
   const v = await ctx.ui.select(title, flat);
   if (!v || v === "Done") return undefined;
@@ -1588,6 +1596,19 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         const strategy: SubagentModelStrategy = v.startsWith("agent-default") ? "agent-default" : "inherit-parent";
         saveSettings("global", ctx.cwd, { subagentModelStrategy: strategy });
         ctx.ui.notify("Subagent model strategy saved — applies to NEW pi sessions (pi-subagents registers agents at session start).", "info");
+      }
+      return;
+    }
+    case "subagentDisplayRichness": {
+      const v = await ctx.ui.select("Subagent display richness (ambient worker UI)", [
+      "rich — worker rows + task linkage (recommended)",
+      "compact — the count line only",
+      "quiet — hung/aborting workers only (HUNG is never silent)",
+      ]);
+      if (v) {
+        const richness: SubagentDisplayRichness = v.startsWith("compact") ? "compact" : v.startsWith("quiet") ? "quiet" : "rich";
+        saveSettings("global", ctx.cwd, { subagentDisplayRichness: richness });
+        ctx.ui.notify(`Subagent display richness saved (${richness}) — applies on the next UI refresh.`, "info");
       }
       return;
     }

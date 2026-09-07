@@ -86,7 +86,12 @@ export function procStartMs(pid: number): number | null {
     const btimeLine = fs.readFileSync("/proc/stat", "utf8").split("\n").find((l) => l.startsWith("btime "));
     const btime = btimeLine ? Number(btimeLine.split(/\s+/)[1]) * 1000 : NaN;
     if (!Number.isFinite(btime)) return null;
-    const ticksPerSec = Number(process.env.CLK_TCK ?? 100);
+    // Audit 2026-09-06: a hardcoded 100, never $CLK_TCK. A wrong divisor
+    // skews the recycled verdict; 100 errs toward OVERESTIMATING occupant
+    // age on non-100-HZ systems, which fails toward "still alive" (refuse
+    // the signal, user closes by hand) instead of a false "recycled"
+    // (silent claim under a live owner). An env override could flip that.
+    const ticksPerSec = 100;
     return Math.round(btime + (startTicks / ticksPerSec) * 1000);
   } catch {
     return null;
@@ -103,12 +108,36 @@ export function cmdlineComm(cmdline: string | null): string {
 
 /** Does this cmdline still look like a pi host? Permissive by design — the
  * explicit user confirm is the real authority; this only hard-refuses
- * positively-identified non-pi processes. Unknown (null) is NOT pi. */
+ * positively-identified non-pi processes. Unknown (null) is NOT pi.
+ * Audit 2026-09-06: the old basename-substring gate admitted `pip`,
+ * `pilot`, `episode`, `capital` — anything containing "pi" — and the next
+ * step past this gate is SIGTERM. Match the executable NAME now (exact
+ * `pi`, `pi-…`/`pi_…` prefix, known script suffixes); anything else fails
+ * closed and the user closes it by hand. */
+/** Basenames of JS runtimes — `node script.mjs` shapes identify by argv[1]. */
+const PI_RUNTIME_BASENAMES: ReadonlySet<string> = new Set(["node", "bun", "deno", "qjs", "tjs"]);
+
+function executableNameLooksLikePi(base: string): boolean {
+  if (!base) return false;
+  if (base === "pi" || base.startsWith("pi-") || base.startsWith("pi_")) return true;
+  const stem = base.replace(/\.(exe|cmd|bat|mjs|cjs|js)$/, "");
+  return stem === "pi" || stem.startsWith("pi-") || stem.startsWith("pi_");
+}
+
 export function looksLikePi(cmdline: string | null): boolean {
   if (!cmdline) return false;
   const lowered = cmdline.toLowerCase().replaceAll("\0", " ");
-  return lowered.split(" ").some((tok) => tok.split("/").pop()?.includes("pi") ?? false)
-    || lowered.includes("pi-coding-agent");
+  if (lowered.includes("pi-coding-agent")) return true;
+  const toks = lowered.split(" ").filter(Boolean);
+  const argv0 = toks[0]?.split("/").pop() ?? "";
+  if (executableNameLooksLikePi(argv0)) return true;
+  // `node|bun|deno <script>` launches: the SCRIPT names the process.
+  const argv0Stem = argv0.replace(/\.(exe|cmd|bat)$/, "");
+  if (PI_RUNTIME_BASENAMES.has(argv0Stem)) {
+    const argv1 = toks[1]?.split("/").pop() ?? "";
+    if (executableNameLooksLikePi(argv1)) return true;
+  }
+  return false;
 }
 
 /** Normalize the owner record's `at`: current writers store ms-epoch
@@ -304,6 +333,15 @@ export async function takeoverOwnerRoot(opts: {
     appendLedger(opts.cwd, "owner_takeover_refused", { reason: "not-pi-process", pid: owner.pid, comm: cmdlineComm(cmdline) });
     return { outcome: "refused", reason: "not-pi-process", detail: `pid ${owner.pid} identifies as "${cmdlineComm(cmdline)}", not pi — refusing to signal. Close it by hand if it really holds the root.` };
   }
+  // Audit 2026-09-06: pid-recycling TOCTOU — the occupant may have turned
+  // over between the looksLikePi read above and the signal below. Re-read
+  // immediately before signaling; anything changed (or no longer pi)
+  // refuses instead of SIGTERMs a stranger.
+  const verifyCmdline = d.readCmdline(owner.pid);
+  if (verifyCmdline !== cmdline || !looksLikePi(verifyCmdline)) {
+    appendLedger(opts.cwd, "owner_takeover_refused", { reason: "owner-changed", pid: owner.pid, comm: cmdlineComm(verifyCmdline) });
+    return { outcome: "refused", reason: "claim-lost", detail: `pid ${owner.pid} changed between verification and signal (now "${cmdlineComm(verifyCmdline)}") — refusing to signal a stranger. Inspect with /glla owner and retry.` };
+  }
   try {
     d.signal(owner.pid, "SIGTERM");
   } catch (err) {
@@ -371,6 +409,23 @@ export function supersedeLiveOwnerRoot(
     return claimProcessOwner(cwd) ? "reclaimed" : "refused";
   }
   if (!opts.isMainHost) return "refused";
+  // Audit 2026-09-06: two last-wins fences. (1) Same-session lineage is a
+  // reclaim, not a steal — a session reload must not dethrone-notify
+  // itself or flap the ledger. (2) An anonymous claimant (no session id)
+  // cannot prove it is the NEWER main, so it may not silently dethrone a
+  // live owner — explicit `/glla takeover` with confirm is the path.
+  const prevSession = (record as { ownerSessionId?: unknown } | null)?.ownerSessionId;
+  const claimantSession = opts.bySession ?? "unknown-session";
+  if (typeof prevSession === "string" && prevSession !== "" && prevSession === claimantSession) {
+    removeOwnerFile(cwd);
+    if (!claimProcessOwner(cwd)) return "refused";
+    appendLedger(cwd, "owner_takeover", { via: "same-session", signaled: false, pid: process.pid, prevPid });
+    return "reclaimed";
+  }
+  if (!claimantSession || claimantSession === "unknown-session") {
+    appendLedger(cwd, "owner_supersede_refused", { reason: "anonymous-claimant", prevPid });
+    return "refused";
+  }
   removeOwnerFile(cwd);
   if (!claimProcessOwner(cwd)) return "refused";
   appendLedger(cwd, "owner_superseded", {

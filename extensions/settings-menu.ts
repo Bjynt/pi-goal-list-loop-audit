@@ -557,6 +557,15 @@ export function buildSettingsRows(
     description:
       "inherit-parent shares your session model; agent-default uses upstream defaults; Designer remains available as a glla role",
   });
+  rows.push({
+    id: "subagentDisplayRichness",
+    section: "subagents",
+    label: "Subagent display richness",
+    valueText: show("subagentDisplayRichness", "rich"),
+    sourceText: src("subagentDisplayRichness"),
+    description:
+      "rich shows worker rows + task linkage (default); compact shows the count line; quiet shows hung/aborting workers only — HUNG is never silent",
+  });
   for (const name of OVERRIDABLE_AGENT_TYPES) {
     rows.push({
       id: `subagentModelOverrides.${name}`,
@@ -819,12 +828,14 @@ export class SettingsMenuComponent implements Component {
     // count says where the settings live at a glance.
     const tabLabel = (s: { id: SettingsSectionId; label: string }): string =>
       settingsTabLabel(s.label, this.rows.filter((r) => r.section === s.id).length);
+    // Audit 2026-09-06: the 8 `label (count)` tabs exceed 80 cols joined —
+    // truncate like the title and cells (ANSI-aware, so per-tab colors survive).
     lines.push(
-      SETTINGS_SECTIONS.map((s, i) =>
+      truncateToWidth(SETTINGS_SECTIONS.map((s, i) =>
         i === this.activeSectionIdx
           ? this.theme.fg("accent", this.theme.bold(tabLabel(s)))
           : this.theme.fg("dim", tabLabel(s)),
-      ).join("  "),
+      ).join("  "), Math.max(20, width - 2), "…"),
     );
 
     const headerCells = [

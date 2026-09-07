@@ -91,6 +91,15 @@ test("looksLikePi admits pi hosts, refuses sleep, abstains on unknown", () => {
   assert.equal(looksLikePi("pi\0--agent\0"), true);
   assert.equal(looksLikePi("/usr/bin/sleep\0" + "99991\0"), false);
   assert.equal(looksLikePi(null), false);
+  // Audit 2026-09-06: substring impostors must NOT pass the SIGTERM gate.
+  assert.equal(looksLikePi("/usr/bin/pip\0install\0pi-subagents\0"), false, "pip refused");
+  assert.equal(looksLikePi("/usr/local/bin/pilot\0run\0"), false, "pilot refused");
+  assert.equal(looksLikePi("/opt/episode/bin/episode\0"), false, "episode refused");
+  assert.equal(looksLikePi("/usr/bin/capital\0"), false, "capital refused");
+  // …while genuine pi shapes still admit.
+  assert.equal(looksLikePi("/usr/local/bin/pi\0"), true, "pi binary");
+  assert.equal(looksLikePi(process.execPath + "\0/tmp/pi-probe.mjs\0"), true, "pi-*.mjs probe");
+  assert.equal(looksLikePi("node\0/home/u/pi-coding-agent/run.mjs\0"), true, "source checkout");
   assert.equal(cmdlineComm("/usr/bin/sleep\0" + "99991\0"), "sleep");
   assert.equal(cmdlineComm(null), "(unknown)");
 });
@@ -338,4 +347,31 @@ test("source pins the new escape hatches on both read-only warnings", () => {
   // session and the automatic path back (fresh session takes over).
   assert.match(session, /a newer pi session owns this working-directory state root/);
   assert.match(session, /Start a fresh session to take it back/);
+});
+
+test("audit-2026-09-06: takeover re-verifies the occupant at signal time", async () => {
+  const cwd = tmpCwd();
+  const child = spawnSleep("99994");
+  await new Promise((r) => setTimeout(r, 100));
+  writeOwner(cwd, { pid: child.pid, at: Date.now() });
+  let signaled = 0;
+  let reads = 0;
+  const r = await takeoverOwnerRoot({
+    cwd,
+    record: readOwnerFile(cwd),
+    confirmed: true,
+    deps: {
+      // describeOwner + the gate see pi; the pre-signal re-read sees the
+      // occupant turned over into sleep — the signal must not fire.
+      readCmdline: () => (++reads <= 2 ? "pi\0--agent\0" : "/usr/bin/sleep\x0099994\x00"),
+      signal: () => { signaled++; },
+      sleepMs: () => Promise.resolve(),
+      settleMs: 300,
+    },
+  });
+  assert.equal(r.outcome, "refused");
+  assert.equal((r as any).reason, "claim-lost");
+  assert.equal(signaled, 0, "the turned-over occupant is never signaled");
+  assert.equal(child.kill(0), true, "occupant survives");
+  assert.match(readLedger(cwd), /"owner_takeover_refused"/);
 });

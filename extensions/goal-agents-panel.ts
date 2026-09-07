@@ -11,6 +11,7 @@
 // in tailChildTranscript through an injected reader so tests stay hermetic.
 
 import * as path from "node:path";
+import { truncateCells } from "./goal-loop-display.js";
 import { sanitizeDisplayText } from "./goal-loop-core.js";
 
 /** v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of each
@@ -43,6 +44,10 @@ export interface AgentsPanelRow {
   outputTokens: number;
   silentMs: number;
   evidence: "record-frozen" | "event-only" | "live";
+  /** In-flight parent tool wait this live child holds (audit 2026-09-06:
+   * the doc-promised `└ blocks:` row). Set only from observed
+   * in-flight subagent-wait tool calls — never inferred. */
+  blockedBy?: string;
   action?: "abort-requested" | "unavailable" | "failed";
   endedOk?: boolean;
   endedAt?: number;
@@ -90,7 +95,9 @@ function rowStateWord(row: AgentsPanelRow, now: number): string {
 }
 
 export function truncate(text: string, max: number): string {
-  return text.length <= max ? text : text.slice(0, Math.max(1, max - 1)) + "…";
+  // Audit 2026-09-06: cell-aware shared helper — the char slice overran on
+  // wide glyphs and could split surrogate pairs. ASCII contract unchanged.
+  return truncateCells(text, max);
 }
 
 function fmtDuration(ms: number): string {
@@ -116,9 +123,17 @@ function orderedRows(rows: AgentsPanelRow[]): AgentsPanelRow[] {
   return [...rows].sort((a, b) => rowRank(a) - rowRank(b) || b.silentMs - a.silentMs);
 }
 
+/** Compose the `└ blocks:` label from observed in-flight parent waits.
+ * Pure helper so the snapshot assembly and tests share the wording. */
+export function blockedByLabel(waitNames: string[]): string | undefined {
+  const names = [...new Set(waitNames.filter(Boolean))];
+  if (names.length === 0) return undefined;
+  return `parent subagent wait (${names.join("/")})`;
+}
+
 /** Render the /glla agents table. Hung/running/queued first, then ended;
  * capped at PANEL_ROW_CAP rows with an explicit truncation notice. */
-export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAvailable: boolean): string[] {
+export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAvailable: boolean, recentHangs: string[] = []): string[] {
   if (rows.length === 0) {
     return ["No subagents tracked yet — spawn one via the `subagent` tool and it appears here.", "(evidence: glla's event probes" + (managerAvailable ? " + pi-subagents manager records" : "") + ")"];
   }
@@ -138,9 +153,21 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
     } else if (row.status === "hung") {
       lines.push("  └ check the Agents panel: a child whose counters stopped moving is hung, not thinking");
     }
+    // Audit 2026-09-06: the doc-promised `└ blocks:` row — only rendered
+    // from an observed in-flight wait (blockedBy set at snapshot time).
+    if (row.blockedBy && row.status !== "ended") {
+      lines.push(`  └ blocks: ${truncate(row.blockedBy, 80)} (zombie stand-down active)`);
+    }
   }
   if (ordered.length > shown.length) {
     lines.push(`… ${ordered.length - shown.length} more (oldest ended trimmed — cap ${PANEL_ROW_CAP})`);
+  }
+  // Audit 2026-09-06: the doc-promised "Recent hangs" footer, fed from
+  // the durable subagent_hang_detected ledger by the caller. Absent when
+  // there is nothing to show — never a placeholder row.
+  const hangs = recentHangs.filter(Boolean).slice(-3);
+  if (hangs.length > 0) {
+    lines.push(`Recent hangs: ${hangs.map((h) => truncate(h, 60)).join(" · ")}`);
   }
   return lines;
 }
@@ -159,10 +186,46 @@ export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now()
     lines.push(`${rowLabel(row)} · id ${cleanField(row.recordId, 10)}`);
     const evidence = row.evidence !== "live" ? ` · ${row.evidence}` : "";
     const action = row.action === "abort-requested" ? " · aborting" : row.action === "unavailable" ? " · abort unavailable" : row.action === "failed" ? " · abort failed" : "";
-    lines.push(`  ${rowStateWord(row, now)} · silent ${fmtDuration(row.silentMs)}${evidence}${action}`);
+    // v0.38.22 (display unification): bucket the silence age like the
+    // compact line — raw per-second values churn the widget key and
+    // re-layout the editor every tick (the v0.37.1 jumping, reintroduced
+    // the moment rich lines render ambiently).
+    lines.push(`  ${rowStateWord(row, now)} · silent ${fmtDuration(bucketSilentMs(row.silentMs))}${evidence}${action}`);
   }
   if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents · /glla agents`);
   return lines;
+}
+
+/** v0.38.22: safety invariant for the richness ladder — HUNG/aborting
+ * workers are never silent, so `quiet` still surfaces them. */
+export function hasHungWorker(rows: AgentsPanelRow[]): boolean {
+  return rows.some((r) => r.status !== "ended" && (r.status === "hung" || r.action === "abort-requested"));
+}
+
+export type AgentsExtras = { line: string; lines: string[] };
+
+/** v0.38.22 (display unification): the pure richness switch behind the
+ * widget/status worker presence. Rich restores detailed rows (capped,
+ * bucketed — the widget key only moves on genuine state transitions)
+ * plus the task-linkage header native UI can never show; compact keeps
+ * the count line; quiet surfaces hung/aborting workers only. Pure and
+ * hermetic for tests; the caller supplies rows + richness + objective. */
+export function assembleAgentsExtras(
+  rows: AgentsPanelRow[],
+  richness: "rich" | "compact" | "quiet",
+  objective: string,
+  now = Date.now(),
+): AgentsExtras | undefined {
+  const line = renderAgentsWidgetLine(rows);
+  if (!line) return undefined;
+  // Audit 2026-09-06 (DECIDED: show count line): quiet hides only when
+  // zero are tracked (line undefined above). Tracked-but-healthy keeps
+  // the compact count line — hiding healthy fan-out entirely cost ambient
+  // awareness. HUNG still surfaces via the ⚠ in the line itself.
+  if (richness !== "rich") return { line, lines: [] };
+  const clean = objective.replace(/\s+/g, " ").trim();
+  const header = clean ? [`→ ${truncate(clean, 60)}`] : [];
+  return { line, lines: [...header, ...renderAgentsWidgetLines(rows, now)] };
 }
 
 /** The compact footer summary: count + the least-live child.

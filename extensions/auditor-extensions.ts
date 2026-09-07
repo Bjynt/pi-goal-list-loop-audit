@@ -185,7 +185,10 @@ export function resolveAuditorAllowedExtensions(
   return out;
 }
 
-/** Bounded, deterministic normalization of the allowlist value. */
+/** Bounded, deterministic normalization of the allowlist value.
+ * Audit 2026-09-06: dedup is case-insensitive like the model fallback
+ * chains (npm names cannot differ by case; a same-case pair is always the
+ * same intent). The first spelling wins; the original is preserved. */
 export function normalizeAuditorAllowedExtensions(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -193,9 +196,10 @@ export function normalizeAuditorAllowedExtensions(value: unknown): string[] {
   for (const entry of value) {
     if (typeof entry !== "string") continue;
     const spec = entry.trim();
-    if (!spec || seen.has(spec)) continue;
+    const key = spec.toLowerCase();
+    if (!spec || seen.has(key)) continue;
     if (out.length >= 32) break; // bounded: the request hash stays sane
-    seen.add(spec);
+    seen.add(key);
     out.push(spec);
   }
   return out;
@@ -294,10 +298,19 @@ export function discoverAuditorExtensions(home: string, cwd?: string): Discovere
 }
 
 /** Expand the allowlist into `pi` CLI args: ["--extension", spec, …].
- * Empty/absent list → [] (the worker keeps plain --no-extensions). */
-export function auditorExtensionArgs(allowed: string[] | undefined): string[] {
+ * Audit 2026-09-06: entries resolve fail-closed through
+ * resolveAuditorAllowedExtensions first — raw `npm:`/relative specs are
+ * never emitted (a raw npm: entry would trigger a fresh network install,
+ * or silently load nothing offline). Empty/absent list → [] (the worker
+ * keeps plain --no-extensions). */
+export function auditorExtensionArgs(
+  allowed: string[] | undefined,
+  home: string,
+  cwd?: string,
+  settingsBase?: string,
+): string[] {
   const args: string[] = [];
-  for (const spec of normalizeAuditorAllowedExtensions(allowed)) {
+  for (const spec of resolveAuditorAllowedExtensions(allowed, home, cwd, settingsBase)) {
     args.push("--extension", spec);
   }
   return args;

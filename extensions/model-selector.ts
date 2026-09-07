@@ -58,6 +58,10 @@ export interface ModelSelectorDeps {
   isForbidden: (ref: string) => boolean;
   /** Optional recorder — emits the model_fallback_select ledger event. */
   record?: (event: ModelFallbackEvent) => void;
+  /** Audit 2026-09-06: base minutes for retryDelayMs. Unset = 15 (the
+   * legacy default). The main-session scope wires mainModelRetryMinutes;
+   * other scopes keep the default until they grow their own knob. */
+  retryBaseMinutes?: number;
 }
 
 export interface ModelFallbackEvent {
@@ -142,13 +146,17 @@ export class ModelSelector {
     }
   }
 
-  /** Compute retry delay for a failure. Currently scope-agnostic — same
-   * call as mainModelFailureDelayMs, with the default 15-minute base. The
-   * scope parameter exists so future per-scope cadences (e.g. a tighter
-   * loop for subagent chains) don't break the API. */
+  /** Compute retry delay for a failure. Base minutes come from the
+   * injected deps (the main-session scope wires mainModelRetryMinutes)
+   * instead of a hardcoded 15 — audit 2026-09-06. The scope parameter
+   * exists so future per-scope cadences (e.g. a tighter loop for
+   * subagent chains) don't break the API. */
   retryDelayMs(scope: ModelScope, failure: MainModelFailure, attempt: number, nowMs?: number): number {
     void scope;
-    return mainModelFailureDelayMs(failure, attempt, 15, nowMs ?? Date.now());
+    const base = typeof this.deps.retryBaseMinutes === "number" && Number.isFinite(this.deps.retryBaseMinutes) && this.deps.retryBaseMinutes > 0
+      ? this.deps.retryBaseMinutes
+      : 15;
+    return mainModelFailureDelayMs(failure, attempt, base, nowMs ?? Date.now());
   }
 
   /** True if a ref is allowed to switch to (not forbidden AND resolvable). */

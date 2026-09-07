@@ -110,3 +110,30 @@ test("v0.38.18 source: the detached-approval branch closes the transcript", () =
   assert.match(HOOKS_SRC, /sendTerminalCompletionNotice\(liveCtx, \{/);
   assert.match(HOOKS_SRC, /if \(origin !== "manual"\)/);
 });
+
+test("audit-2026-09-06: a stale-generation notice never fires into the successor session", async () => {
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd);
+  currentCtx = ctx;
+  const sendsBefore = pi.sent.length;
+  // A verdict produced under an older generation (handoff/reload since)
+  // must not inject its `✓ done` turn into the successor's unrelated work.
+  const stale = sendTerminalCompletionNotice(ctx as never, {
+    goalId: "20260906120000-stale1",
+    generation: 2 ** 31,
+    outcome: "stale verdict",
+    details: [],
+  });
+  assert.equal(stale, false, "stale generation refused");
+  assert.equal(pi.sent.length, sendsBefore, "no turn started in the successor session");
+  assert.match(JSON.stringify(readLedger(cwd)), /"terminal_completion_notice_stale_generation"/);
+  // The refusal is not a fire-once consumption: the current generation
+  // may still deliver for the same goal.
+  const fresh = sendTerminalCompletionNotice(ctx as never, {
+    goalId: "20260906120000-stale1",
+    outcome: "stale verdict",
+    details: [],
+  });
+  assert.equal(fresh, true, "current generation still delivers");
+  assert.equal(pi.sent.length, sendsBefore + 1);
+});

@@ -369,6 +369,33 @@ test("retryDelayMs returns the same value as mainModelFailureDelayMs (default ba
   assert.equal(typeof sel.retryDelayMs(SESSION, failure, 1), "number");
 });
 
+test("audit 2026-09-06: retryDelayMs honors the injected retry base minutes", () => {
+  const failure = classifyMainModelFailure("429 rate limit; retry in 2 hours");
+  const attempt = 3;
+  const nowMs = Date.parse("2026-08-07T01:18:01.930Z");
+  const withBase = new ModelSelector({
+    getChain: () => [],
+    resolve: () => undefined,
+    isForbidden: () => false,
+    retryBaseMinutes: 30,
+  });
+  assert.equal(
+    withBase.retryDelayMs(SESSION, failure, attempt, nowMs),
+    mainModelFailureDelayMs(failure, attempt, 30, nowMs),
+  );
+  // Junk base falls back to the legacy 15m default, never NaN/throw.
+  const withJunk = new ModelSelector({
+    getChain: () => [],
+    resolve: () => undefined,
+    isForbidden: () => false,
+    retryBaseMinutes: Number.NaN,
+  });
+  assert.equal(
+    withJunk.retryDelayMs(SESSION, failure, attempt, nowMs),
+    mainModelFailureDelayMs(failure, attempt, 15, nowMs),
+  );
+});
+
 /* ------------------------------------------------------------------ */
 /* Composition: selectNextValid composes nextUntriedModelRef exactly  */
 /* ------------------------------------------------------------------ */

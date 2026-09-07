@@ -86,6 +86,9 @@ export class MultiModelPickerComponent {
   private selectedIdx = 0;
   /** Ordered list of selected refs — toggle order, not list order. */
   private readonly selection: string[];
+  /** Saved refs dropped by the maxSelections cap at construction — rendered
+   * as an omitted notice so the slice is never silent. */
+  readonly initialOmitted: string[];
   /** Explicit dynamic choice; it never becomes a fake provider/model ref. */
   private inheritFromSession: boolean;
   /** Order mode: ↑/↓ move the chain instead of navigating the list. */
@@ -137,6 +140,9 @@ export class MultiModelPickerComponent {
       // the order is visible and it is not silently deleted on save.
       initial.push(itemRef.get(key) ?? ref);
     }
+    // Audit 2026-09-06: the cap slice must not silently drop saved refs —
+    // keep the omitted tail visible so the user knows it exists.
+    this.initialOmitted = this.maxSelections === undefined ? [] : initial.slice(this.maxSelections);
     this.selection = this.maxSelections === undefined ? initial : initial.slice(0, this.maxSelections);
     if (this.unorderedSet) this.canonicalizeSelection();
     this.inheritFromSession = this.includeInheritOption && deps.initialInheritFromSession === true;
@@ -362,6 +368,12 @@ export class MultiModelPickerComponent {
     if (this.maxSelections !== undefined) {
       const count = `${this.selection.length}/${this.maxSelections}`;
       lines.push(this.theme.fg(this.selection.length >= this.maxSelections ? "warning" : "muted", `selected: ${count}`));
+      // Audit 2026-09-06: the construction-time cap slice is disclosed —
+      // omitted saved refs are named, not silently dropped.
+      if (this.initialOmitted.length > 0) {
+        lines.push(this.theme.fg("warning", truncateToWidth(
+          `  +${this.initialOmitted.length} saved not shown (max ${this.maxSelections}): ${this.initialOmitted.join(", ")}`, w, "…")));
+      }
     }
     if (this.includeInheritOption) {
       lines.push(this.theme.fg("muted", `inherit from session: ${this.inheritFromSession ? "selected" : "not selected"}`));

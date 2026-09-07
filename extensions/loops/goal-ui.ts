@@ -1,6 +1,10 @@
 /**
  * pi-goal-list-loop-audit — v0.1.0
- * extensions/loops/goal.ts
+ * extensions/loops/goal-ui.ts
+ *
+ * Live-TUI refresh: status-line + above/below-editor widget repaint wiring.
+ * (Split out of extensions/loops/goal.ts during decomposition — the header
+ * below used to describe the parent module.)
  *
  * The goal loop. The agent continues working, and on complete_goal,
  * an isolated auditor verifies the work.
@@ -266,7 +270,7 @@ import {
   type HeartbeatFlags,
 } from "../goal-heartbeat.js"; // decomposition step 4 (v0.34.112)
 import { getSubagentAgentsSnapshot } from "../goal-heartbeat.js";
-import { renderAgentsWidgetLine, type AgentsPanelRow } from "../goal-agents-panel.js";
+import { assembleAgentsExtras, type AgentsPanelRow } from "../goal-agents-panel.js";
 import {
   clearMainModelRecoveryTimer,
   createGoalRecovery,
@@ -798,18 +802,19 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
     const extras = {
       stalls: consecutiveStalls,
       recent: recentActions,
-      // v0.37.1 (ui-jitter fix): compact-only widget — one stable footer
-      // line "● N agents · scout silent Xm". Detailed per-agent rows live
-      // in `/glla agents` / `--tail` (DESIGN intent); splicing 2 lines per
-      // scout into the above-editor card made height swing 4→10 lines and
-      // re-laid out the editor every 2–5s. Keep lines empty so
-      // buildWidgetLines does not splice.
+      // v0.38.22 (display unification): richness ladder for ambient
+      // workers — `rich` (default) restores the detailed rows the v0.37.1
+      // jitter fix removed, now safe because silence ages are bucketed
+      // (widget key only changes on genuine state transitions, not every
+      // tick) plus the task-linkage header native UI can never show.
+      // `compact` keeps the single line; `quiet` surfaces hung/aborting
+      // workers only (HUNG is never silent at any level).
       ...(() => {
         try {
           const { agents } = getSubagentAgentsSnapshot();
           const rows = agents as AgentsPanelRow[];
-          const line = renderAgentsWidgetLine(rows);
-          return line ? { agents: { line, lines: [] } } : {};
+          const extras = assembleAgentsExtras(rows, settings.subagentDisplayRichness ?? "rich", state.goal?.objective ?? "", now);
+          return extras ? { agents: extras } : {};
         } catch { return {}; }
       })(),
       ...activity,
@@ -821,7 +826,7 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
       ...(durableDeferRecommendation ? { durableDeferRecommendation } : {}),
       ...(lastAuditorQuietStretch ? { auditorQuietStretch: lastAuditorQuietStretch } : {}),
     };
-    const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras);
+    const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras, width);
     const widgetLines = buildWidgetLines(state, latestAuditProgress, now, theme, width, extras);
     const widgetKey = widgetLines?.join("\n") ?? "";
     const statusChanged = contextChanged || statusText !== lastUIStatusText;

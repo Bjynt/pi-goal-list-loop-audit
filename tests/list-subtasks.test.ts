@@ -492,3 +492,20 @@ test("v0.34.81 (behavioral): auto-advance skips a head group and lands on its fi
   const parent = queue.find((q: any) => q.objective.includes("Parent group"));
   assert.equal(goal.parentId, parent.id, "active goal carries parentId pointing at the parent");
 });
+
+test("audit-2026-09-06: auto-advance head-group skip is ledgered, not silent", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd);
+  await pi.command(
+    "list",
+    "add Skip-ledger parent. Done when: foo\n" +
+      "Subtask of: Skip-ledger parent — skip child one. Done when: bar",
+    ctx,
+  );
+  await tick();
+  const skips = readLedger(cwd).filter((e) => e.type === "list_group_auto_skipped");
+  assert.equal(skips.length, 1, "exactly one skip event for the head group");
+  assert.match(String(skips[0]!.value.landedOn), /.+/, "landing item recorded");
+  assert.equal(skips[0]!.value.skippedGroups, 1);
+});

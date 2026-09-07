@@ -15,9 +15,11 @@ import {
   fmtElapsed,
   fmtTokens,
   truncate,
+  wrap,
   MAIN_HOST_LABEL,
   WORKER_TEXT_SPACER,
 } from "../extensions/goal-loop-display.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import type { Goal, State } from "../extensions/goal-loop-core.ts";
 import type { LoopState } from "../extensions/goal-loop-forever.ts";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
@@ -2161,4 +2163,40 @@ test("v0.34.96/v0.34.128: complete_goal detects 'already shipped' / 'verified vX
   assert.match(loops, /version-less "/, "the label is carried into the audited recap");
   // The ledger event is recorded for both paths.
   assert.match(loops, /complete_goal_already_shipped/, "the ledger event is recorded");
+});
+
+test("audit-2026-09-06: widget task-linkage header is not mislabeled as an agent row", () => {
+  const state = { goal: goalOf(), list: [] } as any;
+  const lines = buildWidgetLines(state, null, NOW, undefined, 120, {
+    agents: { line: "1 agent", lines: ["→ Run ONE project audit pass", "scout · id bb6d267e", "  RUNNING · silent 0s"] },
+  } as any)!;
+  const text = lines.join("\n");
+  assert.match(text, /├─ → Run ONE project audit pass/, "header renders as a group label");
+  assert.doesNotMatch(text, /agent: →/, "header is never prefixed with 'agent: '");
+  assert.match(text, /agent: scout · id bb6d267e/, "real agent rows keep the prefix");
+});
+
+test("audit-2026-09-06: status line honors the width budget", () => {
+  const state = { goal: goalOf(), list: [] } as any;
+  const longExtras = { agents: { line: "9 agents · scout silent 0s " + "very-long-detail ".repeat(10), lines: [] } } as any;
+  const full = buildStatusText(state, null, NOW, undefined, longExtras)!;
+  const narrow = buildStatusText(state, null, NOW, undefined, longExtras, 40)!;
+  assert.ok(visibleWidth(narrow) <= 40, `narrow status fits 40 cells (got ${visibleWidth(narrow)})`);
+  assert.ok(visibleWidth(full) >= visibleWidth(narrow), "width only truncates, never expands");
+  assert.match(narrow, /…/, "truncation is signaled with an ellipsis");
+});
+
+test("audit-2026-09-06: truncate/wrap are cell-aware (CJK/emoji + surrogate-safe)", async () => {
+  const { visibleWidth } = await import("@earendil-works/pi-tui");
+  // Wide glyphs: 4 CJK chars = 8 cells; budget 5 must cut, not overrun.
+  const t = truncate("日本語テスト", 5);
+  assert.ok(visibleWidth(t) <= 5, `CJK truncate fits budget (got ${visibleWidth(t)})`);
+  assert.match(t, /…/, "CJK truncation is signaled");
+  // Surrogate safety: no lone surrogate halves.
+  const e = truncate("😀abc", 3);
+  assert.doesNotMatch(e, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/, "no split surrogate pairs");
+  assert.ok(visibleWidth(e) <= 3, "emoji truncate fits budget");
+  // Wrap packs by cells: CJK words break onto their own lines within width.
+  const lines = wrap("日本語 テストです ok", 8, 5);
+  for (const line of lines) assert.ok(visibleWidth(line) <= 8, `wrap line fits 8 cells: ${line}`);
 });

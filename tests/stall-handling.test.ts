@@ -370,8 +370,15 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   assert.match(src, /let abortedStandDown = false;/);
   assert.match(src, /abortedStandDown = true; \/\/ v0\.29\.5: heartbeat\/compaction refires must not resurrect/);
   assert.match(HEARTBEAT_SRC, /if \(flags\.abortedStandDown\) return;\n  if \(!fire\) return;/);
-  // 2. Any explicit schedule ends the stand-down (resume/activate):
-  assert.match(CONT, /flags\.abortedStandDown = false; \/\/ v0\.29\.5: any explicit schedule ends the stand-down/); // decomposition step 5: scheduleContinuation moved
+  // 2. An explicit schedule that actually arms ends the stand-down
+  // (resume/activate) — audit 2026-09-06: the clear moved AFTER the
+  // actionable/guard gates so no-op schedules stop discharging the
+  // user's abort latch:
+  assert.match(CONT, /flags\.abortedStandDown = false;/); // scheduleContinuation arms the dispatch
+  assert.ok(
+    CONT.indexOf('guardGoalBeforeContinuation(ctx, "schedule")') < CONT.indexOf("flags.abortedStandDown = false;"),
+    "the abort latch clears only after the schedule gates pass",
+  );
   // 3. The post-compaction refire also respects it:
   assert.match(src, /isSupervising\(\) && !abortedStandDown\) \{/);
   // 4. autoResume is GLOBAL-only (user directive: "not supporting project

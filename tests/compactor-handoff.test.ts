@@ -7,6 +7,7 @@ import * as path from "node:path";
 
 import {
   COMPACTOR_BRIEF_MAX_CHARS,
+  COMPACTOR_KILL_GRACE_MS,
   __testOnlyResetCompactor,
   __testOnlySetSpawnWorker,
   buildBriefPacket,
@@ -109,6 +110,41 @@ test("refuse transition fires exactly once per episode", () => {
   assert.equal(claimCompactorRefuseTransition(true), false, "same episode stays silent");
   assert.equal(claimCompactorRefuseTransition(false), false, "recovery re-arms");
   assert.equal(claimCompactorRefuseTransition(true), true, "next episode fires again");
+});
+
+test("audit 2026-09-06: compactor one-shot survives a restart mid-episode", async () => {
+  const cwd = tmpCwd();
+  let spawns = 0;
+  const ctx = { cwd, modelRegistry: fakeRegistry([m("p/big")]) } as any;
+  const deps = {
+    settings: { compactorModelFallbacks: [] },
+    needTokens: 10,
+    spawnWorker: async () => { spawns++; return { ok: true, brief: "brief words" }; },
+  } as any;
+  const first = await runEmergencyCompactorIfDue(ctx, true, deps);
+  assert.equal(first.fired, true, "first refuse of the episode fires");
+  assert.equal(spawns, 1);
+  // Simulate a restart: in-memory state is fresh (armed) but the disk
+  // marker says this episode already fired.
+  __testOnlyResetCompactor();
+  const second = await runEmergencyCompactorIfDue(ctx, true, deps);
+  assert.equal(second.fired, false, "restart mid-episode stays silent");
+  assert.equal(spawns, 1, "no second spawn");
+  // Recovery re-arms the next episode (marker removed).
+  const rearm = await runEmergencyCompactorIfDue(ctx, false, deps);
+  assert.equal(rearm.fired, false);
+  __testOnlyResetCompactor();
+  const third = await runEmergencyCompactorIfDue(ctx, true, deps);
+  assert.equal(third.fired, true, "next episode fires again");
+  assert.equal(spawns, 2);
+});
+
+test("audit 2026-09-06: worker timeout escalates SIGTERM to SIGKILL", () => {
+  assert.equal(COMPACTOR_KILL_GRACE_MS, 5_000);
+  const source = fs.readFileSync(new URL("../extensions/goal-compactor.ts", import.meta.url), "utf-8");
+  assert.match(source, /child\.kill\("SIGTERM"\)/);
+  assert.match(source, /child\.kill\("SIGKILL"\)/, "SIGTERM-only kill leaves zombies");
+  assert.match(source, /COMPACTOR_KILL_GRACE_MS/);
 });
 
 test("brief scope: packet bounded, sections present, worker tool-less", () => {

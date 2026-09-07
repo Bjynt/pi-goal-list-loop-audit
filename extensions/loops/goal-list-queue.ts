@@ -720,6 +720,15 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   if (n === 1 && !opts?.explicit) {
     let scan = 0;
     while (scan < queue.length && groupOpenChildren(queue[scan]!.id) > 0) scan++;
+    // Audit 2026-09-06: the head-group skip was silent — ledger it so the
+    // auto-advance landing is attributable instead of mysterious.
+    if (scan > 0 && queue[scan]) {
+      appendLedger(ctx.cwd, "list_group_auto_skipped", {
+        groupId: queue[0]!.id,
+        skippedGroups: scan,
+        landedOn: queue[scan]!.id,
+      });
+    }
     n = scan + 1;
   } else if (opts?.explicit && queue[n - 1] && groupOpenChildren(queue[n - 1]!.id) > 0) {
     const target = queue[n - 1]!;

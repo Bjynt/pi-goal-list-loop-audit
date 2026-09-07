@@ -33,6 +33,9 @@ export const COMPACTOR_BRIEF_MAX_CHARS = 2000;
 export const COMPACTOR_PACKET_MAX_CHARS = 6000;
 /** Worker wall clock: a brief is one completion, not an agentic loop. */
 export const COMPACTOR_TIMEOUT_MS = 180_000;
+/** Audit 2026-09-06: grace between SIGTERM and SIGKILL when the worker
+ * overruns its timeout — SIGTERM alone can leave a stuck child alive. */
+export const COMPACTOR_KILL_GRACE_MS = 5_000;
 /** The compactor reasons as little as possible: compression, not judgment. */
 export const COMPACTOR_THINKING = "minimal";
 
@@ -149,7 +152,19 @@ function defaultSpawnWorker(script: string, jobDir: string, request: Record<stri
     }
     const child = nodeSpawn(process.execPath, [script, "--job-dir", jobDir], { stdio: "ignore" });
     const timer = setTimeout(() => {
-      try { child.kill("SIGTERM"); } catch {}
+      // Audit 2026-09-06: SIGTERM first, SIGKILL fallback — a stuck worker
+      // must not survive the timeout as a zombie holding the job dir.
+      try {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGTERM");
+          const killTimer = setTimeout(() => {
+            try {
+              if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+            } catch { /* already gone */ }
+          }, COMPACTOR_KILL_GRACE_MS);
+          killTimer.unref?.();
+        }
+      } catch { /* already gone */ }
       done({ ok: false, error: "compactor worker timed out" });
     }, (typeof request.timeoutMs === "number" && request.timeoutMs > 0 ? request.timeoutMs : COMPACTOR_TIMEOUT_MS) + 15_000);
     timer.unref?.();
@@ -192,12 +207,37 @@ function pruneOldJobDirs(cwd: string, now = Date.now()): void {
  * model (chain → plan B → skip), persists the brief, notifies + pages.
  * Fire-and-forget safe: never throws.
  */
+/** Durable one-shot marker — audit 2026-09-06: the in-memory refuse
+ * transition is process-local, so a restart mid-episode would re-fire the
+ * brief + page. The marker survives restarts; recovery (shouldRefuse=false)
+ * removes it to re-arm the next episode. */
+export function compactorFiredMarkerPath(cwd: string): string {
+  return path.join(piGlaDir(cwd), "compactor-fired.json");
+}
+
 export async function runEmergencyCompactorIfDue(
   ctx: Pick<ExtensionContext, "cwd" | "model" | "modelRegistry" | "getContextUsage">,
   shouldRefuseNow: boolean,
   deps: CompactorDeps = {},
 ): Promise<{ fired: boolean; briefChars?: number; via?: string }> {
-  if (!claimCompactorRefuseTransition(shouldRefuseNow)) return { fired: false };
+  if (!shouldRefuseNow) {
+    claimCompactorRefuseTransition(false);
+    try { fs.rmSync(compactorFiredMarkerPath(ctx.cwd), { force: true }); } catch { /* re-arm best effort */ }
+    return { fired: false };
+  }
+  // Restart mid-episode: the marker says this episode already fired.
+  // Converge the in-memory transition (claim it) and stay silent.
+  let alreadyFired = false;
+  try { alreadyFired = fs.existsSync(compactorFiredMarkerPath(ctx.cwd)); } catch { alreadyFired = false; }
+  if (alreadyFired) {
+    claimCompactorRefuseTransition(true);
+    return { fired: false };
+  }
+  if (!claimCompactorRefuseTransition(true)) return { fired: false };
+  try {
+    fs.mkdirSync(piGlaDir(ctx.cwd), { recursive: true });
+    fs.writeFileSync(compactorFiredMarkerPath(ctx.cwd), JSON.stringify({ at: new Date().toISOString() }) + "\n");
+  } catch { /* marker write is best effort; in-memory one-shot still holds this process */ }
   try {
     return await runEmergencyCompactor(ctx, deps);
   } catch (error) {

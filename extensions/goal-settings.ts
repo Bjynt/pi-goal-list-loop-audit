@@ -26,6 +26,8 @@ import {
   piGlaDir,
 } from "./goal-loop-core.ts";
 import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
+/** v0.38.22: ambient worker display richness (see subagentDisplayRichness). */
+export type SubagentDisplayRichness = "rich" | "compact" | "quiet";
 import {
   DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES,
   normalizeMainModelFallbackRefs,
@@ -249,6 +251,12 @@ export interface Settings {
   /** v0.27.5: post-completion audit config. Same shape as `reviewer`. */
   postaudit?: Record<string, unknown>;
   subagentModelStrategy?: SubagentModelStrategy;
+  /** v0.38.22 (display unification): ambient worker richness. `rich`
+   * (default) shows detailed worker rows + the task-linkage header;
+   * `compact` shows the single count line; `quiet` shows worker presence
+   * only when a child is hung/aborting — HUNG is never silent at any
+   * level. `/glla agents` keeps full detail regardless. */
+  subagentDisplayRichness?: SubagentDisplayRichness;
   /** Per-agent-type model pin, e.g. { "scout": "minimax/MiniMax-M3" }.
    * Always wins over subagentModelStrategy — the managed override is written
    * WITH this pin regardless of strategy. */
@@ -353,6 +361,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.24.6: subagents inherit the session model by default, avoiding a
   // surprise provider/model pin from the upstream default agent.
   subagentModelStrategy: "inherit-parent",
+  // v0.38.22 (display unification): rich by default — full worker rows +
+  // task linkage; trimmable to compact/quiet, never silent on hangs.
+  subagentDisplayRichness: "rich",
   auditFeedbackChars: DEFAULT_AUDIT_FEEDBACK_CHARS,
   // v0.34.141: keep-going is the production default. Set false explicitly
   // for the conservative pause-first policy; the dial flips DEFAULTS, never
@@ -384,7 +395,7 @@ export function readSettingsFile(file: string): Partial<Settings> {
   }
 }
 
-function normalizeLoadedSettings(settings: Settings): Settings {
+export function normalizeLoadedSettings(settings: Settings): Settings {
   // Settings files can be edited by hand or survive an older UI. Normalize
   // the main fallback chain at every read so runtime, display, and persistence
   // all see the same bounded value.
@@ -409,6 +420,13 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   settings.auditorAllowedExtensions = normalizeAuditorAllowedExtensions(settings.auditorAllowedExtensions);
   if (settings.stateRoot !== "sessionDir" && settings.stateRoot !== "workingDir") {
     settings.stateRoot = "workingDir";
+  }
+  // v0.38.22: hand-edited richness falls back to rich (the default) —
+  // unknown values must not blank the worker display.
+  if (settings.subagentDisplayRichness !== "rich"
+      && settings.subagentDisplayRichness !== "compact"
+      && settings.subagentDisplayRichness !== "quiet") {
+    settings.subagentDisplayRichness = "rich";
   }
   if (settings.mainModelFailback !== "auto" && settings.mainModelFailback !== "sticky") {
     settings.mainModelFailback = "auto";
@@ -480,6 +498,51 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   delete legacy.hourlyQuotaProbe;
   delete legacy.mainModelFallbackOnRateLimit;
   delete legacy.quotaRetryMinutes;
+  // Audit 2026-09-06: hand-edited files may carry junk for the remaining
+  // knobs. Invalid values reset to unset so the `??` consumer fallbacks
+  // apply — a garbage string must never flow into arithmetic or an enum
+  // comparison. Booleans reset to unset (undefined = default-on where
+  // the consumer checks `=== false`).
+  if (typeof settings.tokenLimit !== "number" || !Number.isFinite(settings.tokenLimit) || settings.tokenLimit < 0) {
+    delete settings.tokenLimit;
+  }
+  if (typeof settings.auditCap !== "number" || !Number.isInteger(settings.auditCap) || settings.auditCap < 0) {
+    delete settings.auditCap;
+  }
+  if (typeof settings.stuckMaxInterventions !== "number" || !Number.isInteger(settings.stuckMaxInterventions) || settings.stuckMaxInterventions < 0) {
+    delete settings.stuckMaxInterventions;
+  }
+  if (typeof settings.stallEscalationRefires !== "number" || !Number.isInteger(settings.stallEscalationRefires) || settings.stallEscalationRefires < 0) {
+    delete settings.stallEscalationRefires;
+  }
+  if (typeof settings.stallShortWords !== "number" || !Number.isInteger(settings.stallShortWords) || settings.stallShortWords <= 0) {
+    delete settings.stallShortWords;
+  }
+  if (typeof settings.stallSimilarityThreshold !== "number" || !Number.isFinite(settings.stallSimilarityThreshold) || settings.stallSimilarityThreshold < 0 || settings.stallSimilarityThreshold > 1) {
+    delete settings.stallSimilarityThreshold;
+  }
+  if (typeof settings.wedgeAlertMinutes !== "number" || !Number.isFinite(settings.wedgeAlertMinutes) || settings.wedgeAlertMinutes < 0) {
+    delete settings.wedgeAlertMinutes;
+  }
+  if (settings.carryover !== "resume" && settings.carryover !== "pause" && settings.carryover !== "clear") {
+    delete settings.carryover;
+  }
+  if (typeof settings.decisionPopup !== "boolean") delete settings.decisionPopup;
+  if (typeof settings.aggressiveMode !== "boolean") delete settings.aggressiveMode;
+  if (typeof settings.autoResume !== "boolean") delete settings.autoResume;
+  if (typeof settings.autoAcceptDrafts !== "boolean") delete settings.autoAcceptDrafts;
+  if (typeof settings.notifyCmd !== "string" || settings.notifyCmd.trim().length === 0) {
+    delete settings.notifyCmd;
+  }
+  if (typeof settings.auditorModel !== "string" || settings.auditorModel.trim().length === 0) {
+    delete settings.auditorModel;
+  }
+  if (typeof settings.drafterModel !== "string" || settings.drafterModel.trim().length === 0) {
+    delete settings.drafterModel;
+  }
+  if (typeof settings.compactorModel !== "string" || settings.compactorModel.trim().length === 0) {
+    delete settings.compactorModel;
+  }
   return settings;
 }
 
@@ -495,6 +558,16 @@ function migrateLegacySettings(value: Partial<Settings>): Record<string, unknown
       : undefined;
   }
   delete migrated.auditorModelFallback;
+  // Audit 2026-09-06: migrate the legacy `reviewer` block to `postaudit`
+  // (postaudit wins when both present) so stale reviewer-only config is
+  // not immortal — reads already prefer postaudit.
+  if (migrated.postaudit === undefined
+      && Object.prototype.hasOwnProperty.call(value, "reviewer")
+      && typeof migrated.reviewer === "object"
+      && migrated.reviewer !== null) {
+    migrated.postaudit = migrated.reviewer;
+  }
+  delete migrated.reviewer;
   if (migrated.hourlyRetryProbe === undefined && typeof migrated.hourlyQuotaProbe === "boolean") {
     migrated.hourlyRetryProbe = migrated.hourlyQuotaProbe;
   }

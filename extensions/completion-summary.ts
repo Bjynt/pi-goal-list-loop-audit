@@ -1,4 +1,5 @@
 import type { Goal, Status } from "./goal-loop-core.js";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 /**
  * The durable, user-facing terminal recap contract. Keep this as a small
@@ -191,7 +192,7 @@ export function buildApprovalChatLines(notice: {
  * word-bounded values. This is the user-facing `✓ done` block — six short
  * facts that stay scannable in chat. The single-line projection remains
  * for width-bound surfaces (TUI widget card, external notifies). */
-export function completionSummaryLines(text: string | undefined, maxValueLength = 240): string[] {
+export function completionSummaryLines(text: string | undefined, maxValueLength = 240, lineWidth?: number): string[] {
   const source = completionSummaryBody(text ?? "").replace(/\s+/g, " ").trim();
   const lower = source.toLowerCase();
   const positions = COMPLETION_SUMMARY_LABELS
@@ -207,7 +208,10 @@ export function completionSummaryLines(text: string | undefined, maxValueLength 
       .map((entry) => entry.start)
       .sort((a, b) => a - b)[0] ?? source.length;
     const rawValue = source.slice(valueStart, nextStart).trim();
-    return `${name}: ${clipSummaryValue(rawValue || "not recorded", maxValueLength)}`;
+    const line = `${name}: ${clipSummaryValue(rawValue || "not recorded", maxValueLength)}`;
+    // Audit 2026-09-06: optional width budget for width-bound surfaces —
+    // the default 240-char values previously had no width-conscious path.
+    return lineWidth && lineWidth > 0 ? truncateToWidth(line, lineWidth, "…") : line;
   });
 }
 
@@ -322,8 +326,9 @@ export function terminalCompletionSummaryLines(
   facts: CompletionSummaryFacts,
   candidate = facts.goal.completionSummary,
   maxValueLength = 240,
+  lineWidth?: number,
 ): string[] {
-  return completionSummaryLines(resolveCompletionSummary(facts, candidate).summary, maxValueLength);
+  return completionSummaryLines(resolveCompletionSummary(facts, candidate).summary, maxValueLength, lineWidth);
 }
 
 /**

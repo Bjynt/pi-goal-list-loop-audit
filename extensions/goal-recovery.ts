@@ -558,6 +558,9 @@ function sessionModelSelector(ctx: ExtensionContext, sessionChain?: string[]): M
     },
     resolve: (ref) => resolveMainModel(ctx, ref),
     isForbidden: (ref) => isForbiddenModel(ref, settings.forbiddenModels),
+    // Audit 2026-09-06: the main-session retry cadence honors the
+    // configured base instead of the hardcoded 15m.
+    retryBaseMinutes: settings.mainModelRetryMinutes,
     record: (event) => {
       appendLedger(ctx.cwd, "model_fallback_select", {
         scope: event.scope.kind === "session" ? "session" : event.scope.kind === "subagent" ? `subagent:${event.scope.agentName}` : "drafter",

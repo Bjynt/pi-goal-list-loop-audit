@@ -374,3 +374,79 @@ test("v0.35.45: the candidate scan reads a bounded tail per file, not full trans
   assert.equal(sawMaxBytes.length >= 1, true, "the scan went through the reader");
   assert.equal(sawMaxBytes[0], TRANSCRIPT_SCAN_MAX_BYTES, "the scan requested the bounded-tail window");
 });
+
+test("audit-2026-09-06: panel renders the doc-promised blocks row and Recent hangs footer", async () => {
+  const { renderAgentsPanel, blockedByLabel } = await import("../extensions/goal-agents-panel.js");
+  assert.equal(blockedByLabel([]), undefined, "no wait → no label");
+  assert.equal(blockedByLabel(["Agent"]), "parent subagent wait (Agent)");
+  assert.equal(blockedByLabel(["Agent", "Agent", "subagent"]), "parent subagent wait (Agent/subagent)", "deduped");
+  const rows = [
+    row({ recordId: "live-1", status: "running", phase: "active", blockedBy: "parent subagent wait (Agent)" }),
+    row({ recordId: "ended-1", status: "ended", phase: "ended", blockedBy: "parent subagent wait (Agent)" }),
+  ];
+  const lines = renderAgentsPanel(rows, Date.now(), true, ["plan 31m ago"]);
+  const text = lines.join("\n");
+  assert.match(text, /└ blocks: parent subagent wait \(Agent\) \(zombie stand-down active\)/, "live row carries blocks");
+  assert.equal(text.match(/└ blocks:/g)?.length ?? 0, 1, "ended rows never carry blocks");
+  assert.match(text, /Recent hangs: plan 31m ago/, "footer present with hangs");
+  const bare = renderAgentsPanel([row({ recordId: "x", status: "running", phase: "active" })], Date.now(), true);
+  assert.doesNotMatch(bare.join("\n"), /blocks:|Recent hangs/, "no wait + no hangs → neither row");
+});
+
+test("audit-2026-09-06: snapshot labels live rows with the observed parent wait only", async () => {
+  const hb = await import("../extensions/goal-heartbeat.js");
+  // Order-independent: set the in-flight map directly (the event→map path
+  // is already pinned by behavioral-orchestrator; here the production
+  // tool_call gate would correctly drop events for this foreign fixture
+  // ctx after earlier tests' shutdown). Clean up in finally.
+  const flight = (globalThis as any).inFlightToolCalls as Map<string, { name: string; at: number }>;
+  flight.set("wait-blocks-1", { name: "subagent", at: Date.now() });
+  hb.__testOnlyClearSubagentHangProbes();
+  hb.upsertSubagentHangProbe("probe-blocked-1", "scout", "check stuff", Date.now());
+  try {
+    const snap = hb.getSubagentAgentsSnapshot(Date.now());
+    assert.equal(
+      snap.agents.find((a) => a.recordId === "probe-blocked-1")?.blockedBy,
+      "parent subagent wait (subagent)",
+      "live row names the observed wait",
+    );
+    flight.delete("wait-blocks-1");
+    const cleared = hb.getSubagentAgentsSnapshot(Date.now());
+    assert.equal(
+      cleared.agents.find((a) => a.recordId === "probe-blocked-1")?.blockedBy,
+      undefined,
+      "no in-flight wait → no blocks label",
+    );
+  } finally {
+    flight.delete("wait-blocks-1");
+    hb.endSubagentHangProbe("probe-blocked-1");
+    hb.__testOnlyClearSubagentHangProbes();
+  }
+});
+
+test("audit-2026-09-06: --tail with an ambiguous prefix lists candidates instead of picking silently", async () => {
+  const hb = await import("../extensions/goal-heartbeat.js");
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ objective: "tail ambiguity item", status: "active" }) });
+  const ctx = gllaCtx(cwd);
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  await pi.fire("session_start", { reason: "reload" }, ctx);
+  hb.__testOnlyClearSubagentHangProbes();
+  hb.upsertSubagentHangProbe("ambig-aaa-1", "scout", "first", Date.now());
+  hb.upsertSubagentHangProbe("ambig-aaa-2", "scout", "second", Date.now());
+  try {
+    await pi.command("glla", "agents --tail ambig-aaa", ctx);
+    const msg = ctx.ui.notifies.at(-1)!.message;
+    assert.match(msg, /matches 2 tracked subagents/, "ambiguity is announced");
+    assert.match(msg, /ambig-aaa-1/, "first candidate named");
+    assert.match(msg, /ambig-aaa-2/, "second candidate named");
+    // Exact id still resolves directly.
+    await pi.command("glla", "agents --tail ambig-aaa-1", ctx);
+    assert.doesNotMatch(ctx.ui.notifies.at(-1)!.message, /matches 2 tracked/, "exact id skips disambiguation");
+  } finally {
+    hb.endSubagentHangProbe("ambig-aaa-1");
+    hb.endSubagentHangProbe("ambig-aaa-2");
+    hb.__testOnlyClearSubagentHangProbes();
+  }
+});

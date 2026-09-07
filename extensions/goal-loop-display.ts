@@ -10,7 +10,7 @@
  * ctx.ui.setStatus/setWidget with whatever these return.
  */
 
-import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth, sliceByColumn as tuiSliceByColumn } from "@earendil-works/pi-tui";
 
 import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
 import { auditVerdictLabel, buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
@@ -59,8 +59,28 @@ export function fmtTokens(n: number): string {
 }
 
 export function truncate(s: string, max: number): string {
-  const safe = compactDisplayText(s);
-  return safe.length <= max ? safe : safe.slice(0, Math.max(0, max - 1)) + "…";
+  // Audit 2026-09-06: cell-aware, code-point walk — char slicing overran
+  // budgets on CJK/emoji and could split surrogate pairs. (pi-tui's
+  // truncateToWidth was tried first but wraps the ellipsis in ANSI resets
+  // even for plain text, polluting ledger/chat/prompt consumers.)
+  return truncateCells(compactDisplayText(s), max);
+}
+
+/** Cell-aware truncation that never emits ANSI codes. Whole string is
+ * returned untouched when it already fits; otherwise code points (never
+ * surrogate halves) accumulate to max-1 cells plus an ellipsis. */
+export function truncateCells(s: string, max: number): string {
+  if (tuiVisibleWidth(s) <= max) return s;
+  const budget = Math.max(0, max - 1);
+  let out = "";
+  let w = 0;
+  for (const ch of s) {
+    const cw = tuiVisibleWidth(ch);
+    if (w + cw > budget) break;
+    out += ch;
+    w += cw;
+  }
+  return `${out}…`;
 }
 
 function displayPauseReason(reason: string): string {
@@ -172,9 +192,18 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
   let cur = "";
   for (let w of words) {
     const next = cur ? `${cur} ${w}` : w;
-    if (next.length <= width) { cur = next; continue; }
+    // Audit 2026-09-06: compare terminal cells, not JS chars — CJK/emoji
+    // words previously packed past the budget and broke line-break math.
+    if (tuiVisibleWidth(next) <= width) { cur = next; continue; }
     if (cur) all.push(cur);
-    while (w.length > width) { all.push(w.slice(0, width)); w = w.slice(width); }
+    // Column-based hard split (surrogate/wide-safe); the chunk is an exact
+    // string prefix of w, so slice() recovers the remainder losslessly.
+    while (tuiVisibleWidth(w) > width) {
+      const chunk = tuiSliceByColumn(w, 0, width);
+      if (!chunk) break;
+      all.push(chunk);
+      w = w.slice(chunk.length);
+    }
     cur = w;
   }
   if (cur) all.push(cur);
@@ -183,7 +212,12 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
   const out = all.slice(0, maxLines);
   // The last kept line already fits within width — truncate() would leave it
   // unmarked, so force the ellipsis to signal "more in /goal status".
-  out[maxLines - 1] = out[maxLines - 1]!.slice(0, Math.max(0, width - 1)) + "…";
+  // The last kept line already fits within width — truncateCells would
+  // leave it unmarked, so force the ellipsis to signal "more in
+  // /goal status" (truncateCells, not pi-tui's truncateToWidth: the
+  // latter appends ANSI resets even to plain text).
+  const capped = out[maxLines - 1]!;
+  out[maxLines - 1] = tuiVisibleWidth(capped) < width ? `${capped}…` : truncateCells(capped, width);
   return out;
 }
 
@@ -964,18 +998,28 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * lifecycle branch (active/auditing/paused/loop/recovery). The chip is
  * injected after the literal `glla:` prefix so no per-branch edit can
  * forget it and a future branch inherits it for free. */
-export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
-  const base = buildStatusTextBase(state, audit, now, theme, extras);
+export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras, width?: number): string | undefined {
+  const base = buildStatusTextBase(state, audit, now, theme, extras, width);
   // The footer gets only the compact worst-child summary. Detailed rows live
   // in the widget; the detached auditor remains a separate verification HUD.
   const withAgentSummary = base && extras?.agents?.line && state.goal?.status !== "auditing"
     ? `${base} · ${extras.agents.line.replace(/^●\s*/, "")}`
     : base;
-  if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return withAgentSummary;
-  return withAgentSummary.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`);
+  if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return truncateStatusToWidth(withAgentSummary, width);
+  return truncateStatusToWidth(withAgentSummary.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`), width);
 }
 
-function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
+/** Status-line width budget — the auditing/paused/loop branches concatenate
+ * meter, tally, badges, verdict age, and the worst-child summary with no
+ * truncation, so a narrow terminal wrapped the trailing segment into a
+ * stray next line. Cell/ANSI-aware via pi-tui (CJK-safe); width omitted
+ * keeps the legacy untruncated line for headless/test callers. */
+function truncateStatusToWidth(line: string | undefined, width?: number): string | undefined {
+  if (!line || !width || width <= 0) return line;
+  return tuiTruncateToWidth(line, width, "…");
+}
+
+function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras, width?: number): string | undefined {
   if (state.loop?.active) {
     const l = state.loop;
     // v0.26.1: surface the refire streak — a spinning supervisor is the
@@ -1009,7 +1053,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
-    if ((state.list?.length ?? 0) > 0) return waitingListStatus(state, now, theme);
+    if ((state.list?.length ?? 0) > 0) return waitingListStatus(state, now, theme, width);
     return undefined;
   }
   if (g.status === "auditing") {
@@ -1258,7 +1302,10 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   if (detailedAgents.length > 0) {
     const agentLines = detailedAgents.map((line, index) => {
       const continuation = line.startsWith("  ");
-      const text = continuation ? line.trimStart() : `agent: ${line}`;
+      // The task-linkage header (`→ <objective>`) is a group label, not an
+      // agent row — prefixing it with `agent: ` mislabels it.
+      const header = line.startsWith("→ ");
+      const text = continuation ? line.trimStart() : header ? line : `agent: ${line}`;
       return `${index === 0 ? "├─" : "│ "} ${text}`;
     });
     if (inner) {
@@ -1292,12 +1339,21 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   return lines;
 }
 
-function waitingListStatus(state: State, _now: number, theme?: DisplayTheme): string {
+function waitingListStatus(state: State, _now: number, theme?: DisplayTheme, width?: number): string {
   const queue = state.list ?? [];
   const head = queue[0];
   const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
   const hold = typeof state.loadHoldAt === "number" ? " · held on restore" : "";
-  return `glla: ${paint(theme, "accent", "LIST QUEUED")} · ${queue.length} waiting · next: ${truncate(objective, 72)} · /glla resume${hold}`;
+  // Audit 2026-09-06: the width budget truncates the END of the status
+  // line — the `/glla resume` action must survive, so the OBJECTIVE takes
+  // the cut, not the action. Budget the objective against the fixed
+  // prefix/suffix instead of a flat 72.
+  const suffix = ` · /glla resume${hold}`;
+  const prefix = `glla: ${paint(theme, "accent", "LIST QUEUED")} · ${queue.length} waiting · next: `;
+  const objectiveBudget = width && width > 0
+    ? Math.max(12, width - visibleLen(prefix) - visibleLen(suffix) - 1)
+    : 72;
+  return `${prefix}${truncate(objective, objectiveBudget)}${suffix}`;
 }
 
 function waitingListLines(state: State, theme?: DisplayTheme, width?: number): string[] {

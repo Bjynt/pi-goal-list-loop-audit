@@ -2459,11 +2459,19 @@ function cmdAgents(args: string, ctx: ExtensionContext): void {
   const tailMatch = args.match(/--tail\s+(\S+)/);
   if (tailMatch) {
     const id = tailMatch[1]!;
-    const row = agents.find((a) => a.recordId === id || a.recordId.startsWith(id));
-    if (!row) {
+    // Audit 2026-09-06: an ambiguous prefix used to silently pick the
+    // first match — name every candidate and let the user disambiguate.
+    const exact = agents.find((a) => a.recordId === id);
+    const cands = exact ? [exact] : agents.filter((a) => a.recordId.startsWith(id));
+    if (cands.length === 0) {
       ctx.ui.notify(`No tracked subagent matches "${id}". /glla agents lists the current ids.`, "warning");
       return;
     }
+    if (cands.length > 1) {
+      ctx.ui.notify(`"${id}" matches ${cands.length} tracked subagents — be more specific:\n${cands.map((a) => `  ${a.recordId} (${a.agentType ?? "subagent"}, ${a.status})`).join("\n")}`, "warning");
+      return;
+    }
+    const row = cands[0]!;
     const linesMatch = args.match(/--lines\s+(\d+)/);
     // v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of
     // each transcript instead of up to 25 FULL files synchronously on the
@@ -2499,7 +2507,24 @@ function cmdAgents(args: string, ctx: ExtensionContext): void {
     ctx.ui.notify([header, ...result.lines, ...(result.ok ? [] : [result.detail])].join("\n"), result.ok ? "info" : "warning");
     return;
   }
-  ctx.ui.notify(`glla agents${managerAvailable ? "" : " (pi-subagents manager registry not present — event evidence only)"}\n${renderAgentsPanel(agents, Date.now(), managerAvailable).join("\n")}`, "info");
+  // Audit 2026-09-06: the doc-promised "Recent hangs" footer — last 3
+  // durable subagent_hang_detected events. Best-effort: a missing ledger
+  // yields no footer, never an error row.
+  let recentHangs: string[] = [];
+  try {
+    const now = Date.now();
+    recentHangs = readLedgerTail(ctx.cwd, 25, (e) => e.type === "subagent_hang_detected")
+      .slice(-3)
+      .map((e) => {
+        const v = (e.value ?? {}) as { agentType?: string; recordId?: string; at?: string };
+        const ms = e.at ? now - Date.parse(e.at) : Number.NaN;
+        const age = Number.isFinite(ms) && ms >= 0
+          ? ms < 3_600_000 ? `${Math.max(0, Math.round(ms / 60_000))}m` : `${Math.floor(ms / 3_600_000)}h${String(Math.floor(ms / 60_000) % 60).padStart(2, "0")}m`
+          : "?";
+        return `${v.agentType ?? "subagent"} ${age} ago`;
+      });
+  } catch { recentHangs = []; }
+  ctx.ui.notify(`glla agents${managerAvailable ? "" : " (pi-subagents manager registry not present — event evidence only)"}\n${renderAgentsPanel(agents, Date.now(), managerAvailable, recentHangs).join("\n")}`, "info");
 }
 
 // v0.29.8: /glla status — the unified "what's running" surface (user: "we
@@ -2706,6 +2731,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("visionAssist", "visionAssist"),
       fmt("auditorModel", "auditorModel"),
       fmt("auditorThinkingLevel", "thinking"),
+      // Audit 2026-09-06: the headless fallback omitted these — headless
+      // operators could not see the compactor chain or display richness.
+      fmt("compactorModel", "compactorModel"),
+      `compactorModelFallbacks: ${formatMainModelFallbacks(effectiveSettings.compactorModelFallbacks)}  [${prov.compactorModelFallbacks?.source ?? "default"}]`,
+      fmt("subagentDisplayRichness", "subagentDisplayRichness"),
       fmt("notifyCmd", "notify"),
       fmt("tokenLimit", "tokenLimit"),
       fmt("autoResume", "autoResume"),

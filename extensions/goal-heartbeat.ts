@@ -45,6 +45,7 @@ import { isLoopActive, loopTimerPending, scheduleLoopTick } from "./goal-loop.js
 import { mainModelRecoveryActive, markCompletionAuditRecoveryPending, probeMainModelRecovery } from "./goal-recovery.js";
 import type { ContinuationDispatch } from "./goal-loop-dispatch.js";
 import type { AgentPhase, AgentStatus } from "./goal-agents-panel.js";
+import { blockedByLabel } from "./goal-agents-panel.js";
 import { ContinuousSupervisor, SUPERVISION_MAX_POLL_MS, type SupervisionSignal } from "./continuous-supervision.js";
 
 /** goal.ts-owned module lets the heartbeat reads/writes through this accessor.
@@ -1682,6 +1683,8 @@ export interface SubagentAgentView {
   /** ms since the last NEW progress (tool use / output tokens). */
   silentMs: number;
   evidence: "record-frozen" | "event-only" | "live";
+  /** Observed in-flight parent subagent wait (audit 2026-09-06 `└ blocks:`). */
+  blockedBy?: string;
   hangAlertedAt?: number;
   action?: "abort-requested" | "unavailable" | "failed";
   endedAt?: number;
@@ -1692,6 +1695,14 @@ function finiteNonNegative(value: unknown): number | undefined {
 }
 
 export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentAgentView[]; managerAvailable: boolean } {
+  // Audit 2026-09-06: the doc-promised `└ blocks:` row — label live rows
+  // with the OBSERVED in-flight parent wait (tool args carry no run id, so
+  // per-row correlation is impossible; the name is named, never inferred).
+  let blockedBy: string | undefined;
+  try {
+    const waits = [...flags.inFlightToolCalls.values()].filter(isSubagentWaitCall).map((t) => t.name ?? "");
+    blockedBy = blockedByLabel(waits);
+  } catch { blockedBy = undefined; }
   const poll = subagentManagerPoller();
   const managerAvailable = typeof poll.getRecord === "function";
   const agents: SubagentAgentView[] = [];
@@ -1747,6 +1758,7 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
         outputTokens,
         silentMs,
         evidence,
+        ...(blockedBy && status !== "ended" ? { blockedBy } : {}),
         ...(probe.hangAlertedAt !== undefined ? { hangAlertedAt: probe.hangAlertedAt } : {}),
         ...(probe.hangAction !== undefined ? { action: probe.hangAction } : {}),
         ...(probe.endedAt !== undefined ? { endedAt: probe.endedAt } : {}),

@@ -615,3 +615,34 @@ test("replan confirmation consumes the source queue fragment and its sidecar", a
   assert.equal(fs.existsSync(queueItemPath(cwd, src.id)), false); // and its sidecar is gone
   assert.match(ledger(cwd), /"faulty_objective_source_consumed"/);
 });
+
+test("audit-2026-09-06: archivedPath outside the archive dir is an anomaly, not a goal-nulling probe", async () => {
+  const cwd = tmpCwd();
+  // An existing file OUTSIDE .pi-glla/archive — the old code probed it and
+  // nulled the live goal on the hit.
+  const outside = path.join(cwd, "package.json");
+  fs.writeFileSync(outside, JSON.stringify({ name: "x" }));
+  // A clean (non-suspicious) objective isolates the archive-path behavior
+  // from the faulty-objective repair flow.
+  const g = { ...seedGoal({ objective: "Ship the widget", status: "active" }), archivedPath: outside };
+  seedState(cwd, { goal: g, list: [] });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "anomaly-test", String((g as any).id)), true);
+  assert.equal(readState(cwd).goal?.id, (g as any).id, "live goal survives the forged path");
+  assert.match(ledger(cwd), /"faulty_objective_archive_path_anomaly"/);
+});
+
+test("audit-2026-09-06: archivedPath inside the archive dir still fences", async () => {
+  const cwd = tmpCwd();
+  const g = suspiciousGoal("active");
+  fs.mkdirSync(path.join(cwd, ".pi-glla", "archive"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "archive", `${(g as any).id}.md`), "# Goal\n\n**Status**: aborted\n");
+  seedState(cwd, { goal: { ...g, archivedPath: `${(g as any).id}.md` }, list: [] });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "fence-test", String((g as any).id)), false);
+  assert.match(ledger(cwd), /"faulty_objective_archive_fence"/);
+});

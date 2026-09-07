@@ -34,6 +34,7 @@ import {
   readLedgerTail,
   nowIso,
   newGoalId,
+  archiveDir,
   archivedGoalPath,
   goalMdPath,
   writeGoalMd,
@@ -954,9 +955,21 @@ export function guardGoalBeforeContinuation(
   if (goal.status === "auditing" && !allowAuditing) return false;
   if (goal.status !== "active" && goal.status !== "paused" && goal.status !== "auditing") return false;
 
-  const storedArchive = goal.archivedPath
-    ? (path.isAbsolute(goal.archivedPath) ? goal.archivedPath : path.resolve(ctx.cwd, goal.archivedPath))
-    : archivedGoalPath(ctx.cwd, goal.id);
+  // Audit 2026-09-06: archivedPath is durable state and may be corrupted —
+  // the old code existsSync-probed ANY absolute path it named (arbitrary
+  // filesystem existence oracle) and then nulled the live goal on a hit.
+  // Only honor it inside the archive dir; anything else is an anomaly that
+  // falls back to the canonical location.
+  let storedArchive = archivedGoalPath(ctx.cwd, goal.id);
+  if (goal.archivedPath) {
+    const candidate = path.isAbsolute(goal.archivedPath) ? goal.archivedPath : path.resolve(ctx.cwd, goal.archivedPath);
+    const rel = path.relative(archiveDir(ctx.cwd), candidate);
+    if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
+      storedArchive = candidate;
+    } else {
+      appendLedger(ctx.cwd, "faulty_objective_archive_path_anomaly", { goalId: goal.id, where, archivedPath: String(goal.archivedPath).slice(0, 200) });
+    }
+  }
   if (fs.existsSync(storedArchive)) {
     appendLedger(ctx.cwd, "faulty_objective_archive_fence", { goalId: goal.id, where, archive: storedArchive });
     try { fs.rmSync(goalMdPath(ctx.cwd, goal.id), { force: true }); } catch { /* best effort */ }
@@ -1081,10 +1094,13 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
   if (pendingContinuationDispatch) return;
   if (continuationDispatchStoodDown && !force) return;
   if (force) releaseContinuationDispatchStandDown();
-  flags.abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
   if (!isActionableGoal()) return;
   if (!guardGoalBeforeContinuation(ctx, "schedule")) return;
   if (!isActionableGoal()) return;
+  // v0.29.5: an explicit schedule ends the stand-down — audit 2026-09-06:
+  // only a schedule that actually arms clears it. Clearing before the
+  // gates let no-op schedules discharge the user's abort latch.
+  flags.abortedStandDown = false;
   rememberCtx(ctx);
   const goalId = state.goal!.id;
   if (!force && continuationScheduledFor === goalId) return;
@@ -1122,6 +1138,10 @@ export interface TerminalCompletionNotice {
   goalId: string;
   outcome: string;
   details: string[];
+  /** Audit 2026-09-06: the session generation that produced the verdict.
+   * A stale generation (verdict applied after handoff/reload) must not
+   * fire a `✓ done` turn into the successor session's unrelated work. */
+  generation?: number;
 }
 
 /** v0.38.18 (track 3: junk-runner stale waiting-verdict): the detached
@@ -1140,6 +1160,14 @@ export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: Term
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
   if (!flags.extensionApi) return false;
   if (isForeignCtx(ctx)) return false;
+  if (typeof notice.generation === "number" && notice.generation !== flags.sessionGeneration) {
+    appendLedger(ctx.cwd, "terminal_completion_notice_stale_generation", {
+      goalId: notice.goalId,
+      noticeGeneration: notice.generation,
+      currentGeneration: flags.sessionGeneration,
+    });
+    return false;
+  }
   try {
     const already = readLedgerTail(ctx.cwd, 400, (entry) =>
       entry.type === "terminal_completion_notice_sent" &&
