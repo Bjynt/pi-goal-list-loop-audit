@@ -27,6 +27,8 @@ const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // dec
 const HEARTBEAT_SRC = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
+const ACT = fs.readFileSync("extensions/loops/goal-activation.ts", "utf-8");
+const RECOVERY = fs.readFileSync("extensions/goal-recovery.ts", "utf-8");
 
 test("escalation gate: threshold semantics (0 = never, N = fire at streak N)", () => {
   assert.equal(shouldEscalateStall(5, 5), true);
@@ -390,6 +392,25 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   assert.match(CONT, /function sendStallEscalation[\s\S]{0,800}?flags\.abortedStandDown\) return;/, "sendStallEscalation checks the abort latch");
   assert.match(CONT, /function sendLengthContinue[\s\S]{0,800}?flags\.abortedStandDown\) return;/, "sendLengthContinue checks the abort latch");
   assert.match(CONT, /terminal_completion_notice_refused_stood_down/, "terminal-notice refusal is ledgered");
+});
+
+test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset rides the backoff envelope", () => {
+  // 1. The retry timer must route on its closure goalId, never live state —
+  //    `|| goal` sent a loop retry into the goal branch whenever any goal
+  //    object existed, stranding the loop paused forever with budget left.
+  assert.ok(!ACT.includes("if (goalId !== undefined || goal) {"), "no live-state routing in the zombie retry timer");
+  // 2. The fallback-exhausted cycle-reset must not re-activate immediately:
+  //    it increments attempts and parks through the standard envelope
+  //    (growing backoff + 24h horizon + manual hold) instead of a 1s
+  //    continuation with an unincremented count.
+  const resetAt = RECOVERY.indexOf("main_model_fallback_cycle_reset");
+  assert.ok(resetAt >= 0, "cycle-reset ledger site exists");
+  const resetHead = RECOVERY.slice(Math.max(0, resetAt - 600), resetAt);
+  assert.match(resetHead, /attempted: \[current\][\s\S]{0,200}?attempts: recovery\.attempts \+ 1/, "each new cycle consumes backoff budget");
+  const resetBlock = RECOVERY.slice(resetAt, resetAt + 1200);
+  assert.match(resetBlock, /setMainModelRecoveryPause\(ctx, next, delay\)/, "the reset parks through the envelope");
+  assert.match(resetBlock, /scheduleMainModelRecoveryTimer\(ctx, delay\)/, "the timer re-drives the probe");
+  assert.ok(!resetBlock.includes("scheduleContinuation(ctx, true, 1_000)"), "no immediate 1s re-activation");
   // 4. autoResume is GLOBAL-only (user directive: "not supporting project
   //    level setting for it now, just global") — the restore gate and the
   //    reviewer enqueue gate read loadGlobalSettings(), never the project
