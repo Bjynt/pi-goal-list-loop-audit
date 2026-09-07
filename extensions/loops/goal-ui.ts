@@ -812,8 +812,10 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
         try {
           const { agents } = getSubagentAgentsSnapshot();
           const rows = agents as AgentsPanelRow[];
-          const extras = assembleAgentsExtras(rows, settings.subagentDisplayRichness ?? "rich", now);
-          return extras ? { agents: extras } : {};
+          // v0.38.23: the head lifesign reads the same rows the worker
+          // rows render — one snapshot, two projections, never diverging.
+          const extras = assembleAgentsExtras(rows, settings.subagentDisplayRichness ?? "rich", now, theme);
+          return extras ? { agents: extras, agentRows: rows } : { agentRows: rows };
         } catch { return {}; }
       })(),
       ...activity,

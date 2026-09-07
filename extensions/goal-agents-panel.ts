@@ -11,8 +11,8 @@
 // in tailChildTranscript through an injected reader so tests stay hermetic.
 
 import * as path from "node:path";
-import { truncateCells } from "./goal-loop-display.js";
-import { sanitizeDisplayText } from "./goal-loop-core.js";
+import { paint, truncateCells, type DisplayTheme } from "./goal-loop-display.js";
+import { bucketSilentMs, fmtDuration, lifesignBandFor, sanitizeDisplayText } from "./goal-loop-core.js";
 
 /** v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of each
  * transcript, not the whole file — up to 25 files were previously read in
@@ -100,15 +100,6 @@ export function truncate(text: string, max: number): string {
   return truncateCells(text, max);
 }
 
-function fmtDuration(ms: number): string {
-  const totalSec = Math.max(0, Math.round(ms / 1000));
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min >= 60) return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}m`;
-  if (min > 0) return `${min}m${String(sec).padStart(2, "0")}s`;
-  return `${sec}s`;
-}
-
 const PANEL_ROW_CAP = 20;
 export const WIDGET_AGENT_ROW_CAP = 8;
 
@@ -180,8 +171,11 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
  * important field first. Ids live in the /glla agents table, not here.
  * Overflow names its count without a command hint (v0.38.23: extension
  * meta is noise). Silence ages stay bucketed — raw per-second values
- * churn the widget key and re-layout the editor every tick (v0.37.1). */
-export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now(), maxRows = WIDGET_AGENT_ROW_CAP): string[] {
+ * churn the widget key and re-layout the editor every tick (v0.37.1).
+ * v0.38.23 lifesign: the glyph also takes the semantic band color
+ * (success <5m, warning to 30m, error past it) — color never rides alone,
+ * the shape plus the silence number carry the same meaning unpainted. */
+export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now(), maxRows = WIDGET_AGENT_ROW_CAP, theme?: DisplayTheme): string[] {
   const active = orderedRows(rows.filter((r) => r.status !== "ended"));
   const shown = active.slice(0, Math.max(1, maxRows));
   const lines: string[] = [];
@@ -190,11 +184,13 @@ export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now()
       : row.action === "abort-requested" ? "◉"
       : (row.action === "unavailable" || row.action === "failed") ? "⚠"
       : "▶";
+    const band = lifesignBandFor(row);
+    const color = band === "fresh" ? "success" : band === "aging" ? "warning" : "error";
     const action = row.action === "abort-requested" ? " · aborting"
       : row.action === "unavailable" ? " · abort unavailable"
       : row.action === "failed" ? " · abort failed" : "";
     const evidence = row.evidence !== "live" ? ` · ${row.evidence}` : "";
-    lines.push(`${glyph} ${rowLabel(row)} · silent ${fmtDuration(bucketSilentMs(row.silentMs))}${action}${evidence}`);
+    lines.push(`${paint(theme, color, glyph)} ${rowLabel(row)} · silent ${fmtDuration(bucketSilentMs(row.silentMs))}${action}${evidence}`);
   }
   if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents`);
   return lines;
@@ -220,6 +216,7 @@ export function assembleAgentsExtras(
   rows: AgentsPanelRow[],
   richness: "rich" | "compact" | "quiet",
   now = Date.now(),
+  theme?: DisplayTheme,
 ): AgentsExtras | undefined {
   const line = renderAgentsWidgetLine(rows);
   if (!line) return undefined;
@@ -228,7 +225,7 @@ export function assembleAgentsExtras(
   // the compact count line — hiding healthy fan-out entirely cost ambient
   // awareness. HUNG still surfaces via the ⚠ in the line itself.
   if (richness !== "rich") return { line, lines: [] };
-  return { line, lines: renderAgentsWidgetLines(rows, now) };
+  return { line, lines: renderAgentsWidgetLines(rows, now, WIDGET_AGENT_ROW_CAP, theme) };
 }
 
 /** The compact footer summary: count + the least-live child.
@@ -248,14 +245,7 @@ export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefin
   return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} silent ${fmtDuration(bucketSilentMs(busiest.silentMs))}${hung}`;
 }
 
-/** Bucket silentMs to coarser granularity for display stability:
- * <1m → 5s buckets, <5m → 15s, otherwise 30s. The underlying
- * hung classification still uses the exact value. */
-function bucketSilentMs(ms: number): number {
-  if (ms < 60_000) return Math.floor(ms / 5000) * 5000;
-  if (ms < 300_000) return Math.floor(ms / 15_000) * 15_000;
-  return Math.floor(ms / 30_000) * 30_000;
-}
+
 
 export interface TranscriptTailResult {
   ok: boolean;

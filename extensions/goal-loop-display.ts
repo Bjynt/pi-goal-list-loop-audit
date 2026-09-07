@@ -13,7 +13,7 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth, sliceByColumn as tuiSliceByColumn } from "@earendil-works/pi-tui";
 
 import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
-import { auditVerdictLabel, buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { auditVerdictLabel, bucketSilentMs, buildDurableDeferRecommendation, compactDisplayText, fmtDuration, formatMainModelRecoveryStatus, headLifesign, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks, type LifesignRow } from "./goal-loop-core.js";
 
 export { isMonitorGoal };
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
@@ -143,6 +143,10 @@ export interface WidgetExtras {
    * compact summary plus detailed widget rows. The detached auditor stays
    * on its own verification surface. */
   agents?: { line?: string; lines?: string[] };
+  /** v0.38.23: raw tracked rows for the head lifesign (evidence readout +
+   * breathing glyph). Ephemeral like everything in extras — the head
+   * derives bands from these, never from wall-clock guesses. */
+  agentRows?: LifesignRow[];
   /** Ephemeral host-session projection; never persisted as goal state. */
   activity?: GoalDisplayActivity;
   /** Last real host stream activity, excluding timer/UI ticks. */
@@ -333,7 +337,7 @@ export type DisplayColor = "accent" | "success" | "warning" | "error" | "muted" 
 export interface DisplayTheme {
   fg(color: DisplayColor, text: string): string;
 }
-const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: string): string => (theme ? theme.fg(color, text) : text);
+export const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: string): string => (theme ? theme.fg(color, text) : text);
 
 /**
  * A live-work capsule is only rendered in the persistent status bar when the
@@ -1494,6 +1498,17 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const tokUsed0 = g.usage?.tokensUsed ?? 0;
   if (tokenLimit > 0) headSegs.push(paint(theme, "dim", `${fmtTokens(tokUsed0)}/${fmtTokens(tokenLimit)} ${meter(tokUsed0 / tokenLimit)}`));
   else if (tokUsed0 > 0) headSegs.push(paint(theme, "dim", `${fmtTokens(tokUsed0)} tok`));
+  // v0.38.23 lifesign: active-clear heads breathe on worker evidence and
+  // carry the freshest-evidence age as the last segment. Any other status
+  // keeps its own glyph language (⏸/⟡/⚠/⏳) — the lifesign never fights
+  // the status semantics, and without tracked rows no readout is invented.
+  const headLive = g.status === "active" && !interrupted && !attention && !recovering
+    ? headLifesign(extras?.agentRows)
+    : undefined;
+  if (headLive) {
+    const ageColor = headLive.band === "fresh" ? "dim" : headLive.band === "aging" ? "warning" : "error";
+    headSegs.push(paint(theme, ageColor, `stream ${fmtDuration(bucketSilentMs(headLive.freshestMs))}`));
+  }
   // v0.28.30: the type stays visible — v0.33.0 names it via the "list item"
   // header segment (list policy) and the distinct card icons (● goal,
   // ∞/↓/↑ loop, ⟡ auditing, ⏸ paused) + the type-named footer verbs.
@@ -1506,7 +1521,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const objBudget = width && width > 0
     ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 2 - 3 - visibleLen(segsText))
     : 48;
-  const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
+  const headIcon = headLive
+    ? paint(theme, headLive.band === "fresh" ? "success" : headLive.band === "aging" ? "warning" : "error", headLive.breath)
+    : icon;
+  const head = `${headIcon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
   // v0.38.8: durable verdict tally as a first-class card row — the widget
   // is the glance surface, and stored verdicts are the progress evidence

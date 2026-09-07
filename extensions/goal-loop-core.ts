@@ -3667,6 +3667,82 @@ export async function runWithInfraRetry<T extends { error?: string; approved: bo
 
 /** /glla audits default view: the ACTIVE goal's own audit history (the
  * surface the goal spec asked for), one line per verdict. */
+// ---- v0.38.23 lifesign: evidence-gated head + row bands (display-only) ----
+//
+// The widget head breathes only on genuine evidence (tool/output counters),
+// never on wall-clock ticks: the breather frame derives from counters that
+// move solely when a worker produces output, so the widget key stays stable
+// between evidence and the v0.37.1 per-second re-layout cannot return.
+
+export function fmtDuration(ms: number): string {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min >= 60) return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}m`;
+  if (min > 0) return `${min}m${String(sec).padStart(2, "0")}s`;
+  return `${sec}s`;
+}
+
+/** Bucket silentMs to coarser granularity for display stability:
+ * <1m → 5s buckets, <5m → 15s, otherwise 30s. The underlying
+ * hung classification still uses the exact value. */
+export function bucketSilentMs(ms: number): number {
+  if (ms < 60_000) return Math.floor(ms / 5000) * 5000;
+  if (ms < 300_000) return Math.floor(ms / 15_000) * 15_000;
+  return Math.floor(ms / 30_000) * 30_000;
+}
+
+export type LifesignBand = "fresh" | "aging" | "stale" | "hung";
+export const LIFESIGN_FRESH_MS = 5 * 60_000;
+export const LIFESIGN_STALE_MS = 30 * 60_000;
+export const BREATH_FRAMES = ["●", "◉", "○", "◉"] as const;
+
+/** Minimal structural row for lifesign math — AgentsPanelRow satisfies it. */
+export interface LifesignRow {
+  status: string;
+  action?: string;
+  silentMs: number;
+  toolUses?: number;
+  outputTokens?: number;
+}
+
+/** Per-row band. Queued caps at aging: waiting is not moving, but it is
+ * not broken either — red is reserved for hung/failed and 30m-stale
+ * running rows. Monochrome readers get the same information from the
+ * glyph shape (▶/◉/⚠) plus the silence number. */
+export function lifesignBandFor(row: LifesignRow): LifesignBand {
+  if (row.status === "hung" || row.action === "failed" || row.action === "unavailable") return "hung";
+  if (row.action === "abort-requested") return "aging";
+  if (row.status === "queued") return row.silentMs >= LIFESIGN_FRESH_MS ? "aging" : "fresh";
+  const age = Math.max(0, row.silentMs);
+  if (age < LIFESIGN_FRESH_MS) return "fresh";
+  if (age < LIFESIGN_STALE_MS) return "aging";
+  return "stale";
+}
+
+export interface HeadLifesign {
+  band: LifesignBand;
+  freshestMs: number;
+  /** active-clear head glyph: breathing cycle while fresh, frozen
+   * ring/hollow/triangle after. Callers paint it success/warning/error. */
+  breath: string;
+}
+
+/** Head lifesign from tracked rows. Ended rows are ignored; undefined when
+ * nothing is tracked (the head keeps its plain status glyph — no readout
+ * is invented without evidence). The breather advances on evidence
+ * counters, never on time. */
+export function headLifesign(rows: LifesignRow[] | undefined): HeadLifesign | undefined {
+  const active = (rows ?? []).filter((r) => r.status !== "ended");
+  if (active.length === 0) return undefined;
+  const freshestMs = Math.min(...active.map((r) => Math.max(0, r.silentMs)));
+  if (active.some((r) => r.status === "hung")) return { band: "hung", freshestMs, breath: "⚠" };
+  const band: LifesignBand = freshestMs < LIFESIGN_FRESH_MS ? "fresh" : freshestMs < LIFESIGN_STALE_MS ? "aging" : "stale";
+  const total = active.reduce((n, r) => n + (r.toolUses ?? 0) + (r.outputTokens ?? 0), 0);
+  const breath = band === "fresh" ? BREATH_FRAMES[total % BREATH_FRAMES.length]! : band === "aging" ? "◉" : "○";
+  return { band, freshestMs, breath };
+}
+
 export function formatGoalAuditHistory(goal: { id: string; auditHistory?: Array<any> }): string {
   const history = goal.auditHistory ?? [];
   if (history.length === 0) return "(no audits on this goal yet)";
