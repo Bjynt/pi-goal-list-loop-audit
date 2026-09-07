@@ -55,6 +55,20 @@ horizon), 8 lifecycle MED/LOW under Task 7, 5 settings MED under Task 8,
   at every surface, reviewer write→migrate lifecycle, DESIGN one-line row
   example, SETTINGS wedge vs aggressive default).
 
+## Ship notes (v0.38.24 release)
+
+- `publish` runs only on GitHub Release publication, not tag push — the
+  v0.38.23 tag was pushed without a Release, which is why npm sat at
+  0.38.22. (v0.38.23's code ships inside v0.38.24; no separate .23
+  release — the tag remains for the record.)
+- Publish was further blocked by the concurrency race: one `npm-publish`
+  group serialized the ~10 min quality gate with publish, and GitHub
+  cancels all but the newest queued run per group — with the daemon
+  pushing ~every minute, every release run died superseded before firing.
+  Real fix (commit `eae0550`, GLLA-owned workflow): quality churns in
+  `glla-quality`, publish owns `npm-publish`. The re-fired release went
+  pending → success with no supersede; `npm view` confirms `0.38.24`.
+
 ## Evidence
 
 - `.pi-glla/audit-loop/findings.md`: 0 unchecked, 217 checked.
