@@ -392,6 +392,19 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   assert.match(CONT, /function sendStallEscalation[\s\S]{0,800}?flags\.abortedStandDown\) return;/, "sendStallEscalation checks the abort latch");
   assert.match(CONT, /function sendLengthContinue[\s\S]{0,800}?flags\.abortedStandDown\) return;/, "sendLengthContinue checks the abort latch");
   assert.match(CONT, /terminal_completion_notice_refused_stood_down/, "terminal-notice refusal is ledgered");
+  // 5. autoResume is GLOBAL-only (user directive: "not supporting project
+  //    level setting for it now, just global") — the restore gate and the
+  //    reviewer enqueue gate read loadGlobalSettings(), never the project
+  //    cascade. junk-runner had a stale project-local opt-in that kept
+  //    auto-firing its list at every bare pi launch.
+  assert.match(settings, /export function loadGlobalSettings\(\): Settings \{/);
+  // v0.35.72: consent remains GLOBAL-only and explicit. Aggressive mode owns
+  // retry/stall defaults, but must not turn a cold restore into an unattended
+  // launch; only raw global autoResume:true releases the hold.
+  assert.match(src, /const autoResumeSetting = loadGlobalSettings\(\)\.autoResume;/);
+  assert.match(src, /autoActivate: loadGlobalSettings\(\)\.autoResume === true/);
+  assert.ok(!src.includes("resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume"), "no project-cascade autoResume read remains");
+  assert.match(settings, /"autoResume",/);
 });
 
 test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset rides the backoff envelope", () => {
@@ -407,23 +420,12 @@ test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset
   assert.ok(resetAt >= 0, "cycle-reset ledger site exists");
   const resetHead = RECOVERY.slice(Math.max(0, resetAt - 600), resetAt);
   assert.match(resetHead, /attempted: \[current\][\s\S]{0,200}?attempts: recovery\.attempts \+ 1/, "each new cycle consumes backoff budget");
-  const resetBlock = RECOVERY.slice(resetAt, resetAt + 1200);
+  const resetEnd = RECOVERY.indexOf("return;", resetAt);
+  assert.ok(resetEnd > resetAt, "cycle-reset block ends");
+  const resetBlock = RECOVERY.slice(resetAt, resetEnd);
   assert.match(resetBlock, /setMainModelRecoveryPause\(ctx, next, delay\)/, "the reset parks through the envelope");
   assert.match(resetBlock, /scheduleMainModelRecoveryTimer\(ctx, delay\)/, "the timer re-drives the probe");
   assert.ok(!resetBlock.includes("scheduleContinuation(ctx, true, 1_000)"), "no immediate 1s re-activation");
-  // 4. autoResume is GLOBAL-only (user directive: "not supporting project
-  //    level setting for it now, just global") — the restore gate and the
-  //    reviewer enqueue gate read loadGlobalSettings(), never the project
-  //    cascade. junk-runner had a stale project-local opt-in that kept
-  //    auto-firing its list at every bare pi launch.
-  assert.match(settings, /export function loadGlobalSettings\(\): Settings \{/);
-  // v0.35.72: consent remains GLOBAL-only and explicit. Aggressive mode owns
-  // retry/stall defaults, but must not turn a cold restore into an unattended
-  // launch; only raw global autoResume:true releases the hold.
-  assert.match(src, /const autoResumeSetting = loadGlobalSettings\(\)\.autoResume;/);
-  assert.match(src, /autoActivate: loadGlobalSettings\(\)\.autoResume === true/);
-  assert.ok(!src.includes("resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume"), "no project-cascade autoResume read remains");
-  assert.match(settings, /"autoResume",/);
 });
 
 test("v0.35.x — zombie-run watchdog: busy + zero stream events gets bounded abort and recovery guidance", () => {
