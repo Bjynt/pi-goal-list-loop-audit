@@ -206,10 +206,17 @@ export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now()
   return lines;
 }
 
-/** v0.38.22: safety invariant for the richness ladder — HUNG/aborting
- * workers are never silent, so `quiet` still surfaces them. */
+/** Safety invariant for the richness ladder — HUNG/aborting/failed
+ * workers are never silent, so `quiet` still surfaces them. Audit
+ * 2026-09-07: also covers action failed/unavailable, matching the
+ * lifesignBandFor hung classification and the red rows — the count line
+ * and the rows can never disagree about trouble. */
 export function hasHungWorker(rows: AgentsPanelRow[]): boolean {
-  return rows.some((r) => r.status !== "ended" && (r.status === "hung" || r.action === "abort-requested"));
+  return rows.some((r) => r.status !== "ended"
+    && (r.status === "hung"
+      || r.action === "abort-requested"
+      || r.action === "failed"
+      || r.action === "unavailable"));
 }
 
 export type AgentsExtras = { line: string; lines: string[] };
@@ -256,9 +263,13 @@ export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefin
   const active = rows.filter((r) => r.status !== "ended");
   if (active.length === 0) return undefined;
   const busiest = [...active].sort((a, b) => b.silentMs - a.silentMs)[0]!;
-  const hung = busiest.action === "abort-requested"
+  // Audit 2026-09-07 (HIGH): the trouble flag scans ALL live children.
+  // Checking only the stalest hid a hung/aborting child behind a healthy
+  // stalest sibling — HUNG-never-silent means any troubled child flags
+  // the line, while the name/age still describe the stalest child.
+  const hung = active.some((r) => r.action === "abort-requested")
     ? " ⚠ aborting"
-    : busiest.status === "hung"
+    : hasHungWorker(active)
       ? " ⚠"
       : "";
   return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} ${activeAgeLabel(busiest)}${hung}`;

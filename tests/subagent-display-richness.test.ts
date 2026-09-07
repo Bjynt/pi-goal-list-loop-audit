@@ -15,6 +15,7 @@ import * as assert from "node:assert/strict";
 import {
   assembleAgentsExtras,
   hasHungWorker,
+  renderAgentsWidgetLine,
   renderAgentsWidgetLines,
   type AgentsPanelRow,
 } from "../extensions/goal-agents-panel.js";
@@ -97,8 +98,26 @@ test("v0.38.22 hasHungWorker covers hung + aborting, ignores ended", () => {
   assert.equal(hasHungWorker([row()]), false, "healthy running worker is not hung");
   assert.equal(hasHungWorker([row({ status: "hung" })]), true, "hung fires");
   assert.equal(hasHungWorker([row({ action: "abort-requested" })]), true, "aborting fires");
+  // Audit 2026-09-07: failed/unavailable actions fire too (lifesign
+  // renders them as red hung rows — the line must agree).
+  assert.equal(hasHungWorker([row({ action: "failed" })]), true, "failed fires");
+  assert.equal(hasHungWorker([row({ action: "unavailable" })]), true, "unavailable fires");
   assert.equal(hasHungWorker([row({ status: "ended", endedOk: true })]), false, "ended workers never fire");
+  assert.equal(hasHungWorker([row({ status: "ended", action: "failed" })]), false, "ended-with-failure never fires");
   assert.equal(hasHungWorker([]), false, "zero workers, zero presence");
+});
+
+test("audit 2026-09-07 count line flags trouble on ANY child, not just the stalest", () => {
+  const staleHealthy = row({ recordId: "rec-stale", silentMs: 40 * 60_000 });
+  const freshHung = row({ recordId: "rec-hung", status: "hung", silentMs: 5_000 });
+  const line = renderAgentsWidgetLine([staleHealthy, freshHung])!;
+  assert.ok(line.includes("⚠"), "hung child flags the line behind a healthy stalest sibling");
+  const staleAborting = row({ recordId: "rec-ab", action: "abort-requested", silentMs: 5_000 });
+  assert.ok(renderAgentsWidgetLine([staleHealthy, staleAborting])!.includes("aborting"), "aborting wording survives the sibling scan");
+  const failed = row({ recordId: "rec-f", action: "failed", silentMs: 5_000 });
+  assert.ok(renderAgentsWidgetLine([staleHealthy, failed])!.includes("⚠"), "failed child flags the line");
+  const clean = renderAgentsWidgetLine([staleHealthy, row({ recordId: "rec-ok", silentMs: 5_000 })])!;
+  assert.ok(!clean.includes("⚠"), "no trouble anywhere, no flag");
 });
 
 test("v0.38.23 every rich line is width-safe; long summaries truncate cell-aware", () => {
