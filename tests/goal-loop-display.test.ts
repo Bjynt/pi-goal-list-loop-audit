@@ -79,3 +79,64 @@ test("v0.38.28: duplicate handled-turn provenance is omitted", () => {
   assert.doesNotMatch(rendered, /handled turn:/, "same primary/handled model is redundant");
   assert.match(lines.at(-1)!, /^└─ model:/, "the remaining row is closed");
 });
+
+test("v0.38.29: active recovery is a compact model row, not a duplicate report", () => {
+  const state = {
+    goal: goal(),
+    list: [],
+    mainModelRecovery: {
+      primary: "provider/primary",
+      active: "provider/primary",
+      attempted: ["provider/primary"],
+      attempts: 1,
+      pendingModelSwitch: "provider/backup-two",
+      skipped: [{ ref: "provider/backup-one", reason: "unregistered" as const }],
+      reason: "model switch in flight",
+      kind: "goal" as const,
+    },
+  } as State;
+  const lines = buildWidgetLines(
+    state,
+    null,
+    NOW,
+    undefined,
+    160,
+    {
+      mainModelFallbacks: ["provider/backup-one", "provider/backup-two"],
+      modelProvenance: {
+        primary: "provider/primary",
+        primarySource: "inherited",
+        handledTurn: "provider/primary",
+      },
+    },
+  )!;
+  const rendered = lines.join("\n");
+  assert.match(rendered, /recovery: switching → provider\/backup-two · primary provider\/primary · attempts 1 · skipped 1/);
+  assert.doesNotMatch(rendered, /Main-model recovery|Order:|Current:|Pending switch:|Attempted:|Skipped:/);
+  assert.doesNotMatch(rendered, /handled turn:/);
+  assert.match(lines.at(-1)!, /^└─ recovery:/, "a recovery-only detail block is closed");
+});
+
+test("v0.38.29: settled recovery does not leave Markdown noise in the head", () => {
+  const lines = buildWidgetLines(
+    {
+      goal: { ...goal(), objective: "**Ship** the `compact` card" },
+      list: [],
+      mainModelRecovery: {
+        primary: "provider/primary",
+        active: "provider/primary",
+        attempted: ["provider/primary"],
+        attempts: 0,
+        reason: "selected",
+        kind: "goal" as const,
+      },
+    } as State,
+    null,
+    NOW,
+    undefined,
+    160,
+  )!;
+  assert.match(lines[0]!, /Ship the compact card/);
+  assert.doesNotMatch(lines[0]!, /\*\*|`/);
+  assert.match(lines.find((line) => line.startsWith("└─ model:")) ?? "", /provider\/primary/);
+});
