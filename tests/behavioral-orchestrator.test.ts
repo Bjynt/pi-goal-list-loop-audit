@@ -52,13 +52,30 @@ const GOAL_SRC = readGoalRuntimeSource();
 const pi = new MockPi();
 activate(pi.api);
 
-const MAIN_SM = { name: "main-session-manager" };
+const MAIN_SM = {
+  name: "main-session-manager",
+  entries: [] as any[],
+  file: "",
+  getBranch() { return this.entries; },
+  getSessionFile() { return this.file || undefined; },
+};
+const originalSummarySend = pi.api.sendMessage.bind(pi.api);
+pi.api.sendMessage = (message, options) => {
+  originalSummarySend(message, options);
+  if (options?.triggerTurn === false && MAIN_SM.file) {
+    const entry = { type: "custom_message", id: String(MAIN_SM.entries.length), ...message };
+    MAIN_SM.entries.push(entry);
+    fs.appendFileSync(MAIN_SM.file, JSON.stringify(entry) + "\n");
+  }
+};
 
 function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
 }
 
 async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
+  MAIN_SM.entries = [];
+  MAIN_SM.file = path.join(cwd, "summary-session.jsonl");
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason }, ctx);
   return ctx;
@@ -3258,7 +3275,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived and closed the goal");
     // v0.34.91: the detached-settle chat notify carries the recap (what
     // happened), not "auditor approved" boilerplate.
-    assert.equal(ctx.ui.matching("✓ done — The detached completion path is covered").length, 1, "exactly one final notification voices the briefing");
+    assert.equal(MAIN_SM.entries.filter(e => e.content?.startsWith("✓ done — The detached completion path is covered")).length, 1, "exactly one persisted message voices the briefing");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
@@ -3524,19 +3541,19 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
       verificationSummary: "5338/5338 tests / 24166 expect() / 598 files pass. tsc clean.",
     }, ctx);
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);
-    const recapNotifs = ctx.ui.matching("Pinned the R-key/HUD retire parity");
+    const recapNotifs = MAIN_SM.entries.filter(e => e.content?.includes("Pinned the R-key/HUD retire parity")).map(e => ({ message: e.content }));
     assert.ok(recapNotifs.length > 0, "the settle notify carries the recap (what happened), not 'auditor approved' alone");
     assert.ok(recapNotifs.some((n: { message: string }) => n.message.includes("Changed:") && n.message.includes("\n")), "the recap arrives as one-label-per-line, not the single-line mash");
-    assert.equal(ctx.ui.matching("✓ done").length, 1, "the recap line is the single decisive end-of-goal voice");
+    assert.equal(recapNotifs.length, 1, "the persisted summary is the single decisive end-of-goal voice");
     assert.match(recapNotifs[0]!.message, /^✓ done — Pinned the R-key\/HUD retire parity/, "the briefing leads with the outcome in the header");
     // v0.38.20: the chat notify is outcome + at most two details + approval
     // + record pointer (five 120-char label lines scan as soup, not a
     // summary — field 2026-09-04). Substance lives in the transcript
     // notice + archive; the chat stays glanceable but never boilerplate.
-    for (const label of ["Changed:", "Evidence:"]) {
+    for (const label of ["Changed:", "Evidence:", "Tests:"]) {
       assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `approved briefing keeps informing label ${label}`);
     }
-    assert.ok(recapNotifs[0]!.message.split("\n").length <= 6, "chat notify stays glanceable: outcome + ≤2 details + approval + counts + record");
+    assert.ok(recapNotifs[0]!.message.split("\n").length <= 8, "summary keeps bounded evidence, tests, and unresolved facts");
     assert.match(recapNotifs[0]!.message, /— run: .* · .*\./, "chat notify carries the audit-goal counts line");
     assert.match(recapNotifs[0]!.message, /— record: \.pi-glla\/archive\/.*\.md/, "chat notify points at the archived record");
     for (const label of ["Unresolved:", "Next:"]) {
