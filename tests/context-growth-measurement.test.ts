@@ -94,7 +94,9 @@ test("fixture: repeated real continuation payloads grow context linearly and are
   // intentional prompt change rather than hiding the drift.
   // Completion-communication guidance: pending claims are nonterminal and
   // the approved summary is posted after verify — +543 bytes per payload
-  // (+539 chars template, +4 serialization). Linear growth is preserved:
+  // (+539 chars template, +4 serialization). User-voice summary-shape
+  // guidance (Codex-style outcome-first, clause-boundary cuts) — +344 bytes
+  // per payload (+340 chars, +2 multibyte). Linear growth is preserved:
   // repeated bytes stay an exact multiple of the single-payload bytes.
   assert.equal(payload.length, 23_874);
   assert.equal(new TextEncoder().encode(payload).byteLength, 23_984);

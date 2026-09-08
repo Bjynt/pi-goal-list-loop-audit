@@ -223,7 +223,7 @@ test("full auditor IMPOSSIBLE result is terminalized with a durable recap and no
       completionSummary: "Outcome: completion claim submitted. Changed: none. Evidence: auditor verdict is captured. Tests: not run — semantic impossibility fixture. Unresolved: impossible upstream dependency. Next: review the archived verdict.",
       verificationSummary: "The fake auditor returns a full IMPOSSIBLE verdict.",
     }, ctx);
-    assert.match(result.content[0]!.text, /detached auditor queued/i);
+    assert.match(result.content[0]!.text, /AUDIT PENDING — nonterminal/, "pending stays nonterminal in plain voice");
     await waitUntil(() => readState(cwd).goal === null);
 
     const archivedPath = `${cwd}/.pi-glla/archive`;
