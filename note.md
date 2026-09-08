@@ -13,6 +13,12 @@ bit busy ui
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260908_173823.png 
 
+
+##
+
+goal complete but goal not closed
+/home/dracon/Pictures/Screenshots/Screenshot_20260908_181031.png 
+
 # Later
 
 ##

@@ -1011,6 +1011,14 @@ function goalTotalText(g: Goal, now: number): string {
   return Number.isFinite(startedAt) ? `total ${fmtElapsed(bucketSilentMs(Math.max(0, now - startedAt)))}` : "";
 }
 
+/** v0.38.31 (field 2026-09-08 180721): "resuming now" is a transient
+ * truth, not a state. A wait-pause whose retry time passed an hour ago on
+ * a held/idle host is overdue — claiming an imminent resume forever while
+ * the card also says "safely parked" is the same contradiction class as
+ * f8d1c2f. Past the grace window the transition falls through to the
+ * pause-kind label ("recovery timer" for waits) instead. */
+export const PAUSED_RESUME_GRACE_MS = 90_000;
+
 function pausedNextTransition(g: Goal, state: State, now: number): string {
   const resume = g.policy === "list" ? "/list resume" : "/goal resume";
   const retryAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
@@ -1026,7 +1034,11 @@ function pausedNextTransition(g: Goal, state: State, now: number): string {
   }
   const resumeAt = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
   if (Number.isFinite(resumeAt)) {
-    return resumeAt <= now ? "resuming now" : `auto-retry in ${fmtElapsed(resumeAt - now)}`;
+    if (resumeAt > now) return `auto-retry in ${fmtElapsed(resumeAt - now)}`;
+    // Inside the grace window the retry is genuinely imminent. Past it the
+    // timer never fired (held host, idle session) — fall through to the
+    // kind label below instead of promising "resuming now" forever.
+    if (now - resumeAt < PAUSED_RESUME_GRACE_MS) return "resuming now";
   }
   if (isCompletionAuditNoVerdict(g)) {
     const retryAt = g.pendingCompletion?.recoveryRetryAt
