@@ -574,7 +574,7 @@ export function auditMeasureCmd(): string {
   // no fix commit — counting them as "closed findings" inflated the
   // monotonic metric without any fix landing and delayed the dry-well
   // plateau stop.
-  return `c=$(grep -cE '^- \\[[xX]\\] FIX' ${AUDIT_FINDINGS_REL} 2>/dev/null); echo \${c:-0}`;
+  return `c=$(grep -cE '^[[:space:]]*- \\[[xX]\\] FIX' ${AUDIT_FINDINGS_REL} 2>/dev/null); echo \${c:-0}`;
 }
 
 /**
@@ -598,12 +598,15 @@ export const AUDIT_PLATEAU_MAX_REPRIEVES = 2;
 
 /** v0.29.19: orchestrator-side count of OPEN audit findings — the honest
  * "is the well dry" signal for audit-loop plateau decisions. The plateau
- * stop means "the well is dry"; with K open boxes it is objectively not. */
+ * stop means "the well is dry"; with K open boxes it is objectively not.
+ * v0.38.33 (DECIDED 2026-09-08 normalize): optional leading indent counts —
+ * the fan-out parser already queues indented boxes, so the metric must see
+ * them too. Mirrors the fan-out open-box shape. */
 export function countOpenAuditFindings(cwd: string): number {
   try {
     const p = join(piGlaDir(cwd), "audit-loop/findings.md");
     if (!existsSync(p)) return 0;
-    return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[[ \t]+\]/.test(l)).length;
+    return readFileSync(p, "utf-8").split("\n").filter((l) => /^\s*-\s*\[[ \t]+\]/.test(l)).length;
   } catch {
     return 0;
   }
@@ -615,10 +618,11 @@ export function topOpenAuditFinding(cwd: string): string | null {
   try {
     const p = join(piGlaDir(cwd), "audit-loop/findings.md");
     if (!existsSync(p)) return null;
-    const line = readFileSync(p, "utf-8").split("\n").find((l) => /^- \[[ \t]+\]/.test(l));
+    const line = readFileSync(p, "utf-8").split("\n").find((l) => /^\s*-\s*\[[ \t]+\]/.test(l));
     // v0.38.30 audit: strip with the same [ \t]+ class as the matcher
     // (an aligned `- [  ]` box used to leak markup into the reprieve note).
-    return line ? line.replace(/^- \[[ \t]+\]\s*/, "").trim().slice(0, 120) : null;
+    // v0.38.33: strip the optional indent the matcher accepts, same shape.
+    return line ? line.replace(/^\s*-\s*\[[ \t]+\]\s*/, "").trim().slice(0, 120) : null;
   } catch {
     return null;
   }
