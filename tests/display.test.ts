@@ -1948,7 +1948,7 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   // Last-action line: Claude's done-row format + the next pending task.
   // v0.38.23: with an empty queue there is no footer, so the last-action
   // line is the card's last line.
-  assert.match(lines[1]!, /^└─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
+  assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
   assert.equal(lines[lines.length - 1], lines[1]);
   assert.ok(!lines.some((l) => l.startsWith("└─")));
   // Failed action renders ✗; no ms → no time suffix.

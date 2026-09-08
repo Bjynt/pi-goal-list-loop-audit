@@ -1415,10 +1415,9 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
       withAgents = orphanHead ? [orphanHead, ...agentLines] : [...agentLines];
     }
   }
-  // Keep the final tree row visually closed even when the detail block ends
-  // with a judgment or a detailed worker row rather than the queue footer.
-  // Without this, the last `├─`/`│` reads like a missing continuation and
-  // makes an already dense card feel unfinished.
+  // Keep the final tree row visually closed when the compact judgment block
+  // ends without a queue footer. Without this, its last `├─` reads like a
+  // missing continuation and makes an already dense card feel unfinished.
   if (withAgents && inner && detailedAgents.length === 0 && extras?.durableDeferRecommendation && withAgents.length > 0) {
     const tailIndex = withAgents.length - 1;
     const tail = withAgents[tailIndex]!;
@@ -1649,8 +1648,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // active. Keep that fact visible, but do not print the full recovery report
   // into the glance card; it made the card taller than the space below the
   // editor. `/goal status` remains the detailed recovery surface.
+  let recoveryLine: string | undefined;
   if (g.status === "active" && state.mainModelRecovery) {
-    const recoveryLine = compactMainModelRecoveryLine(state.mainModelRecovery, extras?.mainModelFallbacks, now);
+    recoveryLine = compactMainModelRecoveryLine(state.mainModelRecovery, extras?.mainModelFallbacks, now);
     if (recoveryLine) lines.push(`├─ ${paint(theme, "dim", recoveryLine)}`);
   }
   // Model provenance is a card fact, not a notification: keep it visible
@@ -1995,6 +1995,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const last = lines[provenanceEnd - 1]!;
     if (last.startsWith("├─ ") || last.startsWith("│ ")) {
       lines[provenanceEnd - 1] = `└─ ${last.slice(3)}`;
+    }
+  }
+  // A compact recovery/model row can be the final detail when no other card
+  // fact follows it. Close that one row without changing the established
+  // open-row shape for recent actions or worker details.
+  if (recoveryLine && detailedAgentRows.length === 0 && lines.length > 0) {
+    const last = lines[lines.length - 1]!;
+    if (last.includes(recoveryLine) && (last.startsWith("├─ ") || last.startsWith("│ "))) {
+      lines[lines.length - 1] = `└─ ${last.slice(3)}`;
     }
   }
   return lines;
