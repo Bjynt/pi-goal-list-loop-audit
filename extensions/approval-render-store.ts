@@ -2,22 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { appendLedger, ensureDirs, nowIso, piGlaDir, runPersistStep } from "./goal-loop-core.js";
 
-/**
- * Persisted terminal-approval renders (v0.38.25, post-objective summary).
- *
- * Field failure 2026-09-07: goal `20260907131550-12ddoy` completed with a
- * perfect six-label archive record, but the approval chat lines fired into a
- * dead context (auditor verdict landed with no live turn) — record perfect,
- * delivery silent. The archive keeps facts; this sidecar keeps the RENDER.
- *
- * Contract: every terminal approval persists its human-sees lines here at
- * archive time. Renders persisted from a live turn are marked delivered at
- * once; renders persisted while the host is idle (`ctx.isIdle()`) stay
- * undelivered until `replayUndeliveredApprovalRenders` delivers them on the
- * next live contact (any user-invoked /goal /glla /review /list /loop
- * command) and marks them delivered. Late verdicts follow the same path:
- * persist first, deliver-or-replay — never silent.
- */
+/** Durable terminal-summary outbox. A toast or a live host is not delivery:
+ * only a confirmed visible session message acknowledges a render. */
 
 export interface PendingApprovalRender {
   goalId: string;
@@ -89,10 +75,8 @@ function writeRenders(cwd: string, renders: PendingApprovalRender[]): boolean {
   return landed === true;
 }
 
-/** Persist the rendered human-sees lines at archive time. `delivered`
- * must be true only when the render went out on a provably live turn
- * (callers pass `!ctx.isIdle()`); idle-persisted renders stay queued for
- * replay. Never throws into orchestrator handlers. */
+/** Persist before attempting delivery. `delivered` is retained for old callers;
+ * production callers always enqueue false and acknowledge through replay. */
 export function persistApprovalRender(cwd: string, render: {
   goalId: string;
   objective: string;
@@ -101,6 +85,7 @@ export function persistApprovalRender(cwd: string, render: {
 }): boolean {
   const at = nowIso();
   const existing = readRenders(cwd);
+  if (existing.some((entry) => entry.goalId === render.goalId)) return true;
   const entry: PendingApprovalRender = {
     goalId: render.goalId,
     // v0.38.30 audit: code-point truncation (char slice split surrogate
@@ -116,7 +101,7 @@ export function persistApprovalRender(cwd: string, render: {
   const undelivered = existing.filter((e) => !e.deliveredAt);
   const delivered = [...existing.filter((e) => e.deliveredAt), ...(render.delivered ? [entry] : [])];
   const deliveredBudget = Math.max(0, MAX_STORED_RENDERS - undelivered.length - (render.delivered ? 0 : 1));
-  const next = [...undelivered, ...(render.delivered ? [] : [entry]), ...delivered.slice(-deliveredBudget)];
+  const next = [...undelivered, ...(render.delivered ? [] : [entry]), ...(deliveredBudget > 0 ? delivered.slice(-deliveredBudget) : [])];
   if (!writeRenders(cwd, next)) return false;
   appendLedger(cwd, "terminal_approval_render_persisted", {
     goalId: render.goalId,
@@ -126,11 +111,13 @@ export function persistApprovalRender(cwd: string, render: {
   return true;
 }
 
-/** Deliver every undelivered render on a live contact, oldest first,
- * fire-once fenced via deliveredAt. Callers are user-invoked command
- * handlers — live by construction. Returns the replayed count; never
- * throws. */
-export function replayUndeliveredApprovalRenders(ctx: { cwd: string; ui: { notify: (message: string, type?: "info" | "warning" | "error") => void } }): number {
+/** Replay oldest first through the ownership-fenced sender. A queued, refused,
+ * or unconfirmed send stays pending. Session identity deduplicates retries
+ * even when writing deliveredAt fails after the message landed. */
+export function replayUndeliveredApprovalRenders(
+  ctx: { cwd: string },
+  deliver: (entry: PendingApprovalRender) => boolean = () => false,
+): number {
   const renders = readRenders(ctx.cwd);
   if (renders.length === 0) return 0;
   const pending = renders.filter((e) => !e.deliveredAt).slice(0, MAX_REPLAY_PER_CONTACT);
@@ -139,7 +126,7 @@ export function replayUndeliveredApprovalRenders(ctx: { cwd: string; ui: { notif
   let replayed = 0;
   for (const entry of pending) {
     try {
-      ctx.ui.notify(entry.chatLines.join("\n"), "info");
+      if (!deliver(entry)) break;
       entry.deliveredAt = at;
       replayed += 1;
       appendLedger(ctx.cwd, "terminal_approval_render_replayed", {

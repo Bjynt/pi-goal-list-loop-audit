@@ -1144,22 +1144,17 @@ export interface TerminalCompletionNotice {
   goalId: string;
   outcome: string;
   details: string[];
+  /** Canonical visible summary, including record and concrete evidence. */
+  chatLines?: string[];
   /** Audit 2026-09-06: the session generation that produced the verdict.
    * A stale generation (verdict applied after handoff/reload) must not
    * fire a `✓ done` turn into the successor session's unrelated work. */
   generation?: number;
 }
 
-/** v0.38.18 (track 3: junk-runner stale waiting-verdict): the detached
- * verifier settles asynchronously — the transcript's last word is "the
- * verdict will be applied asynchronously", and a toast is the only
- * closure. A later "how are we looking" then truthfully re-reports the
- * stale transcript as still-waiting even though the goal is archived.
- * This delivers the `✓ done` brief INTO the conversation as a followUp
- * turn so the transcript records the completion. Goal-null-safe (the goal
- * is already archived when this fires), fire-once per goal via a durable
- * ledger fence, and fenced like every other automatic send. Returns true
- * when the notice was dispatched. */
+/** Deliver a visible, contextual summary without starting an acknowledgement
+ * turn. Confirm the custom session entry, not the void sendMessage return.
+ * The outbox owns retries; session entries fence duplicate delivery. */
 export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: TerminalCompletionNotice): boolean {
   if (supervisorPaused(state)) return false;
   if (mainModelRecoveryActive()) return false;
@@ -1184,27 +1179,23 @@ export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: Term
     });
     return false;
   }
-  try {
-    const already = readLedgerTail(ctx.cwd, 400, (entry) =>
-      entry.type === "terminal_completion_notice_sent" &&
-      typeof (entry.value as { goalId?: unknown } | null)?.goalId === "string" &&
-      (entry.value as { goalId: string }).goalId === notice.goalId,
-    );
-    if (already.length > 0) return false;
-  } catch {
-    return false;
-  }
-  const content = [
+  const content = (notice.chatLines ?? [
     `✓ done — ${notice.outcome}`,
     ...notice.details,
-    "— goal archived; nothing further is owed. Acknowledge briefly; start follow-up work only if asked.",
-  ].join("\n");
+  ]).join("\n");
+  const confirmed = (): boolean => ctx.sessionManager.getBranch().some((entry) =>
+    entry.type === "custom_message" && entry.customType === GOAL_EVENT_ENTRY &&
+    entry.display === true && entry.details?.terminalApprovalGoalId === notice.goalId,
+  );
   try {
+    if (confirmed()) return true;
     flags.extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
       content,
-      display: false,
-    }, { triggerTurn: true, deliverAs: "followUp" });
+      display: true,
+      details: { terminalApprovalGoalId: notice.goalId },
+    }, { triggerTurn: false });
+    if (!confirmed()) return false;
   } catch {
     appendLedger(ctx.cwd, "terminal_completion_notice_unsent", { goalId: notice.goalId });
     return false;

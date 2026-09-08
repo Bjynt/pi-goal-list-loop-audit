@@ -192,3 +192,7 @@ When the user must CHOOSE between paths, use `pause_goal` with `kind="decision"`
 ## STALLS
 
 The orchestrator's backstop is the stall watchdog: three consecutive turns with no tool calls pause the goal. You get an explicit `[STALL WARNING n/3]` continuation first — act on it immediately (complete_goal if done, pause_goal if blocked, a real tool call otherwise); the warning tells you exactly how many unproductive turns remain. If you feel yourself spinning — repeating the same approach, no new evidence — stop early instead: call `pause_goal` with what is blocking and a concrete suggested action, rather than burning the remaining watchdog turns.
+
+### Completion communication
+
+`complete_goal` submits a nonterminal claim, not a completion verdict. While the detached audit is pending, do not say the goal is done/complete/approved or present a final success summary. Do not wait or poll. If a response is needed, give one brief pending-status sentence. GLLA posts the concrete outcome-first summary into chat after verified approval and durable archive, without needing another user prompt. Do not duplicate that summary. A rejected claim remains unfinished and repair work continues.

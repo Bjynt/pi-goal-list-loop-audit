@@ -171,6 +171,7 @@ import {
   setContinuationRearmSince,
   resetContinuationDispatchState,
   noteUserMessageForDispatch,
+  sendTerminalCompletionNotice,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
@@ -785,7 +786,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // v0.38.30 audit: skip on stale/worker handles — the wrappers run
       // before the inner stale fence, and a superseded session used to mark
       // delivery into a dead session (stale-allowed /loop status included).
-      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+        goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+      }));
       return cmdGoal(args, ctx);
     },
   });
@@ -795,7 +798,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // v0.38.25: live contact — replay any approval render that landed
     // with no live turn (persist-first, never silent).
     // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
-    if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
+    if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+        goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+      }));
     return cmdSettings(args, ctx);
   };
   pi.registerCommand("glla", {
@@ -827,7 +832,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // v0.38.25: live contact — replay any approval render that landed
       // with no live turn (persist-first, never silent).
       // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
-      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+        goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+      }));
       return cmdReview(args, ctx);
     },
   });
@@ -857,7 +864,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // v0.38.25: live contact — replay any approval render that landed
       // with no live turn (persist-first, never silent).
       // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
-      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+        goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+      }));
       return cmdList(args, ctx);
     },
   });
@@ -883,7 +892,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // v0.38.25: live contact — replay any approval render that landed
       // with no live turn (persist-first, never silent).
       // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
-      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+        goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+      }));
       return cmdLoop(args, ctx);
     },
   });
@@ -1988,6 +1999,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       appendLedger(ctx.cwd, "load_hold_released", { via: "consenting-reload" });
     }
     refreshUI(ctx, true);
+    if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+      goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+    }));
   });
 
   pi.on("agent_end", async (event: any, ctx: ExtensionContext) => {
@@ -2551,6 +2565,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   pi.on("agent_settled", async (_event: any, ctx: ExtensionContext) => {
     if (tryAbsorbHostSuccessor(ctx, "agent_settled")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+      goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+    }));
     if (!state.mainModelRecovery || state.mainModelRecovery.retryAt || !lastMainModelFailure) return;
     if (!isSupervising()) return;
     lastMainModelFailure = null;

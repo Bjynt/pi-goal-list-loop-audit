@@ -243,7 +243,7 @@ import {
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import { buildTerminalApprovalRender, compactCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels } from "../completion-summary.js";
-import { isApprovalContextIdle, persistApprovalRender } from "../approval-render-store.js";
+import { persistApprovalRender, replayUndeliveredApprovalRenders } from "../approval-render-store.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1459,38 +1459,24 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       appendLedger(liveCtx.cwd, "goal_archive_failed_after_approval", { goalId, attemptId: claim.attemptId, origin });
       return;
     }
-    // v0.38.14: the chat notify is the human briefing — outcome first,
-    // filler labels dropped — while the external notify keeps the compact
-    // single line (pager/sound safe). v0.38.20: outcome + at most two
-    // details + approval + record pointer; the agent's pre-verdict `Next:`
-    // is stale the moment the verdict lands and never reaches the chat.
-    // PR #43: live inspection — the auditor's pi persisted a resumable
-    // session pinned inside the job dir. Point the user at it AFTER the
-    // audit (interactive attach only now; while running it was read-only).
-    liveCtx.ui.notify(approvalRender.chatLines.join("\n"), "info");
-    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${approvalRender.recap}`);
-    persistApprovalRender(liveCtx.cwd, {
+    const persisted = persistApprovalRender(liveCtx.cwd, {
       goalId,
       objective: approvalObjective,
       chatLines: approvalRender.chatLines,
-      delivered: !isApprovalContextIdle(liveCtx),
+      delivered: false,
     });
-    // v0.38.18 (track 3): the toast above is ephemeral — without a
-    // transcript entry the session keeps narrating "waiting on the
-    // auditor's verdict" after the archive (junk-runner field). Deliver
-    // the brief into the conversation. Skipped for manual /goal verify:
-    // that runs inside a turn whose command output already closes the
-    // transcript. Fire-once fenced inside the sender.
-    if (origin !== "manual") {
-      sendTerminalCompletionNotice(liveCtx, {
-        goalId,
+    if (persisted) {
+      replayUndeliveredApprovalRenders(liveCtx, (entry) => sendTerminalCompletionNotice(liveCtx, {
+        goalId: entry.goalId,
         generation,
-        outcome: approvalRender.outcome,
-        // v0.38.20: the transcript keeps the informing details, but the
-        // stale pre-verdict `Next:` is stripped here too.
-        details: approvalRender.transcriptLines,
-      });
+        outcome: entry.objective,
+        details: [],
+        chatLines: entry.chatLines,
+      }));
+    } else {
+      liveCtx.ui.notify("Goal archived, but its chat summary could not be persisted. Review the archived completion summary.", "warning");
     }
+    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${approvalRender.recap}`);
     return;
   }
 

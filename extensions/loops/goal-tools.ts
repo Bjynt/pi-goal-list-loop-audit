@@ -1,3 +1,4 @@
+import { sendTerminalCompletionNotice } from "../goal-continuation.js";
 /**
  * pi-goal-list-loop-audit — v0.1.0
  * extensions/loops/goal.ts
@@ -254,7 +255,7 @@ import {
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import { buildTerminalApprovalRender, compactCompletionSummary, compactTerminalCompletionSummary } from "../completion-summary.js";
-import { isApprovalContextIdle, persistApprovalRender } from "../approval-render-store.js";
+import { persistApprovalRender, replayUndeliveredApprovalRenders } from "../approval-render-store.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -493,7 +494,8 @@ function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "complete_goal",
     label: "Complete goal",
-    description: "Mark the active goal as complete. Queues a detached auditor worker to verify without holding the main pi turn. Use only when the objective is genuinely satisfied.",
+    description: "Submit a completion claim for detached audit; this does NOT complete or approve the goal. Use only when the objective is genuinely satisfied. Return without waiting for the auditor; GLLA delivers the final user summary after verified approval and durable archive.",
+    promptGuidelines: ["complete_goal queues a nonterminal claim. Do not say done, complete, approved, or accepted as a completion verdict while audit is pending. Do not poll or wait; if needed give only a brief pending status. GLLA posts the final outcome summary after approval; do not duplicate it."],
     parameters: Type.Object({
       // v0.34.136: completionSummary adopts the six-label recap from
       // audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md (Outcome / Changed
@@ -1241,14 +1243,17 @@ function registerAgentTools(pi: any): void {
           // `Next:` stripped); the chat notify is outcome + approval +
           // record pointer like every other approval path.
           const briefBlock = escRender.transcriptLines.join("\n");
-          ctx.ui.notify(escRender.chatLines.join("\n"), "info");
+
           notifyExternal(ctx, `Goal complete without audit (user choice): ${escRender.recap}`);
           persistApprovalRender(ctx.cwd, {
             goalId: terminalGoal.id,
             objective: terminalGoal.objective,
             chatLines: escRender.chatLines,
-            delivered: !isApprovalContextIdle(ctx),
+            delivered: false,
           });
+          replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+            goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+          }));
           return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${briefBlock}` }], details: {} };
         }
         scheduleContinuation(ctx, true);
@@ -1305,14 +1310,17 @@ function registerAgentTools(pi: any): void {
         // v0.38.20: same approval voice as the detached path — the stale
         // pre-verdict `Next:` never reaches the chat.
         // PR #43: append the kept inspection-session pointer when present.
-        ctx.ui.notify(manualRender.chatLines.join("\n"), "info");
+
         notifyExternal(ctx, `Goal complete (auditor approved): ${manualRender.recap}`);
         persistApprovalRender(ctx.cwd, {
           goalId: manualGoalId,
           objective: manualObjective,
           chatLines: manualRender.chatLines,
-          delivered: !isApprovalContextIdle(ctx),
+          delivered: false,
         });
+          replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+            goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+          }));
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
 
@@ -1868,8 +1876,8 @@ function registerAgentTools(pi: any): void {
         if (notifyFailure) current.ui.notify(`Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it.`, "warning");
       });
       return {
-        content: [{ type: "text", text: `Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The verdict will be applied asynchronously.` }],
-        details: {},
+        content: [{ type: "text", text: `AUDIT PENDING — nonterminal. Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The goal is not approved or complete. Do not claim completion or give a final success summary. Do not wait or poll: GLLA will post the concrete final summary after verified approval and durable archive; rejection resumes work.` }],
+        details: { status: "audit-pending", terminal: false },
       };
     },
   }));
