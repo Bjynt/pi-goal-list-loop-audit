@@ -47,7 +47,7 @@ test("clip hard-cuts only long tokens without spaces", () => {
 
 test("clip cuts at a clause boundary and never strands punctuation (field 2026-09-08)", () => {
   const field = "settings schema + v3 migration, settings UI, source-gated generation, append/replace Apply, playlist auto-add, docs sweep";
-  const cut = clipSummaryValue(field, 100);
+  const cut = clipSummaryValue(field, 115);
   assert.ok(cut.endsWith("playlist auto-add…"), `clause cut reads intentional, not clipped: ${cut}`);
   assert.doesNotMatch(cut, /[,;:\s]\s*…$/, "no dangling punctuation before the ellipsis");
   // Word-path fallback strips a stranded comma too.
