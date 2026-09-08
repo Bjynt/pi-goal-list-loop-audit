@@ -16,8 +16,15 @@ permissions:
 # and died superseded within a minute — publish could never fire (npm stuck
 # at 0.38.22 while tags advanced). Separate groups: push/PR validation
 # churns in its own lane; publish (rare, fast) queues only behind publish.
+# v0.38.32: the job-level split was NOT enough — the RUN-level group below
+# still pooled release events with push churn, and GitHub supersede-cancels
+# queued-never-started runs even with cancel-in-progress:false (field:
+# v0.38.28/.30/.31/.32 release runs died with zero jobs while daemon pushes
+# churned). Key the run-level group by event so release runs never share a
+# lane with push churn. Note: release runs check out the tag, so this takes
+# effect from the next tag onward.
 concurrency:
-  group: glla-quality
+  group: ${{ github.event_name == 'release' && 'glla-publish-run' || 'glla-quality' }}
   cancel-in-progress: false
 
 jobs:
