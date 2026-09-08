@@ -26,6 +26,7 @@ import {
   auditTarget,
   countOpenAuditFindings,
   topOpenAuditFinding,
+  parseAuditFindingsForFanout,
   AUDIT_FINDINGS_REL,
   HELD_ON_RESTORE,
   isLifecycleHeldLoopReason,
@@ -689,7 +690,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(F, /export function auditMeasureCmd\(\): string/);
   assert.match(F, /export function auditTarget\(\): string/);
   const measureCmd = auditMeasureCmd();
-  assert.ok(measureCmd.includes("grep -cE '^- \\[[xX]\\] FIX' .pi-glla/audit-loop/findings.md"), measureCmd);
+  assert.ok(measureCmd.includes("grep -cE '^[[:space:]]*- \\[[xX]\\] FIX' .pi-glla/audit-loop/findings.md"), measureCmd);
   assert.ok(measureCmd.includes("echo ${c:-0}"), measureCmd);
   // the target carries the honesty laws:
   const t = auditTarget();
@@ -734,13 +735,14 @@ test("v0.35.4: auditMeasureCmd counts closed FIX findings only (DECIDED/DEFERRED
         "- [ ] FIX: LOW: open one",
         "- [x] FIX: MEDIUM: closed fix one — fixed in abc123",
         "- [x] FIX: LOW: closed fix two — fixed in def456",
+        "  - [x] FIX: LOW: indented closed fix — fixed in ghi789",
         "- [x] DECIDED: a direction call was resolved (2026-08-11)",
         "- [x] DEFERRED: a direction call was parked (2026-08-11)",
         "- [?] DECIDE: still-open question",
       ].join("\n") + "\n",
     );
     const out = runIn(cwd, auditMeasureCmd());
-    assert.equal(out, "2", "only the two closed FIX boxes count");
+    assert.equal(out, "3", "closed FIX boxes count, including the indented one");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -760,9 +762,57 @@ test("v0.35.4: countOpenAuditFindings/topOpenAuditFinding tolerate aligned open 
         "- [x] FIX: MEDIUM: closed one — fixed in aa11", 
       ].join("\n") + "\n",
     );
-    assert.equal(countOpenAuditFindings(cwd), 3, "all three open box shapes count");
+    assert.equal(countOpenAuditFindings(cwd), 3, "flat open box shapes count");
     const top = topOpenAuditFinding(cwd);
     assert.equal(top, "FIX: LOW: normal box", "top open finding is the first box line");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("v0.38.33: indented boxes count and queue identically across all four readers", () => {
+  // DECIDED 2026-09-08 normalize: the fan-out parser already queued
+  // indented boxes while the counters ignored them (metric vs reprieve vs
+  // queue disagreed). All four readers must see the same boxes.
+  const cwd = mkdtempSync(join(tmpdir(), "glla-agree-"));
+  try {
+    mkdirSync(join(cwd, ".pi-glla/audit-loop"), { recursive: true });
+    const md = [
+      "# findings",
+      "- [ ] FIX: LOW: flat open box",
+      "  - [ ] FIX: LOW: indented open box",
+      "- [x] FIX: LOW: flat closed box — fixed in aa11",
+      "   - [x] FIX: LOW: indented closed box — fixed in bb22",
+      "  - [?] DECIDE: indented open question",
+      "",
+    ].join("\n");
+    writeFileSync(join(cwd, ".pi-glla/audit-loop/findings.md"), md + "\n");
+    assert.equal(countOpenAuditFindings(cwd), 2, "both open boxes count");
+    assert.equal(topOpenAuditFinding(cwd), "FIX: LOW: flat open box", "reprieve names the flat first box");
+    assert.equal(runIn(cwd, auditMeasureCmd()), "2", "both closed FIX boxes move the metric");
+    const { open, decisions } = parseAuditFindingsForFanout(md);
+    assert.equal(open.length, 2, "fan-out queues both open boxes");
+    assert.ok(open.some((f) => f.text.includes("indented open box")), "fan-out queues the indented box");
+    assert.equal(decisions.length, 1, "fan-out presents the indented decision");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("v0.38.33: topOpenAuditFinding strips the indent, never the text", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "glla-top-"));
+  try {
+    mkdirSync(join(cwd, ".pi-glla/audit-loop"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pi-glla/audit-loop/findings.md"),
+      "\t- [ ] FIX: LOW: indented first box\n",
+    );
+    assert.equal(countOpenAuditFindings(cwd), 1, "tab-indented box counts");
+    assert.equal(topOpenAuditFinding(cwd), "FIX: LOW: indented first box", "reprieve strips the indent");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
