@@ -200,7 +200,9 @@ export function buildApprovalChatLines(notice: {
 }): string[] {
   return [
     `✓ done — ${notice.outcome}`,
-    ...withoutStaleNext(notice.details),
+    // v0.38.37 (audit 2026-09-08): one verifiable-result bullet per
+    // informing detail — the Codex closing shape.
+    ...withoutStaleNext(notice.details).map((detail) => `• ${detail}`),
     notice.approval,
     ...(notice.counts ? [notice.counts] : []),
     notice.record,
@@ -240,6 +242,8 @@ export interface TerminalApprovalRenderInput {
   countsLine?: string;
   /** Override for the audit half of the counts line. */
   auditNote?: string;
+  /** v0.38.37: what the agent deliberately left out (complete_goal leftOut). */
+  leftOut?: string;
 }
 
 export interface TerminalApprovalRender {
@@ -271,7 +275,15 @@ export function buildTerminalApprovalRender(input: TerminalApprovalRenderInput):
   };
   const candidate = input.completionSummary ?? input.goal.completionSummary;
   const recap = compactTerminalCompletionSummary(facts, candidate);
-  const brief = terminalHumanBrief(facts, candidate);
+  const baseBrief = terminalHumanBrief(facts, candidate);
+  // v0.38.37 (audit 2026-09-08): the deliberate non-do comes from the
+  // agent's complete_goal leftOut claim — never invented. Filler ("none")
+  // drops via the same briefValueContent filter; absent stays absent.
+  const leftOut = input.leftOut?.trim();
+  const leftOutContent = leftOut ? briefValueContent(leftOut) : null;
+  const brief = leftOutContent
+    ? { ...baseBrief, details: [...baseBrief.details, `Left out: ${clipSummaryValue(leftOutContent, 120)}`] }
+    : baseBrief;
   const countsLine = input.countsLine ?? buildAuditCountsLine(input.goal, input.auditNote);
   return {
     chatLines: [
@@ -285,7 +297,7 @@ export function buildTerminalApprovalRender(input: TerminalApprovalRenderInput):
       ...(input.extras ?? []),
     ],
     recap,
-    transcriptLines: [...withoutStaleNext(brief.details), input.approval],
+    transcriptLines: [...withoutStaleNext(brief.details).map((detail) => `• ${detail}`), input.approval],
     countsLine,
     outcome: brief.outcome,
     approval: input.approval,

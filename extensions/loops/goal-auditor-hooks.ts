@@ -1439,6 +1439,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       completionSummary: state.goal.completionSummary,
       approval: `— auditor ${result.model} approved${approvalVia}.`,
       record: approvalRecord,
+      // v0.38.37: the deliberate non-do the agent claimed, if any.
+      ...(claim.leftOut ? { leftOut: claim.leftOut } : {}),
       extras: inspectionSessionPath
         ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
         : [],
