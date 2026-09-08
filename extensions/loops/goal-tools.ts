@@ -1,4 +1,3 @@
-import { sendTerminalCompletionNotice } from "../goal-continuation.js";
 /**
  * pi-goal-list-loop-audit — v0.1.0
  * extensions/loops/goal.ts
@@ -19,6 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { sendTerminalCompletionNotice } from "../goal-continuation.js";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 

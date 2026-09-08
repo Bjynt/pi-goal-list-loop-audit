@@ -1,4 +1,3 @@
-import { deliverTerminalSummary } from "./terminal-summary-delivery.js";
 // ============================================================================
 // goal-continuation.ts — decomposition step 5 (v0.34.113)
 // ============================================================================
@@ -26,6 +25,7 @@ import { deliverTerminalSummary } from "./terminal-summary-delivery.js";
 //     send_rearm_*, queue_stuck_detected, ...).
 // ============================================================================
 
+import { deliverTerminalSummary } from "./terminal-summary-delivery.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
