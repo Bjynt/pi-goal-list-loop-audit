@@ -1204,6 +1204,9 @@ function registerAgentTools(pi: any): void {
       // Escape hatch: the user aborted the audit (Esc). Offer the explicit
       // choice — complete WITHOUT audit, or keep working. (pi-goal-x parity.)
       if (result.error === "Auditor aborted.") {
+        // v0.38.37: capture the agent-claimed non-do before the claim is
+        // cleared below — the Esc-complete path renders the same voice.
+        const escLeftOut = state.goal.pendingCompletion?.leftOut;
         updateGoal({ status: "active", auditHistory: history, pendingCompletion: undefined, pauseReason: "audit aborted by user (Esc)" }, ctx);
         const abortConfirmCtx = freshCtxForGeneration(auditGeneration);
         if (!abortConfirmCtx) return staleToolResult();
@@ -1242,6 +1245,9 @@ function registerAgentTools(pi: any): void {
             approval: `— completed without audit (your choice).`,
             record: `— record: ${escArchivePath}`,
             auditNote: "completed without audit (your choice)",
+            // v0.38.37: the claim was cleared pre-confirm; the non-do was
+            // captured from it above.
+            ...(escLeftOut ? { leftOut: escLeftOut } : {}),
           });
           if (!archiveCurrentGoal(ctx, "complete", terminalReason)) {
             return {
@@ -1296,6 +1302,8 @@ function registerAgentTools(pi: any): void {
           completionSummary: state.goal.completionSummary,
           approval: `— auditor ${result.model} approved.`,
           record: manualArchiveRecord,
+          // v0.38.37: the deliberate non-do rides the durable claim.
+          ...(durableCompletionClaim.leftOut ? { leftOut: durableCompletionClaim.leftOut } : {}),
           extras: inspectionSessionPath
             ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
             : [],
