@@ -213,9 +213,6 @@ function buildOverflowCheckpoint(
     loop
       ? "Loop history summary: omitted by design — live history rides the newest retained loop prompt (keeps this checkpoint byte-stable for prefix-cache stability)"
       : null,
-    goal
-      ? `Auto-continuation: ${goal.autoContinue === true ? "enabled" : "disabled/unknown"}; stopReason=${safeInline(goal.stopReason, 220) || "(none)"}; pauseKind=${safeInline(goal.pauseKind, 40) || "(none)"}`
-      : `Auto-continuation: ${loop?.active === true ? "loop active" : "loop inactive"}; stopReason=${safeInline(loop?.stopReason, 220) || "(none)"}; pauseKind=(none)`,
   ].filter((line): line is string => line !== null);
 
   const lines = [...requiredLines];
@@ -255,7 +252,8 @@ function buildOverflowCheckpoint(
  * - Pending completion (changes on complete_goal)
  * - Pending auditor TODOs (changes on auditor disapproval)
  * - Latest audit report (changes on auditor completion)
- * - Auto-continuation status (changes on pause/resume)
+ * - stopReason, pauseKind (change on pause/resume)
+ * - Auto-continuation setting (goal.autoContinue) is STABLE — included
  */
 export function buildAuthoritativeContextCheckpoint(input: AuthoritativeCheckpointInput): string {
   const { goal, loop } = input;
@@ -287,8 +285,8 @@ export function buildAuthoritativeContextCheckpoint(input: AuthoritativeCheckpoi
       ? `Verification contract: ${safeBlock(goal.verificationContract, 2_000) || "(none recorded)"}`
       : "Verification contract: (none — metric/loop bounds above are authoritative)",
     goal
-      ? `Auto-continuation: ${goal.autoContinue === true ? "enabled" : "disabled/unknown"}; stopReason=${safeInline(goal.stopReason, 300) || "(none)"}; pauseKind=${safeInline(goal.pauseKind, 40) || "(none)"}`
-      : `Auto-continuation: ${loop?.active === true ? "loop active" : "loop inactive"}; stopReason=${safeInline(loop?.stopReason, 300) || "(none)"}; pauseKind=(none)`,
+      ? `Auto-continuation: ${goal.autoContinue === true ? "enabled" : "disabled/unknown"}`
+      : `Auto-continuation: ${loop?.active === true ? "loop active" : "loop inactive"}`,
     `Repair/replan target:\n${repairTarget}`,
     loop
       ? "Lifecycle fence: continue only for this active loop target, current loop state, and session owner; if a goal is present, preserve its id/revision as paused context. Use durable state and artifacts as the authority after compaction, restart, or session replacement."
@@ -308,7 +306,7 @@ function customType(message: unknown): string | null {
 // Audit 2026-09-06: a substring-based `isGllaControlMessage` predicate used
 // to live here (any message containing "[GOAL CHECKPOINT" / "[STALL
 // WARNING" counted as control plane). It had zero callers — the live
-// projection keys on customType only — and any future caller would inherit
+// projection keys on customType only — any future caller would inherit
 // the forgeable-substring hazard (crafted text projected out of context).
 // Deleted instead of hardened: control-plane identity is customType.
 function isGoalEventPayload(message: unknown): boolean {
