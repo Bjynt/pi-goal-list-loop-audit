@@ -46,6 +46,7 @@ test("active goal card pins primary, ordered fallbacks, skipped forbidden refs, 
   assert.match(rendered, /skipped forbidden: anthropic\/claude-sonnet-4-5/);
   assert.match(rendered, /handled turn: openai\/gpt-5\.1/);
   assert.match(rendered, /handled audit: google\/gemini-2\.5-pro · via fallback/);
+  assert.match(lines.at(-1)!, /^└─ handled audit:/, "the final provenance row closes the tree");
 
   const pinned = buildWidgetLines(
     state,
@@ -56,4 +57,25 @@ test("active goal card pins primary, ordered fallbacks, skipped forbidden refs, 
     { modelProvenance: { primary: "anthropic/claude-sonnet-4-5", primarySource: "pinned" } },
   )!;
   assert.match(pinned.join("\n"), /model: primary anthropic\/claude-sonnet-4-5 · pinned/);
+  assert.match(pinned.at(-1)!, /^└─ model:/, "a lone provenance row closes the tree");
+});
+
+test("v0.38.28: duplicate handled-turn provenance is omitted", () => {
+  const lines = buildWidgetLines(
+    { goal: goal(), list: [] },
+    null,
+    NOW,
+    undefined,
+    120,
+    {
+      modelProvenance: {
+        primary: "opencode-go/muse-spark-1.3-contributor",
+        primarySource: "inherited",
+        handledTurn: "opencode-go/muse-spark-1.3-contributor",
+      },
+    },
+  )!;
+  const rendered = lines.join("\n");
+  assert.doesNotMatch(rendered, /handled turn:/, "same primary/handled model is redundant");
+  assert.match(lines.at(-1)!, /^└─ model:/, "the remaining row is closed");
 });
