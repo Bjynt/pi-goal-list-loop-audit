@@ -10,6 +10,12 @@ we need a perfect post objective summary much like how others do it lets resesar
 
 # Next
 
+##
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260908_143127.png 
+
+not sure we cause aobut how hadnle the turn but laso the | line at the 3rd rowe makes the ui look broken as we are missing more rows or least goofed the ui
+
 # Later
 
 ## 

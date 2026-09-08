@@ -2030,3 +2030,9 @@
 {"type":"model_switch","value":{"from":"opencode-go/muse-spark-1.3-contributor","to":"openai-codex/gpt-5.6-luna","reason":"manual","at":"2026-09-08T13:19:38.611Z","source":"set"},"at":"2026-09-08T13:19:38.611Z"}
 {"type":"state","value":{"goal":null,"list":[],"loop":null,"mainModelRecovery":null,"lastModelRef":"openai-codex/gpt-5.6-luna","lastCompactionAt":1788788437077,"supervisorPausedAt":null,"loadHoldAt":null,"lastOutcome":null},"at":"2026-09-08T13:19:38.612Z"}
 {"type":"context_usage_sample","value":{"goalId":null,"provider":"openai-codex","model":"gpt-5.6-luna","providerUsage":{"inputTokens":2097,"outputTokens":690,"cacheReadTokens":76288,"cacheWriteTokens":0,"totalTokens":79075},"contextUsage":{"tokens":79075,"contextWindow":200000,"percent":39.537499999999994}},"at":"2026-09-08T13:21:41.242Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-09-08T13:33:37.699Z"}
+{"type":"id_invalidation","value":{"oldId":"01a054a9-e07f-705b-87a1-9421f9b906dc","newId":"01a08139-5e51-720f-b7a5-2e60a464c8da","reason":"forced_rewrite","at":"2026-09-08T13:33:37.704Z"},"at":"2026-09-08T13:33:37.704Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-09-08T13:33:37.704Z"}
+{"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-09-08T13:33:40.466Z"}
+{"type":"session_rebound","value":{"reason":"resume"},"at":"2026-09-08T13:33:41.120Z"}
+{"type":"id_invalidation","value":{"oldId":"01a08139-5e51-720f-b7a5-2e60a464c8da","newId":"01a054a9-e07f-705b-87a1-9421f9b906dc","reason":"session_shutdown","shutdownReason":"resume","at":"2026-09-08T13:33:41.122Z"},"at":"2026-09-08T13:33:41.122Z"}
