@@ -1962,16 +1962,17 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   assert.match(lines[0]!, / · active · /);
   assert.match(lines[0]!, /1\/3 ▰▰▱▱▱/); // round(1.67)=2
   // Last-action line: Claude's done-row format + the next pending task.
-  // v0.38.23: with an empty queue there is no footer, so the last-action
-  // line is the card's last line.
-  assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
+  // Closed card (field 2026-09-08 220808): with an empty queue there is no
+  // footer, so the last-action line terminates the tree itself — a final
+  // `├─` promised continuation rows that never came and read as cut off.
+  assert.match(lines[1]!, /^└─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
   assert.equal(lines[lines.length - 1], lines[1]);
-  assert.ok(!lines.some((l) => l.startsWith("└─")));
+  assert.ok(!lines.some((l) => l.startsWith("├─") || l.startsWith("│ ")));
   // Failed action renders ✗; no ms → no time suffix.
   const failed = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 120, {
     recent: [{ name: "bash", arg: "bun test", ms: 0, ok: false }],
   })!;
-  assert.match(failed[1]!, /^├─ ✗ bash bun test(?! \()/);
+  assert.match(failed[1]!, /^└─ ✗ bash bun test(?! \()/, "failed action closes the card too");
   // v0.34.124: the recent-action ring is NOT goal-scoped — entries from a
   // PREVIOUS goal outlive activation. The card must drop actions stamped
   // before the current goal was created (note.md 221249: the new goal's
