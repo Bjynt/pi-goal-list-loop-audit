@@ -1,9 +1,10 @@
 // pi-goal-list-loop-audit — v0.38.22
 // tests/subagent-display-richness.test.ts
 //
-// Display-unification richness ladder: rich (default) restores detailed
-// rows + task linkage, compact keeps the count line, quiet surfaces
-// hung/aborting workers only. Pins: default/normalization, bucketed
+// Display-unification richness ladder: quiet (default, audit 2026-09-07 —
+// exceptions-only; healthy fan-out lives on the fleet panel) shows
+// troubled (non-fresh) rows only, rich shows all rows, compact keeps the
+// count line. Pins: default/normalization, bucketed
 // silence stability (no per-second widget-key churn — the v0.37.1 jumping
 // must not return through rich lines), the HUNG-never-silent invariant,
 // and width safety.
@@ -14,6 +15,7 @@ import * as assert from "node:assert/strict";
 import {
   assembleAgentsExtras,
   hasHungWorker,
+  renderAgentsWidgetLine,
   renderAgentsWidgetLines,
   type AgentsPanelRow,
 } from "../extensions/goal-agents-panel.js";
@@ -36,36 +38,51 @@ function row(over: Partial<AgentsPanelRow> = {}): AgentsPanelRow {
   };
 }
 
-test("v0.38.22 richness defaults to rich and normalizes junk", () => {
-  assert.equal(DEFAULT_SETTINGS.subagentDisplayRichness, "rich", "rich default");
+test("audit 2026-09-07 richness defaults to quiet (exceptions-only) and normalizes junk", () => {
+  assert.equal(DEFAULT_SETTINGS.subagentDisplayRichness, "quiet", "quiet default");
   const junk = normalizeLoadedSettings({ subagentDisplayRichness: "verbose" } as never);
-  assert.equal(junk.subagentDisplayRichness, "rich", "junk falls back to rich, never blanks the display");
+  assert.equal(junk.subagentDisplayRichness, "quiet", "junk falls back to quiet, never blanks the display");
   const unset = normalizeLoadedSettings({});
-  assert.equal(unset.subagentDisplayRichness, "rich", "unset means rich");
+  assert.equal(unset.subagentDisplayRichness, "quiet", "unset means quiet");
 });
 
-test("v0.38.22 rich assembles rows + task-linkage header; compact keeps the line; quiet hides healthy workers", () => {
+test("v0.38.23 rich assembles single-line glyph rows, no header; compact keeps the line; quiet hides healthy workers", () => {
   const rows = [row(), row({ recordId: "rec-abcdef", summary: "art batch", silentMs: 65_000 })];
-  const rich = assembleAgentsExtras(rows, "rich", "Execute the note.md Now batch for the music tab", 1_000_000);
+  const rich = assembleAgentsExtras(rows, "rich", 1_000_000);
   assert.ok(rich, "rich shows workers");
-  assert.match(rich!.lines[0]!, /^→ Execute the note\.md/, "first line links workers to their task");
-  assert.ok(rich!.lines.length >= 5, "detailed rows present");
+  // v0.38.23 Option-2: one glyph-first row per worker, no task-linkage
+  // header (the card head already names the objective), no ids.
+  assert.equal(rich!.lines.length, 2, "one row per worker");
+  assert.match(rich!.lines[0]!, /^▶ worker · art batch · active 1m00s$/, "stalest first within rank; age before any suffix");
+  assert.match(rich!.lines[1]!, /^▶ worker · ui fixes · active 30s$/, "healthy row: glyph + name + age, no state word");
+  assert.ok(!rich!.lines.some((l) => l.includes("rec-")), "ids live in /glla agents, not the widget");
   assert.ok(rich!.line.startsWith("● 2 agents"), "count line kept");
 
-  const compact = assembleAgentsExtras(rows, "compact", "objective", 1_000_000);
+  const compact = assembleAgentsExtras(rows, "compact", 1_000_000);
   assert.ok(compact?.line.startsWith("● 2 agents"), "compact keeps the count line");
   assert.deepEqual(compact!.lines, [], "compact splices no detail rows");
 
   // Audit 2026-09-06 (DECIDED: show count line): quiet hides only at zero
   // tracked — tracked-but-healthy keeps the compact count line.
-  const quiet = assembleAgentsExtras(rows, "quiet", "objective", 1_000_000);
-  assert.equal(quiet?.line, assembleAgentsExtras(rows, "compact", "objective", 1_000_000)?.line, "quiet keeps the healthy count line");
-  assert.deepEqual(quiet!.lines, [], "quiet never splices detail rows");
-  assert.equal(assembleAgentsExtras([], "quiet", "objective", 1_000_000), undefined, "quiet hides when zero tracked");
+  // Audit 2026-09-07 (DECIDED: exceptions-only): quiet splices troubled
+  // (non-fresh) rows; fresh healthy rows live on the fleet panel.
+  const quiet = assembleAgentsExtras(rows, "quiet", 1_000_000);
+  assert.equal(quiet?.line, assembleAgentsExtras(rows, "compact", 1_000_000)?.line, "quiet keeps the healthy count line");
+  assert.deepEqual(quiet!.lines, [], "fresh healthy rows stay off the card");
+  assert.equal(assembleAgentsExtras([], "quiet", 1_000_000), undefined, "quiet hides when zero tracked");
 
-  const hung = assembleAgentsExtras([row({ status: "hung" })], "quiet", "objective", 1_000_000);
+  const mixed = assembleAgentsExtras(
+    [row(), row({ recordId: "rec-aging", summary: "old work", silentMs: 6 * 60_000 })],
+    "quiet",
+    1_000_000,
+  );
+  assert.equal(mixed!.lines.length, 1, "quiet splices the troubled row only");
+  assert.ok(!mixed!.lines.some((l) => l.includes("ui fixes")), "fresh row stays on the fleet panel");
+
+  const hung = assembleAgentsExtras([row({ status: "hung" })], "quiet", 1_000_000);
   assert.ok(hung?.line.includes("⚠"), "HUNG is never silent, even on quiet");
-  assert.deepEqual(hung!.lines, [], "quiet never splices detail rows");
+  assert.equal(hung!.lines.length, 1, "HUNG row surfaces under quiet");
+  assert.ok(!hung!.lines.some((l) => l.includes("rec-")), "troubled rows still keep ids out of the widget");
 });
 
 test("v0.38.22 detailed lines bucket silence — identical output seconds apart", () => {
@@ -81,19 +98,36 @@ test("v0.38.22 hasHungWorker covers hung + aborting, ignores ended", () => {
   assert.equal(hasHungWorker([row()]), false, "healthy running worker is not hung");
   assert.equal(hasHungWorker([row({ status: "hung" })]), true, "hung fires");
   assert.equal(hasHungWorker([row({ action: "abort-requested" })]), true, "aborting fires");
+  // Audit 2026-09-07: failed/unavailable actions fire too (lifesign
+  // renders them as red hung rows — the line must agree).
+  assert.equal(hasHungWorker([row({ action: "failed" })]), true, "failed fires");
+  assert.equal(hasHungWorker([row({ action: "unavailable" })]), true, "unavailable fires");
   assert.equal(hasHungWorker([row({ status: "ended", endedOk: true })]), false, "ended workers never fire");
+  assert.equal(hasHungWorker([row({ status: "ended", action: "failed" })]), false, "ended-with-failure never fires");
   assert.equal(hasHungWorker([]), false, "zero workers, zero presence");
 });
 
-test("v0.38.22 every rich line is width-safe and header truncates long objectives", () => {
+test("audit 2026-09-07 count line flags trouble on ANY child, not just the stalest", () => {
+  const staleHealthy = row({ recordId: "rec-stale", silentMs: 40 * 60_000 });
+  const freshHung = row({ recordId: "rec-hung", status: "hung", silentMs: 5_000 });
+  const line = renderAgentsWidgetLine([staleHealthy, freshHung])!;
+  assert.ok(line.includes("⚠"), "hung child flags the line behind a healthy stalest sibling");
+  const staleAborting = row({ recordId: "rec-ab", action: "abort-requested", silentMs: 5_000 });
+  assert.ok(renderAgentsWidgetLine([staleHealthy, staleAborting])!.includes("aborting"), "aborting wording survives the sibling scan");
+  const failed = row({ recordId: "rec-f", action: "failed", silentMs: 5_000 });
+  assert.ok(renderAgentsWidgetLine([staleHealthy, failed])!.includes("⚠"), "failed child flags the line");
+  const clean = renderAgentsWidgetLine([staleHealthy, row({ recordId: "rec-ok", silentMs: 5_000 })])!;
+  assert.ok(!clean.includes("⚠"), "no trouble anywhere, no flag");
+});
+
+test("v0.38.23 every rich line is width-safe; long summaries truncate cell-aware", () => {
   const wide = assembleAgentsExtras(
     [row({ summary: "a".repeat(100), recordId: "r".repeat(60) })],
     "rich",
-    "x".repeat(200),
     1_000_000,
   )!;
   for (const line of [wide.line, ...wide.lines]) {
     assert.ok(line.length <= 100, `width-safe: ${line.length} chars`);
   }
-  assert.ok(wide.lines[0]!.length <= 64, "linkage header truncated");
+  assert.match(wide.lines[0]!, /^▶ worker · a+… · active 30s$/, "long summary truncates, age survives");
 });

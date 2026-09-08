@@ -60,7 +60,7 @@ copies are ignored (the recovery runtime reads the global file):
 | `auditorInspection` | `false` | Auditor runs as a persistent session you can tail/resume. Global-only. |
 | `notifyCmd` | unset | Shell command on goal complete / pause / loop stop; message is `$1`. |
 | `tokenLimit` | unset (off) | Per-goal token budget; crossing it pauses. `0` = off. |
-| `wedgeAlertMinutes` | unset (30) | Busy-but-silent minutes before the wedge alert; `0` = off. |
+| `wedgeAlertMinutes` | unset (30, or off while aggressive mode is on — the default) | Busy-but-silent minutes before the wedge alert; `0` = off. The menu shows the effective value. |
 | `autoResume` | `false` | Restored goals/loops/lists auto-resume in fresh sessions. Global-only. |
 | `decisionPopup` | `true` | Decision pauses pop the picker (`false` = widget card only). |
 | `carryover` | `"pause"` | Stale carryover on new activation: `"pause"` / `"clear"` / `"resume"`. |

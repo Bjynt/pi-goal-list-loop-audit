@@ -29,23 +29,22 @@ holds (no new instrumentation):
 - Ledger history of `subagent_hang_detected` for the "Recent hangs" footer
   of the panel.
 
-Row shape (shipped two-line: v0.38.22 rich rows keep identity/purpose and
-liveness on separate short lines so narrow terminals never truncate the
-silence age; audit 2026-09-06 verified this against the doc and kept the
-code — the doc, not the pins, was stale):
+Row shape (shipped one-glyph-line since v0.38.23: age-first single lines
+replace the v0.38.22 two-line shape — footers deleted, ids live in
+`/glla agents`; audit 2026-09-07 verified this against the doc and kept
+the code — the doc, not the pins, was stale):
 
 ```
-● explore · map-model-picker · id a1b2c3
-  RUNNING · ACTIVE · silent 0s
-● plan · audit-contract · id d4e5f6
-  HUNG? · HUNG · silent 26m · record-frozen
-  └ check the Agents panel: a child whose counters stopped moving is hung, not thinking
-  └ blocks: parent subagent wait (Agent) (zombie stand-down active)
-✓ explore · schema-check · id 9a8b7c
-  ENDED ok · silent 3m44s
-… 2 more (oldest ended trimmed — cap 20)
-Recent hangs: plan 31m ago · explore 2h05m ago
+▶ explore · map-model-picker · active 8s
+▶ plan · audit-contract · quiet 26m
+⚠ plan · stuck-render · HUNG · quiet 31m · id e5f6…
 ```
+
+Troubled rows append the short id; healthy rows stay self-contained
+without the fleet panel (the v0.38.22 `└ check the Agents panel` footer
+is gone — the row itself says what is wrong). `/glla agents` keeps the
+full detail view (recent hangs read the durable `subagent_hang_detected`
+ledger, absent when empty — never a placeholder).
 
 The `└ blocks:` row renders only from an OBSERVED in-flight parent
 subagent wait (tool args carry no run id, so per-row correlation is
@@ -98,8 +97,13 @@ safety property by other means — `renderAgentsWidgetLines` buckets silence
 ages exactly like the compact line, so the widget key only moves on genuine
 state transitions — and restores rich ambient rows behind the
 `subagentDisplayRichness` ladder (`rich` default / `compact` / `quiet`, HUNG
-never silent), plus the task-linkage header (`→ <objective>`) only GLLA can
-show. Triplication/ordering against pi-subagents native panels is upstream
+never silent), plus — until v0.38.23 — the task-linkage header
+(`→ <objective>`) only GLLA can show. v0.38.23 removes the header (the
+card head already names the objective), collapses worker rows to one
+glyph-first line each, forces the card below the chat
+(`{ placement: "belowEditor" }`), and adds the evidence lifesign
+(counter-derived breathing glyph + `stream {age}` readout + semantic
+band colors on head and rows, queued capped at amber). Triplication/ordering against pi-subagents native panels is upstream
 (nicobailon/pi-subagents#1931, read-only); GLLA owns its slot only and
 documents the native escapes. Assembly is the pure `assembleAgentsExtras`
 (pinned in `tests/subagent-display-richness.test.ts`).

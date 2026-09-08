@@ -13,7 +13,7 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth, sliceByColumn as tuiSliceByColumn } from "@earendil-works/pi-tui";
 
 import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
-import { auditVerdictLabel, buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { auditVerdictLabel, bucketSilentMs, buildDurableDeferRecommendation, compactDisplayText, fmtDuration, formatMainModelRecoveryStatus, headLifesign, isMonitorGoal, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks, type LifesignRow } from "./goal-loop-core.js";
 
 export { isMonitorGoal };
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
@@ -83,8 +83,55 @@ export function truncateCells(s: string, max: number): string {
   return `${out}…`;
 }
 
+/** Clause-aware objective shortening for the card head. A raw character cut
+ * ends objectives mid-word ("…restyle the …") which reads as a clipped
+ * card rather than a summary (field 2026-09-08 220808). When the text
+ * overruns, prefer cutting at the last clause boundary (: ; · — – ( [)
+ * inside the budget so the head reads as an intentional summary; fall back
+ * to the character cut when no boundary clears the floor. Display-only. */
+export function truncateObjective(s: string, max: number): string {
+  const clean = compactDisplayText(s);
+  if (tuiVisibleWidth(clean) <= max) return clean;
+  if (max <= 1) return truncateCells(clean, max);
+  const budget = max - 1;
+  const floor = Math.max(16, Math.floor(budget * 0.4));
+  let out = "";
+  let w = 0;
+  let boundaryLen = -1;
+  for (const ch of clean) {
+    const cw = tuiVisibleWidth(ch);
+    if (w + cw > budget) break;
+    out += ch;
+    w += cw;
+    if (/[:;·—–(\[]/.test(ch)) boundaryLen = out.length;
+  }
+  if (boundaryLen > 0) {
+    const cut = [...out].slice(0, boundaryLen).join("").replace(/[:;·—–(\[\s]+$/u, "");
+    if (tuiVisibleWidth(cut) >= Math.min(floor, 16)) return `${cut}…`;
+  }
+  return `${out}…`;
+}
+
 function displayPauseReason(reason: string): string {
   return compactDisplayText(sanitizeProviderDisplayText(reason));
+}
+
+/** Objectives are stored verbatim, but the glance card is a plain-text
+ * surface. Remove the common Markdown emphasis/code wrappers that otherwise
+ * turn a long objective into noisy `**...**` and backtick litter. This is a
+ * display-only projection; prompts, archives, and state keep the original. */
+function displayObjective(objective: string): string {
+  return compactDisplayText(objective)
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/`([^`\n]*)`/g, "$1")
+    // v0.38.30 audit: strip the remaining common single-line wrappers so the
+    // glance card keeps its plain-text promise (headers, quotes, links,
+    // single-emphasis). Display-only; prompts/archives/state keep verbatim.
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1");
 }
 
 /** v0.33.1: painted strings measure by their terminal-cell width. */
@@ -143,6 +190,10 @@ export interface WidgetExtras {
    * compact summary plus detailed widget rows. The detached auditor stays
    * on its own verification surface. */
   agents?: { line?: string; lines?: string[] };
+  /** v0.38.23: raw tracked rows for the head lifesign (evidence readout +
+   * breathing glyph). Ephemeral like everything in extras — the head
+   * derives bands from these, never from wall-clock guesses. */
+  agentRows?: LifesignRow[];
   /** Ephemeral host-session projection; never persisted as goal state. */
   activity?: GoalDisplayActivity;
   /** Last real host stream activity, excluding timer/UI ticks. */
@@ -246,7 +297,11 @@ export const WORKER_TEXT_SPACER = "\u00A0";
 
 function budgetFor(width: number | undefined, prefixCols: number, floor: number): number {
   if (!width || width <= 0) return floor;
-  return Math.max(floor, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
+  // v0.38.30 audit: clamp to the available width (narrow terminals used to
+  // get the floor, so the inner truncate no-opped and the outer hard-cut
+  // sliced mid-token). Floor applies only when width is unknown; otherwise
+  // the available width wins with a small absolute minimum to avoid junk.
+  return Math.max(10, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
 }
 
 function uniqueModelRefs(refs: readonly string[] | undefined): string[] {
@@ -276,22 +331,85 @@ function modelSourceLabel(source: string): string {
   return source.trim();
 }
 
+function compactMainModelRecoveryLine(recovery: MainModelRecovery | undefined, configuredBackups: string[] = [], now = Date.now(), width?: number): string | undefined {
+  if (!recovery || !recovery.primary.trim()) return undefined;
+  // v0.38.30 audit: width-aware inner budgets (fixed 48/56 silently dropped
+  // the attempts/skipped tail at narrow widths when the outer hard-cut ran).
+  const primary = recovery.primary.trim();
+  const current = (recovery.active ?? primary).trim() || primary;
+  const backups = uniqueModelRefs(configuredBackups).slice(0, 10);
+  const chain = [primary, ...backups];
+  const currentIndex = chain.findIndex((ref) => ref.toLowerCase() === current.toLowerCase());
+  const selected = currentIndex === 0
+    ? "primary"
+    : currentIndex > 0
+      ? `backup ${currentIndex}/${backups.length}`
+      : "fallback";
+  const retryMs = recovery.retryAt ? Date.parse(recovery.retryAt) - now : Number.NaN;
+  const probeMs = recovery.primaryProbeAt ? Date.parse(recovery.primaryProbeAt) - now : Number.NaN;
+  const phase = recovery.manualResumeRequired
+    ? "manual hold"
+    : recovery.pendingModelSwitch
+      ? `switching → ${truncate(recovery.pendingModelSwitch, budgetFor(width, 20, 48))}`
+      : Number.isFinite(retryMs)
+        ? retryMs <= 0 ? "retrying now" : `retrying in ${fmtElapsed(retryMs)}`
+        : recovery.primaryProbeInFlight
+          ? "primary probe pending"
+          : Number.isFinite(probeMs)
+            ? probeMs <= 0 ? "probing primary now" : `primary probe in ${fmtElapsed(probeMs)}`
+            : `${selected} selected`;
+  const attempted = recovery.attempted?.length ?? 0;
+  const skipped = recovery.skipped?.length ?? 0;
+  const hasEpisode = !!recovery.manualResumeRequired
+    || !!recovery.pendingModelSwitch
+    || Number.isFinite(retryMs)
+    || Number.isFinite(probeMs)
+    || !!recovery.primaryProbeInFlight
+    || recovery.attempts > 0
+    || attempted > 1
+    || skipped > 0
+    || currentIndex !== 0;
+  // A recovery object can briefly survive the successful primary selection.
+  // Do not label that normal state as an incident, but keep the selected model
+  // on the card when no separate provenance row is available.
+  if (!hasEpisode) return `model: ${truncate(current, budgetFor(width, 12, 56))} · primary`;
+  const history = [
+    recovery.attempts > 0 ? `attempts ${recovery.attempts}` : "",
+    skipped > 0 ? `skipped ${skipped}` : "",
+  ].filter(Boolean);
+  return `recovery: ${phase} · ${selected} ${truncate(current, budgetFor(width, 20, 48))}${history.length > 0 ? ` · ${history.join(" · ")}` : ""}`;
+}
+
 function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, width?: number): string[] {
   if (!provenance) return [];
+  const primary = typeof provenance.primary === "string" ? provenance.primary.trim() : "";
+  const fallbacks = uniqueModelRefs(provenance.fallbackRefs);
+  const skipped = uniqueModelRefs(provenance.skippedForbiddenRefs);
+  const handledTurn = typeof provenance.handledTurn === "string" ? provenance.handledTurn.trim() : "";
+  const handledTurnNews = !!handledTurn && handledTurn.toLowerCase() !== (primary || "").toLowerCase();
+  const handledAudit = typeof provenance.handledAudit === "string" ? provenance.handledAudit.trim() : "";
+  // The card sits just above pi's own status line, which already names the
+  // session model. A lone `model: primary X · inherited from session` row
+  // restates that indicator for zero new information while deepening the
+  // tree (field 2026-09-08 220808). Show the block only when it carries
+  // news: a pinned selection, fallbacks, skips, or a failover that
+  // handled work. `/goal status` keeps the full chain regardless.
+  if (primary && provenance.primarySource !== "pinned" && fallbacks.length === 0 && skipped.length === 0 && !handledTurnNews && !handledAudit) return [];
   const budget = budgetFor(width, 3, 60);
   const lines: string[] = [];
-  const primary = typeof provenance.primary === "string" ? provenance.primary.trim() : "";
   if (primary) {
     const source = provenance.primarySource === "pinned" ? "pinned" : "inherited from session";
     lines.push(`model: primary ${truncate(primary, budget)} · ${source}`);
   }
-  const fallbacks = uniqueModelRefs(provenance.fallbackRefs);
   if (fallbacks.length > 0) lines.push(`fallbacks: ${truncate(fallbacks.join(" → "), budget)}`);
-  const skipped = uniqueModelRefs(provenance.skippedForbiddenRefs);
   if (skipped.length > 0) lines.push(`skipped forbidden: ${truncate(skipped.join(", "), budget)}`);
-  const handledTurn = typeof provenance.handledTurn === "string" ? provenance.handledTurn.trim() : "";
-  if (handledTurn) lines.push(`handled turn: ${truncate(handledTurn, budget)}`);
-  const handledAudit = typeof provenance.handledAudit === "string" ? provenance.handledAudit.trim() : "";
+  // A normal turn is handled by the configured primary model. Repeating the
+  // same ref immediately below it adds no information and, when it is the
+  // last row, leaves a misleading continuation glyph in the card. Keep the
+  // row only when a recovery/failover actually handled the turn.
+  if (handledTurnNews) {
+    lines.push(`handled turn: ${truncate(handledTurn, budget)}`);
+  }
   if (handledAudit) {
     const source = provenance.handledAuditSource?.trim() ? modelSourceLabel(provenance.handledAuditSource) : "";
     const via = source ? ` · via ${truncate(source, 24)}` : "";
@@ -318,9 +436,14 @@ export function buildDurableDeferDecisionLines(input: DurableDeferRecommendation
       // Reserve room for the recommendation marker and the outer tree prefix
       // so a normal 80-column production widget cannot truncate away the
       // fact that the durable plaque is the selected action.
+      // Recommendation bodies are durable facts, but the glance card is not
+      // the command's full report. A wide terminal used to turn these plaques
+      // into sentence-length banners and crowd out the actual work state;
+      // /goal status retains the complete text.
+      const bodyCap = plaque.kind === "durable" ? 96 : 72;
       const bodyBudget = width && width > 0
-        ? Math.max(8, width - WIDGET_HORIZONTAL_MARGIN - 3 - visibleLen(prefix) - visibleLen(marker))
-        : budgetFor(width, 3, 60);
+        ? Math.max(8, Math.min(bodyCap, width - WIDGET_HORIZONTAL_MARGIN - 3 - visibleLen(prefix) - visibleLen(marker)))
+        : Math.min(bodyCap, budgetFor(width, 3, 60));
       return `${prefix}${truncate(plaque.body, bodyBudget)}${marker}`;
     }),
     `selected: ${recommendation.choice}${recommendation.choice === "inline" ? " (durable fix)" : " (reversible workaround)"}`,
@@ -333,7 +456,7 @@ export type DisplayColor = "accent" | "success" | "warning" | "error" | "muted" 
 export interface DisplayTheme {
   fg(color: DisplayColor, text: string): string;
 }
-const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: string): string => (theme ? theme.fg(color, text) : text);
+export const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: string): string => (theme ? theme.fg(color, text) : text);
 
 /**
  * A live-work capsule is only rendered in the persistent status bar when the
@@ -884,18 +1007,6 @@ function goalDisplayActivity(g: Goal, extras?: WidgetExtras, now = Date.now()): 
   return activity;
 }
 
-function hostLastActivity(extras: WidgetExtras | undefined, now: number): string {
-  const at = extras?.lastActivityAt;
-  if (at === undefined || !Number.isFinite(at)) return "";
-  return ` · last host activity ${fmtElapsed(Math.max(0, now - at))} ago`;
-}
-
-function hostLastStream(extras: WidgetExtras | undefined, now: number): string {
-  const at = extras?.lastStreamActivityAt;
-  if (at === undefined || !Number.isFinite(at)) return "";
-  return ` · last stream ${fmtElapsed(Math.max(0, now - at))} ago`;
-}
-
 /** Paused-state lifecycle projection. Pausing is durable, but it is not a
  * blank state: users need to know who owns recovery, whether queue work is
  * parked safely, when the host last made progress, and what happens next.
@@ -926,9 +1037,24 @@ function pausedLastActivity(g: Goal, extras: WidgetExtras | undefined, now: numb
 /** The goal's total wall-clock age. This intentionally includes parked,
  * recovery, and auditor time; it is not a claim about active model compute. */
 function goalTotalText(g: Goal, now: number): string {
+  // Audit 2026-09-07: the elapsed rides the shared bucket grain (5s/15s/30s),
+  // not wall-clock seconds. A per-second `total` changed the status/widget
+  // key on every render tick, refiring setWidget into the shared belowEditor
+  // stack for no new information (the v0.37.1 jumping lesson). Floored, so
+  // the readout never over-claims elapsed; per-second precision was a
+  // liveness signal back when `total` owned one — the head `stream {age}`
+  // owns liveness now.
   const startedAt = Date.parse(g.createdAt);
-  return Number.isFinite(startedAt) ? `total ${fmtElapsed(Math.max(0, now - startedAt))}` : "";
+  return Number.isFinite(startedAt) ? `total ${fmtElapsed(bucketSilentMs(Math.max(0, now - startedAt)))}` : "";
 }
+
+/** v0.38.31 (field 2026-09-08 180721): "resuming now" is a transient
+ * truth, not a state. A wait-pause whose retry time passed an hour ago on
+ * a held/idle host is overdue — claiming an imminent resume forever while
+ * the card also says "safely parked" is the same contradiction class as
+ * f8d1c2f. Past the grace window the transition falls through to the
+ * pause-kind label ("recovery timer" for waits) instead. */
+export const PAUSED_RESUME_GRACE_MS = 90_000;
 
 function pausedNextTransition(g: Goal, state: State, now: number): string {
   const resume = g.policy === "list" ? "/list resume" : "/goal resume";
@@ -945,7 +1071,11 @@ function pausedNextTransition(g: Goal, state: State, now: number): string {
   }
   const resumeAt = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
   if (Number.isFinite(resumeAt)) {
-    return resumeAt <= now ? "resuming now" : `auto-retry in ${fmtElapsed(resumeAt - now)}`;
+    if (resumeAt > now) return `auto-retry in ${fmtElapsed(resumeAt - now)}`;
+    // Inside the grace window the retry is genuinely imminent. Past it the
+    // timer never fired (held host, idle session) — fall through to the
+    // kind label below instead of promising "resuming now" forever.
+    if (now - resumeAt < PAUSED_RESUME_GRACE_MS) return "resuming now";
   }
   if (isCompletionAuditNoVerdict(g)) {
     const retryAt = g.pendingCompletion?.recoveryRetryAt
@@ -1000,9 +1130,11 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * forget it and a future branch inherits it for free. */
 export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras, width?: number): string | undefined {
   const base = buildStatusTextBase(state, audit, now, theme, extras, width);
-  // The footer gets only the compact worst-child summary. Detailed rows live
-  // in the widget; the detached auditor remains a separate verification HUD.
-  const withAgentSummary = base && extras?.agents?.line && state.goal?.status !== "auditing"
+  // Audit 2026-09-07: the worker summary rides the status on EVERY branch
+  // including auditing — suppressing it there hid hung/aborting children
+  // behind the audit (HUNG is never silent). The auditor stays a distinct
+  // block inside the card; the one-segment summary does not merge them.
+  const withAgentSummary = base && extras?.agents?.line
     ? `${base} · ${extras.agents.line.replace(/^●\s*/, "")}`
     : base;
   if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return truncateStatusToWidth(withAgentSummary, width);
@@ -1124,14 +1256,16 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     if (kind === "wait" || kind === "blocked") {
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
       // timed wait) — "auto-retry in 23m" beats a static clock time, and a
-      // passed resumeAt says "resuming…" instead of lying about the past.
+      // freshly-passed resumeAt says "resuming…" instead of lying about the
+      // past. v0.38.31: "resuming…" shares the transition grace window — a
+      // retry time long past with no dispatch reads "retry overdue".
       // Every retry-class pause renders the same ⏳ auto-retrying… line +
       // countdown; blocked pauses without a recovery timer render as
       // ⏸ action needed. A main-model manual hold names its recovery owner.
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
-      const when = Number.isFinite(rms)
-        ? rms <= 0 ? " · resuming…" : ` · auto-retry in ${fmtElapsed(rms)}`
-        : "";
+      const when = !Number.isFinite(rms) ? ""
+        : rms > 0 ? ` · auto-retry in ${fmtElapsed(rms)}`
+        : -rms >= PAUSED_RESUME_GRACE_MS ? " · retry overdue" : " · resuming…";
       if (kind === "blocked") {
         const label = state.mainModelRecovery?.manualResumeRequired === true
           ? "⏸ manual recovery hold"
@@ -1156,21 +1290,21 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
   }
   if (g.status === "active") {
-    const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-    const withRecovery = (value: string): string => recoverySummary.length > 0
-      ? `${value} · ${recoverySummary.join(" · ")}`
-      : value;
+    // The footer is a glance/liveness surface. Recovery details belong to the
+    // card (and the full /goal status report), not a second horizontally
+    // concatenated copy here. This keeps exceptions readable without making
+    // a healthy WORKING line look like an incident.
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
     // It outranks any older operational note on the same state snapshot.
     if (g.interruptedAt) {
       const label = interruptedForNoStart(g)
         ? "⚠ turn start not observed — automatic retry held"
         : "⚠ interrupted — stale handle · /new (or a fresh session_start) rebinds";
-      return withRecovery(`glla: ${paint(theme, "error", label)}${heldSuffix}`);
+      return `glla: ${paint(theme, "error", label)}${heldSuffix}`;
     }
     const attention = activeAttention(g);
     if (attention) {
-      return withRecovery(`glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`);
+      return `glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`;
     }
     const activity = goalDisplayActivity(g, extras, now);
     // v0.34.97: while the post-compaction grace window is open, surface
@@ -1179,18 +1313,21 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const compactAgeMs = state.lastCompactionAt ? now - state.lastCompactionAt : Number.POSITIVE_INFINITY;
     const compacting = Number.isFinite(compactAgeMs) && compactAgeMs >= 0 && compactAgeMs < 180_000; // COMPACTION_GRACE_MS = 3 min
     if (compacting) {
-      return withRecovery(`glla: ${paint(theme, "warning", `⏳ compacting… (${fmtElapsed(compactAgeMs)} ago)`)}${heldSuffix}`);
+      return `glla: ${paint(theme, "warning", `⏳ compacting… (${fmtElapsed(compactAgeMs)} ago)`)}${heldSuffix}`;
     }
     if (activity === "awaiting-first-turn") {
-      return withRecovery(`glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`);
+      return `glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`;
     }
     if (activity === "idle") {
+      // Audit 2026-09-07 (DECIDED: head owns liveness): the status keeps
+      // state + counts only. Freshness tails (`last host activity`,
+      // `last stream`) duplicated the card-head `stream {age}` readout —
+      // one surface owns liveness so the two can never disagree.
       const idleDetails = [
         goalTotalText(g, now),
-        hostLastActivity(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
-      return withRecovery(`glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`);
+      return `glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`;
     }
     // v0.34.39: distinguish durable state from evidence of a live host turn.
     // A spinner is reserved for recent stream/tool evidence; BUSY without
@@ -1200,10 +1337,9 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       const busyDetails = [
         goalTotalText(g, now),
         g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
-        hostLastStream(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
-      return withRecovery(`glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`);
+      return `glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`;
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -1216,8 +1352,12 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const live = activity === "working";
     const queued = activity === "queued";
     const monitoring = activity === "monitoring";
+    // Audit 2026-09-07 (DECIDED: head owns liveness): WORKING is a static
+    // state badge now — the animated LIVE capsule duplicated the head
+    // lifesign on the same evidence. The evidence gate stays upstream in
+    // goalDisplayActivity: this badge only renders on real activity.
     const marker = live
-      ? activityBadge("LIVE · WORKING", now, theme)
+      ? activityStateBadge("WORKING", theme, "accent")
       : monitoring
         ? activityStateBadge("👁 MONITORING", theme, "dim")
         : queued
@@ -1236,16 +1376,16 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const details = [
       goalTotalText(g, now),
       g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
-      live ? hostLastStream(extras, now).replace(/^ · /, "") : "",
       // v0.34.124: the QUEUED "why" — an accepted dispatch that pi has not
-      // started, and the last real activity age. A ticking timer with no
-      // freshness told the user nothing (note.md 221249).
+      // started. (The last-activity age that used to ride here moved to the
+      // card head's `stream {age}` readout per the 2026-09-07 liveness
+      // decision; note.md 221249's ticking-timer complaint is answered
+      // there, not here.)
       queued && extras?.turnPending ? "awaiting pi turn" : "",
       monitoring ? "next check" : "",
-      (queued || monitoring) ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
-    return withRecovery(`glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${recoverySuffix}${heldSuffix}`);
+    return `glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${recoverySuffix}${heldSuffix}`;
   }
   // v0.34.65: a terminal goal names its outcome + wall duration instead of
   // clearing the segment (note.md 2026-08-07: "this seems weak for a complete
@@ -1264,10 +1404,22 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
 
 function countDone(g: Goal): number {
   let n = 0;
+  const countAllDescendants = (ts?: any[]): number => {
+    if (!ts) return 0;
+    let c = 0;
+    for (const s of ts) c += 1 + countAllDescendants(s.subtasks);
+    return c;
+  };
   const walk = (ts: Array<{ status: string; subtasks?: any[] }>) => {
     for (const t of ts) {
       if (t.status === "complete") {
-        n += 1 + (t.subtasks?.length ?? 0);
+        // Ported from Bjynt's PR #45: a closed parent covers its subtasks
+        // (field: 2 closed parents with pending subtasks displayed "2/24"
+        // for 6 real tasks). Mid-flight parents still count done subtasks
+        // independently via the walk below.
+        // v0.38.30 audit: count ALL descendants, not just direct children
+        // (a closed parent with nested grandchildren under-read done).
+        n += 1 + countAllDescendants(t.subtasks);
       } else if (t.subtasks) {
         walk(t.subtasks);
       }
@@ -1300,26 +1452,53 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   const detailedAgents = extras?.agents?.lines ?? (extras?.agents?.line ? [extras.agents.line] : []);
   let withAgents: string[] | undefined = inner;
   if (detailedAgents.length > 0) {
+    // Audit 2026-09-07: rows render bare and glyph-first (the approved
+    // Option-2 shape — `├─ ▶ worker · art batch · quiet 31m`). The `agent: `
+    // prefix burned ~7 cells before narrow-terminal truncation and told the
+    // reader nothing the card context doesn't already say. Continuation
+    // lines still trim their indent so wrapped detail aligns under the row.
     const agentLines = detailedAgents.map((line, index) => {
       const continuation = line.startsWith("  ");
-      // The task-linkage header (`→ <objective>`) is a group label, not an
-      // agent row — prefixing it with `agent: ` mislabels it.
-      const header = line.startsWith("→ ");
-      const text = continuation ? line.trimStart() : header ? line : `agent: ${line}`;
+      const text = continuation ? line.trimStart() : line;
       return `${index === 0 ? "├─" : "│ "} ${text}`;
     });
     if (inner) {
       // Keep the card footer last while making worker rows part of the same
       // detailed widget rather than appending a disconnected second footer.
+      // Audit 2026-09-07: on the auditing card the worker rows used to land
+      // between the auditor observations and the auditor `└─` footer,
+      // visually attaching workers to the verifier block. Insert before the
+      // auditor block instead so its observations + footer stay contiguous.
+      const auditorAt = inner.findIndex((line) => line.includes("├─ auditor: "));
       const footerFromEnd = [...inner].reverse().findIndex((line) => line.startsWith("└─"));
-      const insertAt = footerFromEnd >= 0 ? inner.length - 1 - footerFromEnd : inner.length;
+      const insertAt = auditorAt >= 0
+        ? auditorAt
+        : footerFromEnd >= 0 ? inner.length - 1 - footerFromEnd : inner.length;
       withAgents = [...inner.slice(0, insertAt), ...agentLines, ...inner.slice(insertAt)];
     } else {
       // A worker can remain tracked while the parent card is temporarily
       // absent. Keep that activity visible instead of hiding it with the
-      // rest of the empty state.
-      withAgents = ["● active workers", ...agentLines, "└─ /glla agents for full worker detail"];
+      // rest of the empty state. v0.38.23: no command-hint footer —
+      // extension meta is noise; the rows carry the information. Audit
+      // 2026-09-07: no invented `● active workers` header either (headers
+      // died in v0.38.23) — the count line leads when present, else the
+      // bare rows stand alone.
+      const orphanHead = extras?.agents?.line;
+      withAgents = orphanHead ? [orphanHead, ...agentLines] : [...agentLines];
     }
+  }
+  // The card always reads as a finished block: a final `├─`/`│` row
+  // promises continuation rows that never come (field 2026-09-08 220808 —
+  // the active card ended on its action row, reading as cut off). Close
+  // the tail whatever built it; rows that already close (`└─`, the head,
+  // the spacer) are untouched. Tree prefixes are literal — paint wraps
+  // content, never the glyph — so this holds themed too.
+  if (withAgents && withAgents.length > 0) {
+    const tailIndex = withAgents.length - 1;
+    const tail = withAgents[tailIndex]!;
+    const m = tail.match(/^(├─ |│  |│ )/);
+    const prefix = m?.[1] ?? "";
+    if (prefix) withAgents[tailIndex] = `└─ ${tail.slice(prefix.length)}`;
   }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
@@ -1342,7 +1521,7 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
 function waitingListStatus(state: State, _now: number, theme?: DisplayTheme, width?: number): string {
   const queue = state.list ?? [];
   const head = queue[0];
-  const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
+  const objective = head?.objective?.trim() ? displayObjective(head.objective) : "unnamed queued item";
   const hold = typeof state.loadHoldAt === "number" ? " · held on restore" : "";
   // Audit 2026-09-06: the width budget truncates the END of the status
   // line — the `/glla resume` action must survive, so the OBJECTIVE takes
@@ -1359,7 +1538,7 @@ function waitingListStatus(state: State, _now: number, theme?: DisplayTheme, wid
 function waitingListLines(state: State, theme?: DisplayTheme, width?: number): string[] {
   const queue = state.list ?? [];
   const head = queue[0];
-  const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
+  const objective = head?.objective?.trim() ? displayObjective(head.objective) : "unnamed queued item";
   const objectiveBudget = budgetFor(width, visibleLen("├─ up next: "), 56);
   const action = typeof state.loadHoldAt === "number"
     ? "held on restore · /glla resume starts the queue · /list next skips/chooses"
@@ -1495,6 +1674,20 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const tokUsed0 = g.usage?.tokensUsed ?? 0;
   if (tokenLimit > 0) headSegs.push(paint(theme, "dim", `${fmtTokens(tokUsed0)}/${fmtTokens(tokenLimit)} ${meter(tokUsed0 / tokenLimit)}`));
   else if (tokUsed0 > 0) headSegs.push(paint(theme, "dim", `${fmtTokens(tokUsed0)} tok`));
+  // v0.38.23 lifesign: active-clear heads breathe on worker evidence and
+  // carry the freshest-evidence age as the last segment. Any other status
+  // keeps its own glyph language (⏸/⟡/⚠/⏳) — the lifesign never fights
+  // the status semantics, and without tracked rows no readout is invented.
+  const headLive = g.status === "active" && !interrupted && !attention && !recovering
+    ? headLifesign(extras?.agentRows)
+    : undefined;
+  if (headLive) {
+    // Audit 2026-09-07: the fresh age text rides the documented success
+    // ramp (head glyph + age text + row glyphs are success <5m) — dim
+    // belongs to idle surfaces, not live evidence.
+    const ageColor = headLive.band === "fresh" ? "success" : headLive.band === "aging" ? "warning" : "error";
+    headSegs.push(paint(theme, ageColor, `stream ${fmtDuration(bucketSilentMs(headLive.freshestMs))}`));
+  }
   // v0.28.30: the type stays visible — v0.33.0 names it via the "list item"
   // header segment (list policy) and the distinct card icons (● goal,
   // ∞/↓/↑ loop, ⟡ auditing, ⏸ paused) + the type-named footer verbs.
@@ -1507,7 +1700,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const objBudget = width && width > 0
     ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 2 - 3 - visibleLen(segsText))
     : 48;
-  const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
+  const headIcon = headLive
+    ? paint(theme, headLive.band === "fresh" ? "success" : headLive.band === "aging" ? "warning" : "error", headLive.breath)
+    : icon;
+  const head = `${headIcon} ${truncateObjective(displayObjective(g.objective), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
   // v0.38.8: durable verdict tally as a first-class card row — the widget
   // is the glance surface, and stored verdicts are the progress evidence
@@ -1524,20 +1720,29 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     lines.push(`├─ ${paint(theme, "dim", `Recovery: ${repairStep}`)}`);
   }
   // A model switch crosses an asynchronous boundary while the goal remains
-  // active. Keep the complete durable recovery projection on the widget too;
-  // otherwise the head says only "active" while pending/attempted/skipped
-  // candidates are invisible until the goal is parked.
-  if (g.status === "active" && state.mainModelRecovery) {
-    const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-    recoverySummary.forEach((line, i) => {
-      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
-    });
+  // active. Keep that fact visible, but do not print the full recovery report
+  // into the glance card; it made the card taller than the space below the
+  // editor. `/goal status` remains the detailed recovery surface.
+  // v0.38.30 audit: goal card owns goal-kind episodes only (a kind:loop
+  // episode beside an active goal used to misattribute loop recovery here
+  // and hide the goal's own provenance; loop kinds keep the parked /
+  // standalone cards). Fall back to provenance when the compact line is
+  // undefined (blank-primary edge left no model fact at all).
+  const goalRecovery = state.mainModelRecovery?.kind === "goal" ? state.mainModelRecovery : undefined;
+  let recoveryLine: string | undefined;
+  if (g.status === "active" && goalRecovery) {
+    recoveryLine = compactMainModelRecoveryLine(goalRecovery, extras?.mainModelFallbacks, now, width);
+    if (recoveryLine) lines.push(`├─ ${paint(theme, "dim", recoveryLine)}`);
   }
   // Model provenance is a card fact, not a notification: keep it visible
-  // across active, interrupted, auditing, and paused branches. In
-  // particular, never replace a configured forbidden ref with "none" — the
-  // skipped line explains why it did not handle the turn.
-  const provenance = modelProvenanceLines(extras?.modelProvenance, width);
+  // across active, interrupted, auditing, and paused branches. During an
+  // active recovery the compact recovery row owns the model fact, so do not
+  // print a second primary/current row beside it. The full chain and skipped
+  // refs remain available through `/goal status`.
+  const provenance = recoveryLine
+    ? []
+    : modelProvenanceLines(extras?.modelProvenance, width);
+  const provenanceStart = lines.length;
   provenance.forEach((line, i) => {
     lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
   });
@@ -1736,7 +1941,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       recoverySummary.forEach((line) => lines.push(`│  ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`));
     }
     else if (Number.isFinite(retryMs)) {
-      const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;
+      // v0.38.31: "now" shares the transition grace window — a retry time
+      // that passed long ago with no dispatch is overdue, not imminent.
+      const overdue = -retryMs >= PAUSED_RESUME_GRACE_MS;
+      const when = retryMs > 0 ? `next probe in ${fmtElapsed(retryMs)}`
+        : overdue ? "overdue — waiting on recovery timer"
+        : "now";
       lines.push(`├─ ${paint(theme, "dim", `auto-retrying · ${when}`)}`);
     } else if (kind === "blocked" && state.mainModelRecovery?.manualResumeRequired === true) {
       lines.push(`├─ ${paint(theme, "warning", "manual recovery hold — automatic probes stopped")}`);
@@ -1777,6 +1987,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // before the first turn), render "awaiting first turn" instead of "saved"
     // — the latter was misleading because no work was ever "saved" before the
     // session ended.
+    if (kind === "wait") {
+      // v0.38.31 (field 2026-09-08 180721): a recovery-timer wait carries no
+      // objective-specific tail — owner + next are already on the lifecycle /
+      // transition / auto-retry rows, and the parked suggestedAction is stock
+      // provider-failure boilerplate identical on every recovery wait. End
+      // the card here, closing the previous row as the footer.
+      const tail = lines[lines.length - 1];
+      if (tail !== undefined) lines[lines.length - 1] = tail.replace(/^├─|^│\s*/, "└─ ");
+      return lines;
+    }
     const spent: string[] = [];
     const tokUsed = g.usage?.tokensUsed ?? 0;
     const audits = g.auditHistory?.length ?? 0;
@@ -1858,10 +2078,30 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`├─ ${paint(theme, "accent", "↳")} ${queue} waiting · up next: ${truncate(nextItem.objective, objectiveBudget)}${paint(theme, "dim", age)}`);
     }
   }
-  const footer = isList
-    ? `${queue > 0 ? `${queue} queued · ` : ""}/list · /glla`
-    : `${queue > 0 ? `${queue} queued · ` : ""}/goal status · /glla`;
-  lines.push(`└─ ${paint(theme, "dim", footer)}`);
+  // v0.38.23: the card footer keeps task info only (queue depth). The
+  // `/goal status` / `/glla` command hints were extension meta, not task
+  // information — dropped. No queue, no footer at all.
+  if (queue > 0) lines.push(`└─ ${paint(theme, "dim", `${queue} queued`)}`);
+  // v0.38.28: provenance rows can be the entire detail block when there is
+  // no recent action, pending task, or queue footer. Close that block with a
+  // terminator instead of leaving `├─`/`│` suggesting missing rows.
+  const provenanceEnd = provenanceStart + provenance.length;
+  const detailedAgentRows = extras?.agents?.lines ?? (extras?.agents?.line ? [extras.agents.line] : []);
+  if (provenance.length > 0 && detailedAgentRows.length === 0 && provenanceEnd === lines.length) {
+    const last = lines[provenanceEnd - 1]!;
+    if (last.startsWith("├─ ") || last.startsWith("│ ")) {
+      lines[provenanceEnd - 1] = `└─ ${last.slice(3)}`;
+    }
+  }
+  // A compact recovery/model row can be the final detail when no other card
+  // fact follows it. Close that one row without changing the established
+  // open-row shape for recent actions or worker details.
+  if (recoveryLine && detailedAgentRows.length === 0 && lines.length > 0) {
+    const last = lines[lines.length - 1]!;
+    if (last.includes(recoveryLine) && (last.startsWith("├─ ") || last.startsWith("│ "))) {
+      lines[lines.length - 1] = `└─ ${last.slice(3)}`;
+    }
+  }
   return lines;
 }
 
@@ -1892,9 +2132,14 @@ function goalDurationMs(g: Goal, now: number): number {
 function completedGoalLines(g: Goal, now: number, theme?: DisplayTheme, width?: number): string[] {
   const done = g.status === "complete";
   const why = g.status === "aborted" ? (g.stopReason ?? g.pauseReason) : undefined;
-  const segs = `${done ? "✓ done" : "✗ aborted"} · ${why ? `${truncate(sanitizeDisplayText(why).replace(/\s+/g, " "), 28)} · ` : ""}took ${fmtElapsed(goalDurationMs(g, now))}`;
+  // Audit 2026-09-07: the outcome word appeared twice (`✓ done · recap ·
+  // ✓ done · took X`) — it leads once now. The recap budget accounts for
+  // every fixed adornment around it (`─ ` + outcome + ` · ` + ` · ` +
+  // tail); the old flat `-4` omitted ~8 cells so the recap truncated early.
+  const outcome = done ? "✓ done" : "✗ aborted";
+  const tail = `${why ? `${truncate(sanitizeDisplayText(why).replace(/\s+/g, " "), 28)} · ` : ""}took ${fmtElapsed(goalDurationMs(g, now))}`;
   const objBudget = width && width > 0
-    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 4 - visibleLen(segs))
+    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 2 - visibleLen(outcome) - 3 - 3 - visibleLen(tail))
     : 44;
   // v0.34.91/v0.36.0: every newly archived terminal path carries a useful
   // recap — including abort/cancel/impossible-derived archives — while the
@@ -1902,7 +2147,7 @@ function completedGoalLines(g: Goal, now: number, theme?: DisplayTheme, width?: 
   const recap = g.completionSummary?.trim()
     ? g.completionSummary.replace(/\s+/g, " ").trim()
     : g.objective.replace(/\s+/g, " ");
-  return [`${paint(theme, "dim", "─")} ${paint(theme, "dim", `${done ? "✓ done" : "✗ aborted"} · ${truncate(recap, objBudget)} · ${segs}`)}`];
+  return [`${paint(theme, "dim", "─")} ${paint(theme, "dim", `${outcome} · ${truncate(recap, objBudget)} · ${tail}`)}`];
 }
 
 function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] {
@@ -1933,8 +2178,11 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
   const footer = !l.measureCmd
     ? "metricless (no plateau) · /loop stop · /loop refine" // v0.33.2: the verb exists now
     : `${l.kind === "audit" ? "metric: closed findings" : truncate(l.measureCmd, budgetFor(width, 3, 30))} · /loop stop`;
+  // Audit 2026-09-07: the branch rides a detail row BEFORE the footer —
+  // appending it after `└─` broke the footer-last tree invariant the
+  // worker-row splice relies on.
+  if (l.branchName) lines.push(`├─ ⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
   lines.push(`└─ ${paint(theme, "dim", footer)}`);
-  if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
   return lines;
 }
 

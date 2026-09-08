@@ -86,27 +86,24 @@ test("v0.35.29 #15: the compact worker summary hides at zero and warns on the le
     row({ recordId: "b", agentType: "plan", status: "hung", phase: "hung", silentMs: 26 * MIN }),
   ]);
   assert.ok(line!.includes("2 agents"));
-  assert.ok(line!.includes("plan silent 26m"));
+  assert.ok(line!.includes("plan quiet 26m"));
   assert.ok(line!.endsWith("⚠"), "hung busiest child raises the warning glyph");
 });
 
-test("v0.35.65: detailed widget rows expose identity, purpose, evidence-backed phase, elapsed, silence, and overflow", () => {
+test("v0.38.23: detailed widget rows are single-line glyph-first with age, plus a command-free overflow", () => {
   const active = row({ recordId: "active-1", agentType: "Explore", summary: "inspect auth flow", phase: "active", startedAt: NOW - 3 * MIN, silentMs: 5_000 });
   const detail = renderAgentsWidgetLines([active], NOW, 1);
-  assert.match(detail[0]!, /Explore · inspect auth flow · id active-1/);
-  assert.match(detail[1]!, /RUNNING · ACTIVE · 3m00s · silent 5s/);
+  assert.deepEqual(detail, ["▶ Explore · inspect auth flow · active 5s"]);
 
   const lines = renderAgentsWidgetLines([
     active,
     row({ recordId: "hung-2", agentType: "Plan", summary: "audit recovery", status: "hung", phase: "hung", silentMs: 26 * MIN }),
     row({ recordId: "queued-3", agentType: "Plan", summary: "wait for slot", status: "queued", phase: "queued", silentMs: 2_000 }),
   ], NOW, 2);
-  assert.equal(lines.length, 5, "two two-line rows plus an explicit overflow affordance");
-  assert.match(lines[0]!, /Plan · audit recovery · id hung-2/);
-  assert.match(lines[1]!, /HUNG\? · HUNG/);
-  assert.match(lines[2]!, /Explore · inspect auth flow · id active-1/);
-  assert.match(lines[3]!, /RUNNING · ACTIVE/);
-  assert.match(lines[4]!, /1 more agents · \/glla agents/);
+  assert.equal(lines.length, 3, "two single-line rows plus an explicit overflow count");
+  assert.match(lines[0]!, /^⚠ Plan · audit recovery · quiet 26m00s$/, "hung sorts first with the warning glyph");
+  assert.match(lines[1]!, /^▶ Explore · inspect auth flow · active 5s$/);
+  assert.equal(lines[2], "… 1 more agents", "overflow names its count, no command hint");
 });
 
 test("v0.35.66: --tail matches the exact child identity and formats entries tolerantly", () => {
@@ -288,7 +285,11 @@ test("v0.35.29 #15: end-to-end — /glla agents renders real probe data; widget 
     assert.match(notified, /HUNG\?/);
     assert.match(notified, /id probe-live-1/);
     assert.match(notified, /ACTIVE|UNKNOWN/);
-    assert.match(notified, /silent/);
+    // Audit 2026-09-07: the age label never says "silent" — fresh bands
+    // read `active {age}`, everything else `quiet {age}`.
+    assert.match(notified, /quiet 26m/);
+    assert.match(notified, /active 0s/);
+    assert.doesNotMatch(notified, /silent/);
 
     // The aggregate status command keeps its semantics and does not duplicate
     // the detailed worker roster; /glla agents is the deep inspection path.
@@ -326,20 +327,30 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
     list: [],
   } as never;
   const base = buildWidgetLines(state, undefined, Date.now(), undefined, 120, {})!;
-  const withAgents = buildWidgetLines(state, undefined, NOW, undefined, 120, { agents: { line: "● 2 agents · Explore silent 26m", lines: ["Explore · inspect auth · id active-1 · RUNNING · ACTIVE · 3m00s · silent 5s"] } })!;
+  const withAgents = buildWidgetLines(state, undefined, NOW, undefined, 120, { agents: { line: "● 2 agents · Explore quiet 26m", lines: ["Explore · inspect auth · id active-1 · RUNNING · ACTIVE · 3m00s · active 5s"] } })!;
   assert.ok(!base.some((l) => l.includes("agent:")), "hidden at zero tracked children");
-  const compactStatus = buildStatusText(state, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
-  assert.match(compactStatus, /2 agents · Explore silent 26m/);
+  const compactStatus = buildStatusText(state, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore quiet 26m", lines: [] } })!;
+  assert.match(compactStatus, /2 agents · Explore quiet 26m/);
   const stateRecord = state as unknown as { goal: Record<string, unknown>; [key: string]: unknown };
-  const auditStatus = buildStatusText({ ...stateRecord, goal: { ...stateRecord.goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
-  assert.doesNotMatch(auditStatus, /2 agents/);
-  const agentAt = withAgents.findIndex((l) => l.includes("agent: Explore · inspect auth"));
+  // Audit 2026-09-07: the summary rides the auditing status too — a
+  // hung/aborting child must never hide behind the audit (HUNG-never-silent).
+  const auditStatus = buildStatusText({ ...stateRecord, goal: { ...stateRecord.goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore quiet 26m", lines: [] } })!;
+  assert.match(auditStatus, /2 agents/);
+  const agentAt = withAgents.findIndex((l) => l.includes("Explore · inspect auth"));
+  assert.ok(agentAt >= 0, "worker detail stays inside the card");
   const footerAt = withAgents.findIndex((l) => l.startsWith("└─"));
-  assert.ok(agentAt >= 0 && agentAt < footerAt, "worker detail stays inside the card before its footer");
+  // v0.38.23: empty queue means no separate queue footer. Closed card
+  // (field 2026-09-08 220808): with no queue the detail row itself
+  // terminates the tree — worker rows must never land AFTER a footer.
+  assert.ok(footerAt === -1 || agentAt <= footerAt, "detail never lands after the footer");
 
-  const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["Explore · inspect auth · id active-1 · RUNNING · ACTIVE · 3m00s · silent 5s"] } })!;
-  assert.match(agentOnly[0]!, /active workers/);
-  assert.match(agentOnly.at(-1)!, /\/glla agents/);
+  // Audit 2026-09-07: no invented header — bare rows stand alone, and
+  // the count line leads when the snapshot carries one.
+  const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["▶ Explore · inspect auth · active 5s"] } })!;
+  assert.equal(agentOnly[0], "└─ ▶ Explore · inspect auth · active 5s", "orphan rows render bare and closed, no invented header");
+  assert.doesNotMatch(agentOnly.join("\n"), /active workers/);
+  const agentOnlyCounted = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { line: "● 1 agent · Explore active 5s", lines: ["▶ Explore · inspect auth · active 5s"] } })!;
+  assert.equal(agentOnlyCounted[0], "● 1 agent · Explore active 5s", "the count line leads orphan rows when present");
 });
 
 // v0.35.45 (audit finding): /glla agents --tail rendered child-transcript

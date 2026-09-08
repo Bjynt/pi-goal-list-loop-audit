@@ -1,5 +1,111 @@
 # Changelog
 
+## 0.38.35 — closed card + smart summary (2026-09-08)
+
+### Fixed
+
+- **Card no longer reads cut off (field 2026-09-08 220808):** the head objective now cuts at the last clause boundary inside the budget instead of mid-word (`truncateObjective`; character cut remains the fallback); the steady-state `model: primary … · inherited from session` row is dropped — it restated pi's own status line two rows below; and every card closes — the final `├─`/`│` row becomes `└─` whatever built it (active action row, lone orphan worker row). Provenance still renders on any news (pin, fallbacks, skips, failover); `/goal status` keeps the full chain.
+- **Stale card tests updated deliberately, purpose preserved:** the v0.33.0 slim-card `├─` tail, the v0.38.28 lone-row close, the loop-kind test's incidental model assertion, the narrow-width truncation fixture (now on a pinned row), and the worker-before-footer invariant (detail never lands *after* a footer).
+
+### Verification
+
+- Full `release:check`: 2037 pass / 2 skip / 0 fail across 204 files; `tsc --noEmit` clean.
+- Evidence: `audit/UI-CARD-CLOSED-2026-09-08.md`.
+
+## 0.38.34 — completion communication: fair replay rotation + stale-test refresh (2026-09-08)
+
+### Fixed
+
+- **Replay starvation (review P2, real bug):** `replayUndeliveredApprovalRenders` always took the oldest five pending entries, so five persistently unconfirmed receipts pinned the head forever and a sixth pending summary was never attempted in that session. Attempted-but-still-pending entries now rotate behind the unattempted in-scope tail (stable within groups; delivered/out-of-scope untouched), so every pending render is attempted within `ceil(n/5)` contacts. No entry dropped, confirmation rules unchanged, rotation alone never acknowledges. Pinned by a six-render regression test.
+- **Five stale release-gate assertions refreshed deliberately:** the approval-chat two-detail cap is lifted (Tests + meaningful Unresolved preserved — the filler filter already keeps chat glanceable); the no-audit briefing test now configures the session file and asserts on the visible session entry instead of the removed toast; continuation-payload byte fixtures updated for the completion-communication guidance (+543 bytes/payload, growth stays exactly linear).
+
+### Verification
+
+- Full `release:check`: 2034 pass / 2 skip / 0 fail across 204 files; `tsc --noEmit` clean.
+
+## 0.38.33 — findings.md indent convention normalized (2026-09-08)
+
+### Fixed
+- Indented checkboxes now count and queue identically across all four findings.md readers (DECIDED 2026-09-08: normalize). The fan-out parser already queued indented boxes while `countOpenAuditFindings`, `topOpenAuditFinding`, and the `auditMeasureCmd` shell grep ignored them — metric, reprieve, and queue disagreed. All three counters accept optional leading indent, mirroring the fan-out shape; the reprieve strips the indent, never the text.
+- Regression coverage in `tests/loop-forever.test.ts` (four-reader agreement + indent-strip pins; the exact-string measure pin and closed-FIX count updated); `tsc` clean.
+
+## 0.38.32 — migrate-on-read backfill for pre-v0.38.21 audit histories (2026-09-08)
+
+### Fixed
+- Pre-v0.38.21 audit histories lack `superseded` flags, so one post-upgrade retry could argue already-settled objections as live (DECIDED 2026-09-08: migrate-on-read). `liveDisapproval` now replays the `appendAuditVerdict` scope rules over the stored array first (`backfillSupersededObjections`): a later verdict-bearing disapproval or clean approval retires older live rounds in place. Add-only (never clears a flag) and idempotent — post-v0.38.21 histories pass through untouched, and the flags ride the next normal state write to disk.
+- Regression coverage in `tests/migrate-on-read.test.ts` (5 pins: settled-by-approval, settled-by-later-disapproval, lone legacy stays live, error transparency, idempotence); existing `tests/objection-pinning.test.ts` green; `tsc` clean.
+
+## 0.38.31 — overdue wait-pause stops promising imminent resume (2026-09-08)
+
+### Fixed
+- A recovery-timer wait whose retry time passed long ago on a held/idle host no longer claims `next: resuming now` / `auto-retrying · now` forever while also reading `paused` + `safely parked` (field screenshot 20260908_180721). `resuming now` / `resuming…` / `now` are grace-bounded (90s); past that the card and status bar name the timer (`next: recovery timer`, `auto-retrying · overdue — waiting on recovery timer`, `retry overdue`).
+- Recovery-timer waits end at the auto-retry row: the stock provider-failure `pauseSuggestedAction` boilerplate and the generic `awaiting first turn` / `saved` tail are gone (owner + next are already on the rows above); the previous row closes the tree with `└─`. Decision/error/blocked pauses are unchanged.
+- Regression coverage in `tests/paused-overdue-display.test.ts` (6 pins); two v0.34-era pins that encoded the old permanent-`resuming…` wording updated to the grace contract; `tsc` clean.
+
+## 0.38.30 — fresh audit pass: nine low-severity fixes (2026-09-08)
+
+### Fixed
+- Approval-render replay no longer runs before the stale/ownership fence: wrappers skip replay on stale, worker, owner-denied, handoff, and rebind handles (`shouldSkipApprovalRenderReplay`), so a superseded session running stale-allowed `/loop status` cannot mark delivery into a dead session.
+- `countDone` counts all descendants of closed parents, matching the recursive `countTotal` (a closed parent with nested grandchildren no longer under-reads done).
+- Plain-text surfaces use the ANSI-free truncator: `completion-summary.ts` width budgets and the headless settings flat rows route through `truncateCells`; the painted TUI tables keep `truncateToWidth`.
+- Narrow-terminal budgets clamp to the available width instead of the floor, and the compact recovery line takes width-aware inner budgets — provenance/fallback chains truncate indoors instead of hard-cutting mid-token.
+- The display-only objective projection additionally strips `#` headers, `>` quotes, `[label](url)` links, and `*em*` emphasis. Stored objectives unchanged.
+- The approval-render sidecar repairs a corrupt file after ledgering once, truncates objectives by code points, and caps chat lines (60 lines × 1000 chars) behind the 20-entry spillway.
+- The goal card owns goal-kind recovery episodes only: `kind:loop` episodes keep the parked/standalone cards and no longer suppress the goal's provenance; blank-primary recovery falls back to provenance instead of leaving no model fact.
+- `topOpenAuditFinding` strips aligned/tabbed boxes with the same `[ \t]+` class as its matcher, so the reprieve note never carries checkbox markup.
+- `parseLoopStartArgs` consumes known keys only with valid values — junk like unquoted `time=out` stays in the target prose instead of vanishing while defaults silently apply (`done` still always teaches its removal; `measure` accepts any non-empty command).
+- Regression coverage in `tests/audit-2026-09-08.test.ts` (11 pins); `tsc` clean; focused display/loop-forever/approval suites green.
+
+## 0.38.29 — compact active-card recovery and judgment details (2026-09-08)
+
+### Fixed
+- The active goal card now renders main-model recovery as one compact, truthful row instead of repeating the full chain, current model, pending switch, attempts, and skip details. Full recovery diagnostics remain available through `/goal status`; the status footer no longer duplicates that report.
+- Durable-vs-defer plaques cap their glance-card prose while preserving ordering, recommendation, and selected-choice facts. The final judgment row closes the tree cleanly.
+- Markdown emphasis/code wrappers are removed from the display-only objective projection, so `**objective**` and backtick-wrapped commands no longer add visual noise. Stored objectives remain unchanged.
+- Added regression coverage for compact recovery, duplicate suppression, Markdown cleanup, and the closed judgment tail.
+
+## 0.38.28 — close redundant provenance rows in the active goal card (2026-09-08)
+
+### Fixed
+- The active card no longer shows a duplicate `handled turn` row when it is the same model as the primary model. When provenance is the final detail block, its last row now closes with `└─` instead of a dangling `│`/`├─`, so the card no longer implies missing rows. Failover-handled turns remain visible. Added focused regression coverage; `tsc` and the focused display suite pass.
+
+## 0.38.27 — selective port of PRs #45/#46: /loop pause + widget subtask count (2026-09-08)
+
+### Added
+- `/loop pause` soft-hold (ported from Bjynt's PR #46): parallel to `/goal pause` and `/glla pause` — clears the tick, holds iteration/best/history verbatim with `stopReason: "paused by user (/loop pause)"`, ledger `loop_paused`, no `finishLoopGit`, no queue advance; `/loop resume` picks it up via the extended `RESUMABLE_STOP`. Pinned by `tests/loop-pause.test.ts` (3 tests).
+- Widget task count: a closed parent covers its subtasks (ported from Bjynt's PR #45 — field symptom 6 real tasks displayed "2/24"). Pinned (7/12 + 1/4 cases).
+- Held with recorded rationale (`audit/PR-45-46-DISPOSITION-2026-09-08.md`): `auditTasks` per-task auditor (token-cost surface needs dedicated review), `bypassTriggered` abort shortening (round-trip untested + v0.38.24 abort-latch interaction unverified); dropped the malformed "best solution" auditor line (taste-judge scope creep). Full gate 1990 pass / 0 fail.
+
+## 0.38.26 — approval-render store: spillway cap keeps undelivered renders (2026-09-08)
+
+### Fixed
+- Post-tag review of the v0.38.25 store: the sidecar cap could trim undelivered renders past 20 entries (non-positive slice budget). The cap now applies to delivered history only — undelivered renders are never dropped (self-draining: any user command replays them). Same 7 behavioral pins green; full gate 1986 pass / 0 fail.
+
+## 0.38.25 — post-objective summary: canonical approval render, persist + replay, audit-goal counts (2026-09-07)
+
+### Fixed
+- Field failure: goal `20260907131550-12ddoy` completed with a perfect six-label archive record, but the approval chat lines fired into a dead context (auditor verdict landed with no live turn) — record perfect, delivery silent. Cross-harness survey (`audit/POST-OBJECTIVE-SUMMARY-2026-09-07.md`): Codex CLI 0.147.0 and Claude Code both leave the final message to the agent and standardize only usage/session-persistence/resume; pi-goal-x (in-repo v0.26.1 source) fixes the report order (verdict → complete → task summary → detail) — validating the outcome-first shape. Nobody persists the render; GLLA now does.
+- ONE canonical builder: `buildTerminalApprovalRender` (outcome + ≤2 details + approval + counts + record) feeds chat, transcript, external, and the persisted render on all three approval paths (detached auditor, manual verify, Esc-without-audit). `buildApprovalChatLines` gains an optional `counts` slot (backward compatible); the stale pre-verdict `Next:` stays stripped everywhere.
+- Audit-goal counts line rides every render, built from durable state only: `— run: 42 turns · 17 file writes · 23 bash calls · auditor approved (1 verdict).` Absent facts are named as absent; the no-audit path says so honestly.
+- Persist + replay: renders persist to `.pi-glla/pending-approval-renders.json` at archive time with `delivered: !isIdle()` (the probe fails toward undelivered — a duplicate beats a loss). All five command handlers (`/goal /glla /review /list /loop`) replay undelivered renders on live contact, fire-once fenced via `deliveredAt`, ledgered (`terminal_approval_render_persisted/_replayed`), corrupt-store safe. Coverage: 7 new behavioral pins + updated source-grep contract.
+
+## 0.38.24 — audit pass: abort-latch send guards, ownership compare-and-swap, auditor inherit parity (2026-09-07)
+
+### Fixed
+- Full display/lifecycle/settings audit pass (goal `20260907131550-12ddoy`, three parallel read-only scouts): 44 findings → 0 open. Display decisions (user-grilled): head owns liveness (status drops the `LIVE` capsule/tails, keeps `[WORKING]` + counts), exceptions-only `quiet` default (troubled rows + count line; healthy fan-out lives on the fleet panel), `active {age}` / `quiet {age}` worker labels.
+- Lifecycle HIGH: `sendContinuation` / `sendStallEscalation` / `sendLengthContinue` refuse on `flags.abortedStandDown`; terminal-notice refusal scoped to the abort latch so transcript closure still wins; zombie retry routes on the abort-closure owner (loop abort no longer stranded by a goal started mid-delay); cycle-reset consumes budget (`attempts+1`) and honors the 24h horizon while the probe turn stays prompt per the v0.34.132 contract.
+- Lifecycle MED/LOW: fallback `agent_start`/`turn_start` acks refuse on intervening user messages; successor absorb + self-heal share `clearDeadGenerationDispatch` (no more idle behind a "re-armed" lie); ownership refresh is compare-and-swap (live foreign claims never clobbered; dead records still refresh for heartbeat reclaim); command entry forces a fresh ownership read past the background throttle; length-continue lost its stale-classifier exemption.
+- Settings: `stallShortWords: 0` (= off) survives normalization; auditor thinking gains the drafter's `session — inherit` row + non-reasoning picks clear stale overrides; bare `/glla fallbacks` reads on stale handles (only `clear/off/unset/none` mutates); typing `auto` in the notify editor round-trips to unset; v0.38.23 comment/doc drift swept (richness/quiet copy, reviewer write→migrate lifecycle, DESIGN one-line rows, SETTINGS wedge vs aggressive default). Full audit: `audit/AUDIT-PASS-2026-09-07.md`. Coverage: `release:check` 1979 pass / 0 fail.
+
+## 0.38.23 — below-chat widget: forced placement, single-line rows, evidence lifesign (2026-09-07)
+
+### Fixed
+- Below-chat pinning (field: GLLA card vs fleet visibly swapping slots across ticks, 2026-09-06 screenshots). The `pi-glla` widget now passes `{ placement: "belowEditor" }` — the same zone the native fleet defaults to — so both surfaces stop trading places. Forced, not a setting: one stable layout for everyone, no new settings row or drift pin.
+- Extension-meta footers deleted. The orphan-worker `└─ /glla agents for full worker detail`, the card `└─ /goal status · /glla` / `└─ /list · /glla` hints, and the `… N more agents · /glla agents` overflow pointer all named our extension, not the user's task — pure noise once `/glla` is known. Queue depth survives as task info (`└─ N queued`); empty queue means no footer at all.
+- Option-2 worker rows: one glyph-first line per tracked child (`▶ scout · ui-fixes · silent 2m`, `⚠ worker · art-batch · silent 31m`), age before any suffix so narrow-terminal truncation cuts the least important field first. The `→ <objective>` task-linkage header is gone (the card head already names the objective — it repeated it verbatim), ids stay in the `/glla agents` table, overflow names its count only. `/glla agents` full table untouched (`└ blocks:`, Recent hangs, abort guidance all intact).
+- Evidence lifesign on active-clear heads: freshest-worker-evidence readout as the last head segment (`· stream 8s`), breathing glyph derived from evidence counters (`Σ toolUses + outputTokens mod 4` over `●→◉→○→◉`) — never from wall-clock, so the widget key stays stable between evidence and the v0.37.1 re-layout cannot return. Fresh (<5m) breathes, aging (5–30m) freezes the ring, stale (30m+) hollows it, a hung child triangles the head. Non-active statuses (⏸/⟡/⚠/⏳) keep their own glyph language; no rows means no readout invented.
+- Semantic color ramp on head glyph + age text + row glyphs only (success <5m, warning to 30m, error past it; queued caps at amber — waiting is not broken; meter stays progress-colored, fleet line untouched). Color never rides alone: glyph shape (▶/◉/⚠) plus the silence number carry the same meaning unpainted, and a no-theme render contains zero ANSI. Coverage: `tests/lifesign.test.ts` (7 tests: bands incl. queued cap, empty-invents-nothing, counter-derived breath, head readout/triangle/pause/bare, row color + unpainted shape+number, 80-col fit + bucket key-stability) plus reshaped pins in `display`/`agents-panel`/`subagent-display-richness`.
+
 ## 0.38.22 — subagent display unification: richness ladder + upstream triple-render report (2026-09-05)
 
 ### Fixed

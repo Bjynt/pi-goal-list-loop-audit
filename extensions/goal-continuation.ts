@@ -25,6 +25,7 @@
 //     send_rearm_*, queue_stuck_detected, ...).
 // ============================================================================
 
+import { deliverTerminalSummary } from "./terminal-summary-delivery.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -277,6 +278,20 @@ let continuationTimer: NodeJS.Timeout | null = null;
 let continuationScheduledFor: string | null = null;
 
 let lastContinuationSentAt = 0;
+
+// Audit 2026-09-07 (MEDIUM): wall-clock of the last genuine user-role
+// message observed via message_start. A user message arriving after a
+// dispatch was sent means the next agent_start/turn_start belongs to the
+// user's manual turn, not the continuation — the fallback ack must refuse
+// it so a manual turn can't hide a genuine no-start. Our own continuations
+// send as customType (never role user) and our injected draft seed is
+// skipped by the caller, so only real user turns stamp this.
+let lastUserMessageAt = 0;
+
+/** Record a genuine user message (message_start, role user, not our seed). */
+export function noteUserMessageForDispatch(): void {
+  lastUserMessageAt = Date.now();
+}
 
 let queueStuckProbe: ReturnType<typeof setTimeout> | null = null;
 
@@ -674,7 +689,19 @@ export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string,
   if (source === "before_agent_start") {
     if (!dispatchPromptMatches(record, prompt)) return false;
   } else if (source === "agent_start" || source === "turn_start") {
-    // fallback — no prompt to match
+    // fallback — no prompt to match. But a user message after the send
+    // means this turn is the user's manual turn, not the continuation:
+    // refuse so the watchdog keeps watching the genuine no-start.
+    // before_agent_start with the marker still acks (strongest proof).
+    if (lastUserMessageAt > record.sentAt) {
+      appendLedger(ctx.cwd, "continuation_start_ack_refused_user_turn", {
+        dispatchId: record.id,
+        source,
+        sentAt: record.sentAt,
+        lastUserMessageAt,
+      });
+      return false;
+    }
   } else {
     // message_update / agent_end / other liveness signals cannot settle
     // without an existing proof, and pending.phase !== "accepted" already
@@ -1138,26 +1165,31 @@ export interface TerminalCompletionNotice {
   goalId: string;
   outcome: string;
   details: string[];
+  /** Canonical visible summary, including record and concrete evidence. */
+  chatLines?: string[];
   /** Audit 2026-09-06: the session generation that produced the verdict.
    * A stale generation (verdict applied after handoff/reload) must not
    * fire a `✓ done` turn into the successor session's unrelated work. */
   generation?: number;
 }
 
-/** v0.38.18 (track 3: junk-runner stale waiting-verdict): the detached
- * verifier settles asynchronously — the transcript's last word is "the
- * verdict will be applied asynchronously", and a toast is the only
- * closure. A later "how are we looking" then truthfully re-reports the
- * stale transcript as still-waiting even though the goal is archived.
- * This delivers the `✓ done` brief INTO the conversation as a followUp
- * turn so the transcript records the completion. Goal-null-safe (the goal
- * is already archived when this fires), fire-once per goal via a durable
- * ledger fence, and fenced like every other automatic send. Returns true
- * when the notice was dispatched. */
+/** Deliver a visible, contextual summary without starting an acknowledgement
+ * turn. Confirm the custom session entry, not the void sendMessage return.
+ * The outbox owns retries; session entries fence duplicate delivery. */
 export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: TerminalCompletionNotice): boolean {
   if (supervisorPaused(state)) return false;
   if (mainModelRecoveryActive()) return false;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
+  // Audit 2026-09-07 (HIGH, scoped): refuse while the user-abort latch
+  // stands — a `✓ done` turn firing under the user's hands after Esc/zombie
+  // abort violates the stand-down promise. Deliberately NOT gated on
+  // stoodDown/pending: closure wins there (a pending dispatch fences itself
+  // on the archived goal), and dropping the notice would lose transcript
+  // closure with no retry path.
+  if (flags.abortedStandDown) {
+    appendLedger(ctx.cwd, "terminal_completion_notice_refused_stood_down", { goalId: notice.goalId });
+    return false;
+  }
   if (!flags.extensionApi) return false;
   if (isForeignCtx(ctx)) return false;
   if (typeof notice.generation === "number" && notice.generation !== flags.sessionGeneration) {
@@ -1168,27 +1200,12 @@ export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: Term
     });
     return false;
   }
-  try {
-    const already = readLedgerTail(ctx.cwd, 400, (entry) =>
-      entry.type === "terminal_completion_notice_sent" &&
-      typeof (entry.value as { goalId?: unknown } | null)?.goalId === "string" &&
-      (entry.value as { goalId: string }).goalId === notice.goalId,
-    );
-    if (already.length > 0) return false;
-  } catch {
-    return false;
-  }
-  const content = [
+  const content = (notice.chatLines ?? [
     `✓ done — ${notice.outcome}`,
     ...notice.details,
-    "— goal archived; nothing further is owed. Acknowledge briefly; start follow-up work only if asked.",
-  ].join("\n");
+  ]).join("\n");
   try {
-    flags.extensionApi.sendMessage({
-      customType: GOAL_EVENT_ENTRY,
-      content,
-      display: false,
-    }, { triggerTurn: true, deliverAs: "followUp" });
+    if (!deliverTerminalSummary(ctx, flags.extensionApi, GOAL_EVENT_ENTRY, notice.goalId, content)) return false;
   } catch {
     appendLedger(ctx.cwd, "terminal_completion_notice_unsent", { goalId: notice.goalId });
     return false;
@@ -1249,7 +1266,11 @@ export function sendContinuation(goalId: string): void {
   // refuses new schedules; this closes the armed-timer race.
   if (supervisorPaused(state)) return;
   if (mainModelRecoveryActive()) return;
-  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  // Audit 2026-09-07 (HIGH): an armed timer must not fire after a user-Esc
+  // or zombie abort. continuationDispatchStoodDown alone is insufficient —
+  // explicit resume paths release it while flags.abortedStandDown stays set
+  // until a schedule actually arms, so check the abort latch here too.
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch || flags.abortedStandDown) return;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!state.goal || state.goal.id !== goalId) {
@@ -1403,7 +1424,9 @@ export function sendContinuation(goalId: string): void {
 // call otherwise. display: true — the user should see the warning too.
 export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
   if (supervisorPaused(state)) return;
-  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  // Audit 2026-09-07 (HIGH): a stall nudge must not resurrect a stood-down
+  // chain — same abort-latch reasoning as sendContinuation.
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch || flags.abortedStandDown) return;
   if (!state.goal || !guardGoalBeforeContinuation(ctx, "stall-escalation")) return;
   const remaining = HEARTBEAT_MAX_NUDGES - nudges;
   const text = [
@@ -1445,7 +1468,9 @@ export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void
 // plain sessions truncate too.
 export function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
   if (supervisorPaused(state)) return;
-  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  // Audit 2026-09-07 (HIGH): a length nudge must not resurrect a stood-down
+  // chain — same abort-latch reasoning as sendContinuation.
+  if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch || flags.abortedStandDown) return;
   if (state.goal && !guardGoalBeforeContinuation(ctx, "length-continuation")) return;
   const attempt = dispatchPrepare(ctx, {
     generation: flags.sessionGeneration,

@@ -1,5 +1,5 @@
 import type { Goal, Status } from "./goal-loop-core.js";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateCells } from "./goal-loop-display.js";
 
 /**
  * The durable, user-facing terminal recap contract. Keep this as a small
@@ -169,23 +169,115 @@ export function withoutStaleNext(details: string[] | undefined): string[] {
   return (details ?? []).filter((d) => !/^\s*Next\s*:/i.test(d));
 }
 
-/** v0.38.20: the approval chat notify — outcome first, at most two
+/** v0.38.20: the approval chat notify — outcome first, all bounded
  * informing details (the full record lives in the archive and the
  * transcript notice), then the approval trailer and the record pointer.
  * Five 120-char label lines scan as soup, not a summary (field
- * 2026-09-04); the stale Next never reaches the chat. */
+ * 2026-09-04); the stale Next never reaches the chat.
+ * v0.38.25: optional `counts` audit-goal counts line rides between the
+ * approval trailer and the record pointer (the pointer stays last). */
 export function buildApprovalChatLines(notice: {
   outcome: string;
   details: string[] | undefined;
   approval: string;
   record: string;
+  counts?: string;
 }): string[] {
   return [
     `✓ done — ${notice.outcome}`,
-    ...withoutStaleNext(notice.details).slice(0, 2),
+    ...withoutStaleNext(notice.details),
     notice.approval,
+    ...(notice.counts ? [notice.counts] : []),
     notice.record,
   ];
+}
+
+/** v0.38.25: the audit-goal counts line. Compact execution + audit proof
+ * built ONLY from durable goal state — turns/file-writes/bash from
+ * telemetry, verdict counts from auditHistory. Absent facts are named as
+ * absent, never invented (the recorded-facts honesty rule). */
+export function buildAuditCountsLine(goal: Goal, auditNote?: string): string {
+  const telemetry = goal.telemetry;
+  const run = telemetry
+    ? `${telemetry.turns} turns · ${telemetry.fileWrites} file writes · ${telemetry.bashCalls} bash calls`
+    : "no execution telemetry was recorded";
+  const history = goal.auditHistory ?? [];
+  const latest = history.length > 0 ? history[history.length - 1] : undefined;
+  const audit = auditNote ?? (latest === undefined
+    ? "no auditor verdict was recorded"
+    : (() => {
+      const verdict = latest.approved ? "approved" : latest.impossible ? "impossible" : latest.disapproved ? "disapproved" : "no verdict";
+      return `auditor ${verdict} (${history.length} verdict${history.length === 1 ? "" : "s"})`;
+    })());
+  return `— run: ${run} · ${audit}.`;
+}
+
+export interface TerminalApprovalRenderInput {
+  goal: Goal;
+  status: Status;
+  stopReason?: string;
+  archivePath?: string;
+  completionSummary?: string;
+  /** Path-specific voice, e.g. `— auditor X approved …` or `— completed without audit (your choice).` */
+  approval: string;
+  /** Path-specific record pointer, e.g. `— record: <path>`. */
+  record: string;
+  /** Extra trailing lines (inspection-session pointer, …). */
+  extras?: string[];
+  /** Override for the counts line (e.g. the no-audit path). */
+  countsLine?: string;
+  /** Override for the audit half of the counts line. */
+  auditNote?: string;
+}
+
+export interface TerminalApprovalRender {
+  /** The human-sees chat lines: outcome + bounded details + approval + counts + record (+ extras). */
+  chatLines: string[];
+  /** Compact single line for external notifies (pager/sound safe). */
+  recap: string;
+  /** Transcript-notice details: informing details (stale Next stripped) + approval. */
+  transcriptLines: string[];
+  /** The counts line riding the render. */
+  countsLine: string;
+  /** Brief outcome (chat line 1 without the `✓ done — ` prefix). */
+  outcome: string;
+  /** Approval trailer line (shared by chat + transcript surfaces). */
+  approval: string;
+}
+
+/** v0.38.25: ONE canonical builder for every terminal approval surface —
+ * chat notify, transcript notice, external notify, and the persisted
+ * archive render. All approval paths (detached auditor, manual verify,
+ * Esc-without-audit) build the same voice from the same resolved facts so
+ * the surfaces cannot drift and a render can be persisted + replayed. */
+export function buildTerminalApprovalRender(input: TerminalApprovalRenderInput): TerminalApprovalRender {
+  const facts: CompletionSummaryFacts = {
+    goal: input.goal,
+    status: input.status,
+    stopReason: input.stopReason,
+    archivePath: input.archivePath,
+  };
+  const candidate = input.completionSummary ?? input.goal.completionSummary;
+  const recap = compactTerminalCompletionSummary(facts, candidate);
+  const brief = terminalHumanBrief(facts, candidate);
+  const countsLine = input.countsLine ?? buildAuditCountsLine(input.goal, input.auditNote);
+  return {
+    chatLines: [
+      ...buildApprovalChatLines({
+        outcome: brief.outcome,
+        details: brief.details,
+        approval: input.approval,
+        record: input.record,
+        counts: countsLine,
+      }),
+      ...(input.extras ?? []),
+    ],
+    recap,
+    transcriptLines: [...withoutStaleNext(brief.details), input.approval],
+    countsLine,
+    outcome: brief.outcome,
+    approval: input.approval,
+  };
 }
 
 /** Multi-line projection: one `Label: value` line per label with generous
@@ -211,7 +303,10 @@ export function completionSummaryLines(text: string | undefined, maxValueLength 
     const line = `${name}: ${clipSummaryValue(rawValue || "not recorded", maxValueLength)}`;
     // Audit 2026-09-06: optional width budget for width-bound surfaces —
     // the default 240-char values previously had no width-conscious path.
-    return lineWidth && lineWidth > 0 ? truncateToWidth(line, lineWidth, "…") : line;
+    // v0.38.30 audit: plain-text surface — use the ANSI-free truncator
+    // (pi-tui truncateToWidth wraps the ellipsis in resets even for plain
+    // text, polluting notify/log/pager consumers).
+    return lineWidth && lineWidth > 0 ? truncateCells(line, lineWidth) : line;
   });
 }
 

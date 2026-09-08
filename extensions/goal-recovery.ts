@@ -1324,12 +1324,28 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     }
     // The ordered chain has been visited for this recovery cycle. Start a
     // deliberate new cycle by retrying the currently selected model; the
-    // next failure can then walk primary → backup 1 → … again. This is not a
-    // blind resend loop: it is one bounded probe per durable timer window.
-    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined };
+    // next failure can then walk primary → backup 1 → … again.
+    // Audit 2026-09-07 (HIGH, scoped): each new cycle consumes backoff
+    // budget (attempts+1, so the next failure's envelope delay grows) and
+    // honors the 24h horizon (past the wall the reset holds for manual
+    // resume instead of resurrecting a turn). The probe turn itself stays
+    // prompt by design — the backoff wait is served between failure and
+    // probe by the park+timer envelope, the hourly ticker's extra probe is
+    // an explicit queue-jump, and the resumed supervised turn on `current`
+    // IS the health check (v0.34.132 executable contract pins the
+    // synchronous scheduleContinuation; deferring it strands the probe).
+    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined, attempts: recovery.attempts + 1 };
+    appendLedger(ctx.cwd, "main_model_fallback_cycle_reset", { current, attempted: recovery.attempted, attempts: next.attempts });
+    const aggressive = (() => {
+      try { return resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode; } catch { return false; }
+    })();
+    const horizonMs = next.autoRetryUntil ? Date.parse(next.autoRetryUntil) : Number.NaN;
+    if (next.manualResumeRequired || (!aggressive && Number.isFinite(horizonMs) && Date.now() >= horizonMs)) {
+      holdMainModelRecovery(ctx, next, "the 24h automatic recovery horizon was reached");
+      return;
+    }
     state.mainModelRecovery = next;
     persistState(ctx);
-    appendLedger(ctx.cwd, "main_model_fallback_cycle_reset", { current, attempted: recovery.attempted, attempts: recovery.attempts });
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
       updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
@@ -1339,7 +1355,7 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
       persistState(ctx);
       scheduleLoopTick(ctx);
     }
-    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: recovery.attempts, mode: "cycle-reset" });
+    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: next.attempts, mode: "cycle-reset" });
     ctx.ui.notify(`Main model recovery probe: retrying ${current} after visiting the configured fallback chain.`, "info");
     return;
   }

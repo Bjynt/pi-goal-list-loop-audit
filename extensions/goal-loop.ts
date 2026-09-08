@@ -1033,8 +1033,9 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // answered "No held loop to resume" and the preserved iteration,
       // best value, and history were unreachable without re-drafting.
       !!r?.startsWith("stopped: automatic zero-stream abort") ||
-      // v0.38.23: /loop pause is a soft-hold (parallel to /goal pause).
-      // The loop stays resumable; finishLoopGit was skipped.
+      // v0.38.27 (ported from Bjynt's PR #46): /loop pause is a soft-hold
+      // parallel to /goal pause. The loop stays resumable; finishLoopGit
+      // was skipped, so resume picks up iteration/best/history verbatim.
       !!r?.startsWith("paused by user (/loop pause)");
     if (stored && !stored.active && RESUMABLE_STOP(stored.stopReason)) {
       // Branch-mode stop returns HEAD to originalBranch. Refuse a resume from
@@ -1258,11 +1259,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
-  // v0.38.23: soft-hold, parallel to /goal pause and /glla pause. The loop
-  // stops firing iterations but stays in a resumable held state — NO
-  // finishLoopGit, NO hard-stop ledger. /loop resume picks it up. Mirrors
-  // the held-loop / RESUMABLE_STOP pattern: iteration, best value, and
-  // history are preserved verbatim.
+  // v0.38.27 (ported from Bjynt's PR #46): soft-hold, parallel to /goal
+  // pause and /glla pause. The loop stops firing iterations but stays in
+  // a resumable held state — NO finishLoopGit, NO hard-stop ledger, NO
+  // list-queue advance. /loop resume picks it up via RESUMABLE_STOP with
+  // iteration, best value, and history preserved verbatim.
   if (sub === "pause") {
     if (!state.loop) {
       ctx.ui.notify("No loop to pause.", "info");

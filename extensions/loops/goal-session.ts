@@ -532,6 +532,15 @@ function writeOwnerFile(cwd: string): void {
     const current = readOwnerFile(cwd);
     if (current?.pid !== undefined && current.pid !== process.pid && isProcessAlive(current.pid) && !current.shutdownAt) return;
     fs.mkdirSync(piGlaDir(cwd), { recursive: true });
+    // Audit 2026-09-07 (MEDIUM): compare-and-swap the refresh. Re-read
+    // immediately before writing and abort when the record now names a
+    // LIVE foreign pid — a claimant that won the race after our first
+    // read must not be clobbered by a stale refresh. A dead foreign
+    // record still refreshes: the heartbeat reclaims over dead holders
+    // through this path (refreshOwnerHeartbeat), and dead records have
+    // no active writer to clobber.
+    const latest = readOwnerFile(cwd);
+    if (latest?.pid !== undefined && latest.pid !== process.pid && isProcessAlive(latest.pid) && !latest.shutdownAt) return;
     fs.writeFileSync(ownerFilePath(cwd), JSON.stringify({ instanceId, pid: process.pid, at: Date.now() }));
   } catch {
     /* owner file is advisory — never block activation on it */
@@ -977,9 +986,11 @@ let processOwnerDeniedCwd: string | null = null;
  * stolen the root while we were working, and we must notice (and stand
  * down) instead of writing competitively forever. Audit 2026-09-06:
  * 30s left a 30s competing-writes window for background (non-command)
- * writers; 10s — a single tiny JSON read — shrinks it. Command entry
- * re-gates on every invocation anyway (refuseIfDenied), so interactive
- * writes were never the exposure. */
+ * writers; 10s — a single tiny JSON read — shrinks it. Audit 2026-09-07:
+ * command entry (warnIfStaleAtEntry) forces a fresh read — the throttle
+ * only paces background pollers now, so interactive writes were never
+ * the exposure only after the force path; before it the cache served
+ * commands too. */
 const OWNERSHIP_RECHECK_MS = 10_000;
 let lastOwnershipRecheckAt = 0;
 
@@ -989,9 +1000,13 @@ let lastOwnershipRecheckAt = 0;
  * command entry refuses until ownership changes again. Dead/released
  * owners never flap the flag here (the heartbeat reclaims them quietly).
  * "deferred": sessionDir selected but unresolved — nothing is knowable. */
-export function refreshOwnershipStanding(cwd: string, now: number = Date.now()): "held" | "lost" | "deferred" {
+export function refreshOwnershipStanding(cwd: string, now: number = Date.now(), force = false): "held" | "lost" | "deferred" {
   if (stateRootPending()) return "deferred";
-  if (now - lastOwnershipRecheckAt < OWNERSHIP_RECHECK_MS) {
+  // Audit 2026-09-07 (MEDIUM): command entry forces a fresh read — a
+  // single tiny JSON read per interactive command — so a steal inside the
+  // 10s background throttle still refuses here instead of writing
+  // competitively. Background pollers keep the throttle.
+  if (!force && now - lastOwnershipRecheckAt < OWNERSHIP_RECHECK_MS) {
     return processOwnerDeniedCwd === cwd ? "lost" : "held";
   }
   lastOwnershipRecheckAt = now;
@@ -1266,7 +1281,7 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   // automatically at its own session_start. Workers skip the recheck:
   // a subagent never owns the root, so it must keep its own refusal
   // wording instead of tripping the ownership flag in its process.
-  if (!isForeignCtx(ctx) && !isWorkerSessionCtx(ctx)) refreshOwnershipStanding(ctx.cwd);
+  if (!isForeignCtx(ctx) && !isWorkerSessionCtx(ctx)) refreshOwnershipStanding(ctx.cwd, Date.now(), true);
   if (processOwnerDeniedCwd === ctx.cwd) {
     ctx.ui.notify(`glla: a newer pi session owns this working-directory state root — ${what} is refused here to prevent competing writes. Start a fresh session to take it back. /glla owner inspects the holder; /glla takeover ends it with confirmation.`, "warning");
     return true;
@@ -1298,6 +1313,38 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   // pi's own session lifecycle; user-present commands keep an honest warning
   // and the durable state remains available to the fresh session.
   return true;
+}
+
+/** v0.38.30 audit: non-notifying stale probe for the approval-render replay.
+ * The command wrappers replay undelivered renders on every live contact, but
+ * they run BEFORE the inner warnIfStaleAtEntry fence — a superseded session
+ * running stale-allowed `/loop status` (or any refused command) used to
+ * rewrite pending-approval-renders.json + ledger and notify into a dead
+ * session, marking delivery the user never saw. Workers are never live
+ * contact either. Passive flags only (no absorb side effects); fail closed. */
+export function shouldSkipApprovalRenderReplay(ctx: ExtensionContext): boolean {
+  try {
+    if (isWorkerSessionCtx(ctx)) return true;
+  } catch {
+    return true;
+  }
+  try {
+    if (processOwnerDeniedCwd === ctx.cwd) return true;
+  } catch {
+    return true;
+  }
+  if (sessionHandoffPending) return true;
+  try {
+    if (Date.now() < sessionReplacementUntil) return true;
+  } catch {
+    return true;
+  }
+  try {
+    if (probeExtensionApiStale()) return true;
+  } catch {
+    return true;
+  }
+  return false;
 }
 
 /** v0.28.12: draft-class confirm with the auto-accept escape hatch SURFACED.
@@ -1582,6 +1629,17 @@ function isHostSuccessorContact(ctx: ExtensionContext): boolean {
  * semantics (the session never died; there was no load decision to gate).
  * Subagent workers (in-memory) and ambiguous cases (owner still live) keep
  * failing closed; a zombie-stood-down instance never reclaims the plane. */
+/** Audit 2026-09-07 (MEDIUM, findings 375+382): after a generation bump,
+ * the dead generation's accepted dispatch can never settle (generation
+ * fence) yet blocks the rebind tail's fresh schedule — clear it with a
+ * ledger so the new session doesn't idle behind a "re-armed" lie. */
+function clearDeadGenerationDispatch(ctx: ExtensionContext, via: string): void {
+  if (!pendingContinuationDispatchRef()) return;
+  appendLedger(ctx.cwd, "successor_absorb_cleared_stale_dispatch", { generation: sessionGeneration, via });
+  clearContinuationStartWatchdog();
+  clearDispatchRecord(ctx.cwd);
+}
+
 function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   if (isWorkerSessionCtx(ctx)) return false;
   if (zombieStoodDown) return false; // a successor INSTANCE owns owner.json — this instance stands down forever
@@ -1616,6 +1674,7 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   staleTerminalDone = false;
   sessionHandoffPending = false;
   sessionGeneration++; // a dead generation's delayed callbacks must not fire into the new owner
+  clearDeadGenerationDispatch(ctx, "successor-absorb");
   clearDraftingState(); // the old interview belongs to the disposed generation
   appendLedger(ctx.cwd, "session_rebind_via_live_ctx", { via, generation: sessionGeneration });
   let auditRetryStarted = false;
@@ -1712,6 +1771,10 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   ownerCwd = ctx.cwd;
   lastCtx = ctx;
   sessionGeneration++; // a parked generation's delayed callbacks must not fire into the reclaimed plane
+  // Audit 2026-09-07 (MEDIUM, finding 382): same dead-dispatch clear as
+  // the absorb path — otherwise the rearm notify below fires while the
+  // tail schedule skips on the orphaned pending and the plane idles.
+  clearDeadGenerationDispatch(ctx, "self-heal");
   heartbeatStaleStreak = 0;
   clearDraftingState();
   const restoredQueue = hydrateListQueueFromDisk(ctx);

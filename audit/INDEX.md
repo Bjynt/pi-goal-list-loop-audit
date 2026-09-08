@@ -13,8 +13,19 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-09-05):**
-- `SUBAGENT-DISPLAY-UNIFICATION-2026-09-05.md` — v0.38.22: `subagentDisplayRichness` (`rich` default / `compact` / `quiet`, HUNG never silent) + bucketed rich lines + task-linkage header; upstream triple-render/order-swap filed as nicobailon/pi-subagents#1931; README coexistence guidance
+**Most recent (2026-09-08):**
+- `UI-CARD-CLOSED-2026-09-08.md` — v0.38.35: closed card + smart summary (field 20260908_220808) — clause-boundary objective cut, steady-state inherited model row dropped, every tail closes with `└─`; gate 2037 pass / 0 fail
+- `COMPLETION-COMMUNICATION-2026-09-08.md` — v0.38.34: queued audit claims are explicitly nonterminal; verified approval posts one outcome-first summary into durable chat without an LLM wake; fair replay rotation; five stale assertions refreshed; gate 2034 pass / 0 fail
+- `FRESH-AUDIT-PASS-2026-09-08.md` — v0.38.30–v0.38.33: three-scout fresh pass, nine LOW fixes + two DECIDE raised and decided (migrate-on-read, normalize); v0.38.31 follow-up from field screenshot 20260908_180721 — overdue wait-pauses name the recovery timer instead of promising `resuming now` forever, generic wait tail removed; v0.38.32 ships the migrate-on-read backfill (`backfillSupersededObjections` wired into `liveDisapproval`, add-only + idempotent); v0.38.33 normalizes the findings.md indent convention (counters + fan-out agree on optional leading indent)
+- `UI-CARD-COMPACTNESS-2026-09-08.md` — v0.38.29: active recovery is one compact card row; the footer no longer repeats the full recovery report; judgment prose is bounded and Markdown wrappers stay out of the headline
+- `UI-PROVENANCE-CLOSURE-2026-09-08.md` — v0.38.28: duplicate primary/handled-turn provenance hidden; terminal provenance connector closes with `└─` instead of dangling `│`/`├─`
+- `PR-45-46-DISPOSITION-2026-09-08.md` — v0.38.27: selective native port of Bjynt's PRs #45/#46 (`/loop pause` soft-hold + widget subtask count, both pinned); `auditTasks` + `bypassTriggered` held with rationale, malformed auditor line dropped
+- `POST-OBJECTIVE-SUMMARY-2026-09-07.md` — v0.38.25 (+v0.38.26 store-cap fix): cross-harness end-of-run survey (Codex CLI, Claude Code, pi-goal-x) + chosen shape; ONE canonical approval builder, audit-goal counts line, persist + replay on next live contact (field: 12ddoy record perfect, delivery silent)
+- `AUDIT-PASS-2026-09-07.md` — v0.38.24: full display/lifecycle/settings audit pass (goal `20260907131550-12ddoy`), 44 findings → 0 open; head-owns-liveness + exceptions-only `quiet` default (user-grilled); send-side abort-latch guards, zombie closure-routing, ownership compare-and-swap, auditor inherit/clear parity, `stallShortWords` 0 = off, arg-aware fallbacks gate
+- `BELOW-CHAT-LIFESIGN-2026-09-07.md` — v0.38.23: forced `belowEditor` pin (swap fix), extension-meta footers deleted (`N queued` kept), Option-2 single-line glyph rows (header gone, ids stay in `/glla agents`), evidence-gated breathing head + `stream {age}` readout, semantic ramp on head + rows only (queued caps amber, monochrome = shape + number)
+
+**Earlier (2026-09-05):**
+- `SUBAGENT-DISPLAY-UNIFICATION-2026-09-05.md` — v0.38.22: `subagentDisplayRichness` (`rich` default / `compact` / `quiet`, HUNG never silent) + bucketed rich lines + task-linkage header (header removed in v0.38.23 — head already names the objective); upstream triple-render/order-swap filed as nicobailon/pi-subagents#1931; README coexistence guidance
 
 **Earlier (2026-09-04):**
 - `OBJECTION-PINNING-2026-09-04.md` — v0.38.21: PR #43 merged (observability, defaults kept) + disapproval round scoping (`superseded`/`supersededBy`, `liveDisapproval`, shared `appendAuditVerdict`, settled-rounds prompt line); honest scope — full-report surfacing already shipped in v0.35.x, this slice adds the missing round scoping; behavioral fail-before + 3/3 stable

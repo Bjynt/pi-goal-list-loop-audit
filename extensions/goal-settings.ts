@@ -251,11 +251,14 @@ export interface Settings {
   /** v0.27.5: post-completion audit config. Same shape as `reviewer`. */
   postaudit?: Record<string, unknown>;
   subagentModelStrategy?: SubagentModelStrategy;
-  /** v0.38.22 (display unification): ambient worker richness. `rich`
-   * (default) shows detailed worker rows + the task-linkage header;
-   * `compact` shows the single count line; `quiet` shows worker presence
-   * only when a child is hung/aborting — HUNG is never silent at any
-   * level. `/glla agents` keeps full detail regardless. */
+  /** v0.38.22 (display unification): ambient worker richness. Audit
+   * 2026-09-07 (DECIDED: exceptions-only by default — the native fleet
+   * panel already shows healthy workers in more detail): `quiet`
+   * (default) shows troubled (non-fresh) worker rows only; `rich` shows
+   * all worker rows; `compact` shows the single count line. The count
+   * line stays at every level (2026-09-06 ambient-awareness decision) —
+   * `quiet` hides only when zero workers are tracked. HUNG is never
+   * silent at any level. `/glla agents` keeps full detail regardless. */
   subagentDisplayRichness?: SubagentDisplayRichness;
   /** Per-agent-type model pin, e.g. { "scout": "minimax/MiniMax-M3" }.
    * Always wins over subagentModelStrategy — the managed override is written
@@ -361,9 +364,12 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.24.6: subagents inherit the session model by default, avoiding a
   // surprise provider/model pin from the upstream default agent.
   subagentModelStrategy: "inherit-parent",
-  // v0.38.22 (display unification): rich by default — full worker rows +
-  // task linkage; trimmable to compact/quiet, never silent on hangs.
-  subagentDisplayRichness: "rich",
+  // v0.38.22 (display unification): full ambient worker rows; trimmable
+  // to compact/quiet, never silent on hangs.
+  // Audit 2026-09-07 (DECIDED: exceptions-only by default): quiet —
+  // troubled rows + the count line; healthy fan-out lives on the native
+  // fleet panel. Rich stays one setting flip away for full rows.
+  subagentDisplayRichness: "quiet",
   auditFeedbackChars: DEFAULT_AUDIT_FEEDBACK_CHARS,
   // v0.34.141: keep-going is the production default. Set false explicitly
   // for the conservative pause-first policy; the dial flips DEFAULTS, never
@@ -426,7 +432,7 @@ export function normalizeLoadedSettings(settings: Settings): Settings {
   if (settings.subagentDisplayRichness !== "rich"
       && settings.subagentDisplayRichness !== "compact"
       && settings.subagentDisplayRichness !== "quiet") {
-    settings.subagentDisplayRichness = "rich";
+    settings.subagentDisplayRichness = "quiet";
   }
   if (settings.mainModelFailback !== "auto" && settings.mainModelFailback !== "sticky") {
     settings.mainModelFailback = "auto";
@@ -515,7 +521,10 @@ export function normalizeLoadedSettings(settings: Settings): Settings {
   if (typeof settings.stallEscalationRefires !== "number" || !Number.isInteger(settings.stallEscalationRefires) || settings.stallEscalationRefires < 0) {
     delete settings.stallEscalationRefires;
   }
-  if (typeof settings.stallShortWords !== "number" || !Number.isInteger(settings.stallShortWords) || settings.stallShortWords <= 0) {
+  // Audit 2026-09-07 (MEDIUM, findings 383-385): 0 = off is a legal saved
+  // value (the editor promises it and the consumer honors it: wordCount < 0
+  // never fires). Only negative/non-integer values normalize away.
+  if (typeof settings.stallShortWords !== "number" || !Number.isInteger(settings.stallShortWords) || settings.stallShortWords < 0) {
     delete settings.stallShortWords;
   }
   if (typeof settings.stallSimilarityThreshold !== "number" || !Number.isFinite(settings.stallSimilarityThreshold) || settings.stallSimilarityThreshold < 0 || settings.stallSimilarityThreshold > 1) {
@@ -651,7 +660,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "stallSimilarityThreshold",
   "postaudit",
   "toolOverrides",
-  "reviewer", // v0.33.1: legacy alias — menu saves can write it; provenance must know it exists
+  "reviewer", // v0.33.1: legacy alias — menu saves can still write it (when postaudit is unset) and load-migration consolidates it into postaudit on the next read; provenance must know it exists or reviewer-sourced values report "unknown"
 ];
 
 /** Where each effective setting comes from (for the /glla display). */

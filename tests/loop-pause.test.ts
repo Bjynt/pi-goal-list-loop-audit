@@ -1,5 +1,4 @@
-// pi-goal-list-loop-audit — v0.38.23
-// tests/loop-pause.test.ts
+// pi-goal-list-loop-audit — v0.38.27 (ported from Bjynt's PR #46)
 //
 // /loop pause is a soft-hold parallel to /goal pause and /glla pause: the
 // loop stops firing iterations but stays in a held, resumable state. NO
@@ -16,7 +15,7 @@ import { readGoalRuntimeSource } from "./harness/goal-source.js";
 const goalSrc = readGoalRuntimeSource();
 const loopSrc = fs.readFileSync(path.resolve("extensions", "goal-loop.ts"), "utf-8"); // decomposition step 2
 
-test("v0.38.23: /loop pause is routed in cmdLoop and clears the tick", () => {
+test("v0.38.27: /loop pause is routed in cmdLoop and clears the tick", () => {
   assert.match(loopSrc, /if \(sub === "pause"\) \{/);
   // The pause handler must clear the timer + tool activity, set active=false,
   // and write the held stopReason. It must NOT call finishLoopGit (soft-hold).
@@ -32,11 +31,11 @@ test("v0.38.23: /loop pause is routed in cmdLoop and clears the tick", () => {
   assert.match(pauseBlock, /loop_paused/, "pause ledgered as loop_paused");
 });
 
-test("v0.38.23: /loop pause is registered in the help completions", () => {
+test("v0.38.27: /loop pause is registered in the help completions", () => {
   assert.match(goalSrc, /\["pause", "hold the active loop/);
 });
 
-test("v0.38.23: RESUMABLE_STOP matches the pause stopReason so /loop resume picks it up", () => {
+test("v0.38.27: RESUMABLE_STOP matches the pause stopReason so /loop resume picks it up", () => {
   // The predicate must include the new prefix; /loop resume reads it to
   // decide whether the held loop is user-resumable.
   assert.match(

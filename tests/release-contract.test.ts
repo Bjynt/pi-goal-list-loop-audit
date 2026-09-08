@@ -90,6 +90,17 @@ test("release workflow scopes trusted-publishing OIDC to the publish job", () =>
   assert.match(workflow.slice(publishAt), /permissions:\n\s+contents: read\n\s+id-token: write/, "publish retains trusted publishing OIDC");
 });
 
+test("v0.38.32: release runs never share the push-churn concurrency group", () => {
+  // Field: v0.38.28/.30/.31/.32 release runs died with zero jobs — the
+  // run-level group pooled release events with per-push quality churn and
+  // GitHub supersede-cancels queued-never-started runs when a newer run
+  // enters the group. The run-level group must key on the event.
+  const workflow = fs.readFileSync(".github/workflows/publish.yml", "utf-8");
+  const runConcurrency = workflow.slice(0, workflow.indexOf("jobs:\n"));
+  assert.doesNotMatch(runConcurrency, /^\s*group: glla-quality\s*$/m, "no shared static run-level group");
+  assert.match(runConcurrency, /github\.event_name == 'release'/, "run-level group keys on the event");
+});
+
 test("release contract: changelog has one heading for the current package version", () => {
   const version = (JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string }).version;
   const changelog = fs.readFileSync("CHANGELOG.md", "utf-8");

@@ -124,6 +124,7 @@ isGoalRevisionCurrent,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
+import { replayUndeliveredApprovalRenders } from "../approval-render-store.js";
 import {
   createContinuationDispatch,
   dispatchMatchesOwner,
@@ -169,6 +170,8 @@ import {
   setContinuationRearmStreak,
   setContinuationRearmSince,
   resetContinuationDispatchState,
+  noteUserMessageForDispatch,
+  sendTerminalCompletionNotice,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
@@ -225,6 +228,7 @@ import {
   type ProjectRollup,
 } from "../goal-loop-stats.js";
 import { releaseAuditorSurface, suppressAuditorSurfaceAfterColdRestore } from "./goal-auditor-surface.js";
+import { shouldSkipApprovalRenderReplay } from "./goal-session.js";
 import {
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
@@ -514,7 +518,13 @@ function scheduleZombieAutoRetry(
     const fresh = freshCtxForGeneration(generation);
     if (!fresh) return;
     const goal = state.goal;
-    if (goalId !== undefined || goal) {
+    // Audit 2026-09-07 (HIGH): route on the abort's closure goalId, never
+    // live state. `|| goal` sent a loop retry into the goal branch whenever
+    // any goal object existed (e.g. one started during the 90s delay) — the
+    // goal branch then returned early on the id mismatch and the loop sat
+    // paused forever with budget unspent. The abort itself is owner-stable
+    // (abortZombieRun pauses the live owner), so the retry honors it.
+    if (goalId !== undefined) {
       if (!goal || goal.status !== "paused" || goal.id !== goalId) return;
       if (goal.pauseReason !== ZOMBIE_PAUSE_REASON) return; // superseded pause — not ours to clear
       const freshLimit = loadSettings(fresh.cwd).tokenLimit ?? DEFAULT_TOKEN_LIMIT;
@@ -694,8 +704,14 @@ export function __testOnlyClassifyStaleContinuation(content: string, cwd: string
   const goalIdMatch = content.match(/\[GOAL CHECKPOINT goalId=([^\]\s]+)\]/);
   const loopMatch = content.match(/\[LOOP ITERATION (\d+)\]/);
   const isStall = content.includes("[STALL WARNING");
-  const isLengthContinue = content.includes("Your previous response was cut off") || content.includes("Response hit the output-token cap");
-  if (isLengthContinue) return null;
+  // Audit 2026-09-07 (MEDIUM): no length-continue exemption. GLLA length
+  // nudges carry no [GOAL CHECKPOINT]/[LOOP ITERATION] marker, so with live
+  // supervision they already fall through to null (delivered); the only
+  // behavior the exemption changed was delivering a queued length nudge
+  // with NO supervision at all — exactly the stale case (e.g. queued
+  // before archival). A truncated turn implies a live turn, which implies
+  // active supervision, so classifying marker-less length text by the
+  // generic no-supervision rule cannot drop a live nudge.
   if (goalIdMatch) {
     const gid = goalIdMatch[1]!;
     if (!state.goal) return `no active goal (expected ${gid})`;
@@ -718,6 +734,14 @@ export function __testOnlyClassifyStaleContinuation(content: string, cwd: string
   }
   if (!state.goal && !state.loop?.active) return "no active supervision for generic goal-event";
   return null;
+}
+
+/** Commands and lifecycle contacts share the same ownership and delivery gates. */
+function replayApprovalSummariesOnContact(ctx: ExtensionContext): void {
+  if (shouldSkipApprovalRenderReplay(ctx)) return;
+  replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+    goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+  }));
 }
 
 export function registerGoalRuntime(pi: ExtensionAPI): void {
@@ -765,12 +789,22 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      // v0.38.30 audit: skip on stale/worker handles — the wrappers run
+      // before the inner stale fence, and a superseded session used to mark
+      // delivery into a dead session (stale-allowed /loop status included).
+      replayApprovalSummariesOnContact(ctx);
       return cmdGoal(args, ctx);
     },
   });
   const settingsHandler = (args: string, ctx: ExtensionContext) => {
     rememberCtx(ctx);
     if (refuseForeignCommand(ctx)) return Promise.resolve();
+    // v0.38.25: live contact — replay any approval render that landed
+    // with no live turn (persist-first, never silent).
+    // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+    replayApprovalSummariesOnContact(ctx);
     return cmdSettings(args, ctx);
   };
   pi.registerCommand("glla", {
@@ -799,6 +833,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+      replayApprovalSummariesOnContact(ctx);
       return cmdReview(args, ctx);
     },
   });
@@ -825,6 +863,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+      replayApprovalSummariesOnContact(ctx);
       return cmdList(args, ctx);
     },
   });
@@ -847,6 +889,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
       if (refuseForeignCommand(ctx)) return Promise.resolve();
+      // v0.38.25: live contact — replay any approval render that landed
+      // with no live turn (persist-first, never silent).
+      // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+      replayApprovalSummariesOnContact(ctx);
       return cmdLoop(args, ctx);
     },
   });
@@ -1012,6 +1058,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "message_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    // Audit 2026-09-07 (MEDIUM): stamp genuine user messages so the
+    // continuation fallback ack can tell a manual turn from a no-start.
+    // Our continuations send as customType (never role user); our injected
+    // draft seed arrives as role user and is skipped via draftingSeedInFlight.
+    if (event?.message?.role === "user" && !draftingSeedInFlight) noteUserMessageForDispatch();
     // v0.14.0 drafting floor: count real user replies while drafting. Our
     // own injected draft prompt arrives as a user message — skip that one.
     if (draftingTarget === null) return;
@@ -1378,8 +1429,16 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // destroy the only source the gate heal can re-parse.
     healGoalPolicy(ctx);
     clearMainModelRecoveryTimer();
-    mainModelAbortForRecovery = false;
-    lastMainModelFailure = null;
+    // Audit 2026-09-07 (MEDIUM): preserve the abort-settlement markers
+    // while a recovery episode owns them. An abort-for-recovery whose
+    // settlement lands after session_start would otherwise read nulled
+    // flags — the agent_settled failover continuation never fires and the
+    // loop error path misclassifies the abort as a user stop. Every
+    // recovery settle path clears both flags, so preserving cannot leak.
+    if (!state.mainModelRecovery) {
+      mainModelAbortForRecovery = false;
+      lastMainModelFailure = null;
+    }
     setContinuationDispatchStoodDownRef(false);
     clearContinuationStartWatchdog();
     const recoveredDispatch = readDispatchRecord(ctx.cwd);
@@ -1938,6 +1997,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       appendLedger(ctx.cwd, "load_hold_released", { via: "consenting-reload" });
     }
     refreshUI(ctx, true);
+    replayApprovalSummariesOnContact(ctx);
   });
 
   pi.on("agent_end", async (event: any, ctx: ExtensionContext) => {
@@ -2501,6 +2561,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   pi.on("agent_settled", async (_event: any, ctx: ExtensionContext) => {
     if (tryAbsorbHostSuccessor(ctx, "agent_settled")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    replayApprovalSummariesOnContact(ctx);
     if (!state.mainModelRecovery || state.mainModelRecovery.retryAt || !lastMainModelFailure) return;
     if (!isSupervising()) return;
     lastMainModelFailure = null;

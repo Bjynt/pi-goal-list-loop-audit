@@ -1815,7 +1815,9 @@ function parseToolOverrideValue(s: string): unknown {
 /** v0.27.5: /glla reviewer | postaudit — the post-completion audit config menu
  * (project-scoped). Reads the dual-write settings (postaudit wins over the
  * legacy reviewer key), and writes back to whichever key was read first —
- * so we don't drift two parallel config blocks. */
+ * so we don't drift two parallel config blocks. Writes to the legacy key
+ * don't stick: load-migration consolidates them into postaudit on the
+ * next read (audit 2026-09-07, finding 395). */
 async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
   const settings = loadSettings(ctx.cwd);
   const block = (settings.postaudit ?? settings.reviewer) as Partial<ReviewerConfig> | undefined;
@@ -2580,7 +2582,12 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // rather than through noisy inline assignments.
   const trimmed = args.trim();
   const verb = trimmed ? trimmed.split(/\s+/)[0]!.toLowerCase() : "ui";
-  if (staleEntry && (verb === "ui" || SETTINGS_MUTATING_ACTIONS.has(verb))) {
+  // Audit 2026-09-07 (LOW, finding 399): bare `/glla fallbacks` only
+  // displays the chain — only clear/off/unset/none mutates. Refusing the
+  // read-only display on a stale handle blocks inspection for no safety.
+  const fallbacksRest = verb === "fallbacks" ? trimmed.slice("fallbacks".length).trim().toLowerCase() : "";
+  const fallbacksReadOnly = verb === "fallbacks" && !/^(clear|off|unset|none)(\s|$)/.test(fallbacksRest);
+  if (staleEntry && (verb === "ui" || (!fallbacksReadOnly && SETTINGS_MUTATING_ACTIONS.has(verb)))) {
     appendLedger(ctx.cwd, "settings_mutation_refused_stale", { sub: verb });
     return;
   }

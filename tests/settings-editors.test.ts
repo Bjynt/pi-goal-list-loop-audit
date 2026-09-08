@@ -566,3 +566,18 @@ test("audit 2026-09-06: docs/SETTINGS.md covers every SETTINGS_KEYS entry", asyn
   const missing = (SETTINGS_KEYS as string[]).filter((key) => !doc.includes(`\`${key}\``));
   assert.deepEqual(missing, [], `settings reference drift: ${missing.join(", ")}`);
 });
+
+test("audit 2026-09-07 (LOW, finding 400): typing the displayed `auto` in the notify editor round-trips to unset, not a literal shell command", async () => {
+  for (const typed of ["auto", "auto-detect", "DEFAULT", "  "]) {
+    const cwd = tmpCwd();
+    const ctx = makeMockCtx(cwd);
+    ctx.ui.inputImpl = async () => typed;
+    await handleSettingChoice("notifyCmd", ctx as unknown as ExtensionContext);
+    assert.equal(loadSettings(cwd).notifyCmd, undefined, `typing ${JSON.stringify(typed)} restores auto-detect`);
+  }
+  const cwd = tmpCwd();
+  const ctx = makeMockCtx(cwd);
+  ctx.ui.inputImpl = async () => "my-notify $1";
+  await handleSettingChoice("notifyCmd", ctx as unknown as ExtensionContext);
+  assert.equal(loadSettings(cwd).notifyCmd, "my-notify $1", "a real command still saves");
+});

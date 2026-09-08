@@ -162,28 +162,32 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 11_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
-  assert.match(status, /^glla: \[[▁▂▄▆█]{6} LIVE · WORKING\] total 1m 09s · last stream 11s ago · 3 queued$/);
+  // Audit 2026-09-07 (DECIDED: head owns liveness): the status is a static
+  // state badge + counts. The animated capsule + `last stream` tail moved
+  // to the card-head `stream {age}` readout — one surface owns liveness.
+  assert.match(status, /^glla: \[WORKING\] total 1m 00s · 3 queued$/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
   assert.match(lines[0]!, /^● /);
   assert.match(lines[0]!, /· active ·/);
   assert.doesNotMatch(lines.join("\n"), /LIVE WORK|last stream 11s ago/);
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
-  assert.match(busy, /glla: \[BUSY\] total 1m 09s · last stream 20s ago · 3 queued/);
+  assert.match(busy, /glla: \[BUSY\] total 1m 00s · 3 queued/);
   assert.doesNotMatch(busy, /WORKING/);
 
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /glla: \[⏳ QUEUED\] total 1m 09s · 3 queued/);
+  assert.match(queued, /glla: \[⏳ QUEUED\] total 1m 00s · 3 queued/);
   assert.doesNotMatch(queued, /WORKING/);
 
-  // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch and
-  // the last real activity age. A ticking timer with no freshness told the
-  // user nothing (note.md 221249 "time ticking but nothing else").
+  // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch.
+  // (The last-activity age that used to ride here moved to the card-head
+  // `stream {age}` readout per the 2026-09-07 liveness decision; note.md
+  // 221249's ticking-timer complaint is answered there, not here.)
   const queuedPending = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true, lastActivityAt: NOW - 180_000 })!;
-  assert.match(queuedPending, /\[⏳ QUEUED\] total 1m 09s · awaiting pi turn · last host activity 3m 00s ago · 3 queued/);
+  assert.match(queuedPending, /\[⏳ QUEUED\] total 1m 00s · awaiting pi turn · 3 queued/);
   // turnPending WITHOUT a known last-activity epoch still names the pending turn.
   const queuedPendingNoAge = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true })!;
-  assert.match(queuedPendingNoAge, /\[⏳ QUEUED\] total 1m 09s · awaiting pi turn · 3 queued/);
+  assert.match(queuedPendingNoAge, /\[⏳ QUEUED\] total 1m 00s · awaiting pi turn · 3 queued/);
   // No turnPending (scheduled-but-not-yet-sent) stays the plain QUEUED line.
   const queuedScheduled = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
   assert.doesNotMatch(queuedScheduled, /awaiting pi turn/);
@@ -194,7 +198,7 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   assert.equal(
     buildStatusText(goldenQueued, null, NOW, undefined, { activity: "queued" }),
-    "glla: [⏳ QUEUED] total 44s · 18 queued",
+    "glla: [⏳ QUEUED] total 40s · 18 queued",
   );
 });
 
@@ -238,14 +242,15 @@ test("v0.34.95: queued WITHOUT a parked recovery does NOT show quota text (no fa
     list: [{ id: "queued-0", objective: "queued", addedAt: "z" }],
   };
   const status = buildStatusText(queuedNoRecovery, null, NOW, undefined, { activity: "queued" })!;
-  assert.equal(status, "glla: [⏳ QUEUED] total 44s · 1 queued");
+  assert.equal(status, "glla: [⏳ QUEUED] total 40s · 1 queued");
   assert.doesNotMatch(status, /quota/);
 });
 
-test("v0.34.95: parked recovery on a LIVE working goal does NOT show quota text (only queued needs the WHY)", () => {
+test("v0.34.95: parked recovery on a WORKING goal does NOT show quota text (only queued needs the WHY)", () => {
   // The QUEUED state is the one the user sees without context — the
-  // LIVE/WORKING state already names the work via the live stream badge.
-  // Showing quota text on top of LIVE would be noise.
+  // The WORKING state badge already names the work (freshness lives on
+  // the card head per the 2026-09-07 decision). Showing quota text on
+  // top of WORKING would be noise.
   const liveWithRecovery = {
     goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:58:51Z" }),
     list: [{ id: "next-1", objective: "next", addedAt: "z" }],
@@ -259,7 +264,7 @@ test("v0.34.95: parked recovery on a LIVE working goal does NOT show quota text 
     },
   };
   const status = buildStatusText(liveWithRecovery, null, NOW, undefined, { activity: "working", lastStreamActivityAt: NOW - 11_000 })!;
-  assert.match(status, /LIVE · WORKING/);
+  assert.match(status, /\[WORKING\]/);
   assert.doesNotMatch(status, /waiting for quota reset/);
 });
 
@@ -298,7 +303,7 @@ test("v0.34.97: no compacting chip when lastCompactionAt is absent", () => {
   assert.doesNotMatch(status, /compacting/, "no chip when state has no lastCompactionAt");
 });
 
-test("live capsule shows a compact animated signal and truthful freshness text", () => {
+test("head owns liveness: WORKING status is static, the head carries the animated signal", () => {
   const state = { goal: goalOf(), list: [] };
   const first = buildStatusText(state, null, NOW, undefined, {
     activity: "working",
@@ -308,14 +313,18 @@ test("live capsule shows a compact animated signal and truthful freshness text",
     activity: "working",
     lastStreamActivityAt: NOW - 249,
   })!;
-  assert.match(first, /glla: \[[▁▂▄▆█]{6} LIVE · WORKING\]/);
-  assert.match(next, /glla: \[[▁▂▄▆█]{6} LIVE · WORKING\]/);
-  assert.notEqual(first.slice(0, first.indexOf(" LIVE")), next.slice(0, next.indexOf(" LIVE")), "the signal visibly advances while live");
-  assert.match(first, /last stream 1s ago/);
-  assert.doesNotMatch(first, /%|complete|progress/i, "the signal is not a fake completion meter");
+  // Audit 2026-09-07 (DECIDED: head owns liveness): the animated LIVE
+  // capsule left the status line. The status badge is a static state
+  // claim (byte-identical across a frame tick); freshness + motion live
+  // on the card head (`stream {age}` + breathing glyph, pinned in
+  // tests/lifesign.test.ts). No `last stream` tail may reappear here.
+  assert.match(first, /glla: \[WORKING\]/);
+  assert.equal(first, next, "static state badge — no per-tick motion on the status line");
+  assert.doesNotMatch(first, /LIVE|last stream/i);
+  assert.doesNotMatch(first, /%|complete|progress/i, "the badge is not a fake completion meter");
 });
 
-test("live capsule keeps semantic colors without decorative noise", () => {
+test("WORKING badge keeps semantic colors without decorative noise", () => {
   const calls: string[] = [];
   const theme = {
     fg(color: string, text: string) {
@@ -330,11 +339,10 @@ test("live capsule keeps semantic colors without decorative noise", () => {
     theme,
     { activity: "working", lastStreamActivityAt: NOW - 1_000 },
   )!;
-  assert.match(status, /<dim>\[<\/dim>(?:<muted>[▁]<\/muted>|<accent>[▂▄▆]<\/accent>|<success>[█]<\/success>){6}<dim> <\/dim><success>LIVE<\/success><dim> · <\/dim><accent>WORKING<\/accent><dim>\]<\/dim>/);
-  assert.ok(calls.some((call) => call.startsWith("success:LIVE")), "LIVE remains semantically highlighted");
-  assert.ok(calls.some((call) => call.startsWith("accent:WORKING")), "WORKING remains semantically highlighted");
-  assert.ok(calls.some((call) => call.startsWith("success:█")), "the signal peak is semantically highlighted");
-  assert.ok(calls.some((call) => call.startsWith("accent:▆")), "the signal body remains visible");
+  // Static state badge: the whole `[WORKING]` rides one accent span — no animated cells.
+  assert.match(status, /<accent>\[WORKING\]<\/accent>/);
+  assert.ok(calls.some((call) => call === "accent:[WORKING]"), "WORKING remains semantically highlighted");
+  assert.ok(!calls.some((call) => /[\u2581-\u2588]/.test(call.split(":")[1] ?? "")), "no animated signal cells on the status line");
 });
 
 test("active goal with tasks shows progress", () => {
@@ -425,6 +433,29 @@ test("widget truncation is width-aware (v0.22.2)", () => {
   assert.ok(tiny.length <= 70, `tiny head must stay near the terminal width, got ${tiny.length}`);
 });
 
+test("audit 2026-09-07: worker rows splice before the auditor block, never inside it", () => {
+  const g = goalOf({
+    status: "auditing",
+    policy: "goal",
+    pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-splice" },
+  });
+  const lines = buildWidgetLines(
+    { goal: g, list: [] },
+    { phase: "running", label: "running", currentTool: "read" },
+    NOW,
+    undefined,
+    120,
+    { agents: { line: "1 agent", lines: ["▶ worker · old work · quiet 31m"] } },
+  )!;
+  const text = lines.join("\n");
+  const agentAt = lines.findIndex((l) => l.includes("▶ worker"));
+  const auditorAt = lines.findIndex((l) => l.includes("├─ auditor: "));
+  assert.ok(agentAt >= 0 && auditorAt >= 0, `both surfaces present:\n${text}`);
+  assert.ok(agentAt < auditorAt, "worker rows precede the auditor block");
+  const between = lines.slice(auditorAt).join("\n");
+  assert.doesNotMatch(between, /▶ worker/, "no worker row lands between auditor observations and its footer");
+});
+
 test("widget lines reserve pi-tui's horizontal padding", () => {
   const g = goalOf({
     status: "auditing",
@@ -484,8 +515,9 @@ test("widget names a list item as such and points at /list, not /goal", () => {
     NOW,
   )!;
   assert.match(lines[0]!, /· list item · active · /); // v0.33.0: type named in the head segments
-  assert.equal(lines[lines.length - 1], "└─ 2 queued · /list · /glla");
+  assert.equal(lines[lines.length - 1], "└─ 2 queued");
   assert.ok(!lines.some(l => l.includes("/goal status")), "list item must not hint /goal status");
+  assert.ok(!lines.some(l => l.includes("/glla")), "v0.38.23: no extension-meta command hints on the card");
 });
 
 test("long-running list card shows a truthful queue trail and immediate next item", () => {
@@ -502,7 +534,7 @@ test("long-running list card shows a truthful queue trail and immediate next ite
   )!;
   assert.ok(lines.some((line) => line.includes("↳ 2 waiting · up next: write the next focused improvement")));
   assert.ok(lines.some((line) => line.includes("waiting 5m")), "valid queue timestamps get a wait age");
-  assert.equal(lines[lines.length - 1], "└─ 2 queued · /list · /glla");
+  assert.equal(lines[lines.length - 1], "└─ 2 queued");
 });
 
 test("widget list item, last in queue: no '0 queued'", () => {
@@ -511,7 +543,7 @@ test("widget list item, last in queue: no '0 queued'", () => {
     null,
     NOW,
   )!;
-  assert.equal(lines[lines.length - 1], "└─ /list · /glla");
+  assert.ok(!lines.some(l => l.startsWith("└─")), "v0.38.23: empty queue means no footer at all");
 });
 
 test("widget goal policy keeps /goal status hint + list N prefix", () => {
@@ -524,7 +556,7 @@ test("widget goal policy keeps /goal status hint + list N prefix", () => {
     NOW,
   )!;
   assert.match(lines[0]!, /^● Create x.txt containing ok · active · /); // v0.33.0: plain goal — icon + status in the head
-  assert.equal(lines[lines.length - 1], "└─ 1 queued · /goal status · /glla");
+  assert.equal(lines[lines.length - 1], "└─ 1 queued");
 });
 
 test("paused shows the reason", () => {
@@ -571,7 +603,7 @@ test("paused lifecycle projection names owner, queue, last activity, and next tr
   assert.ok(widget.some((line) => line.includes("last host activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
-test("active/in-flight main-model recovery keeps full chain state on status and widget", () => {
+test("active/in-flight main-model recovery uses one compact card row", () => {
   const state = {
     goal: goalOf({ status: "active", objective: "continue on the selected model — done when pinned" }),
     list: [],
@@ -589,13 +621,11 @@ test("active/in-flight main-model recovery keeps full chain state on status and 
   const extras = { mainModelFallbacks: ["provider/backup-one", "provider/backup-two"] };
   const status = buildStatusText(state, null, NOW, undefined, extras)!;
   const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
-  for (const surface of [status, widget.join("\\n")]) {
-    assert.ok(surface.includes("Main-model recovery: primary selected"), surface);
-    assert.ok(surface.includes("Order: provider/primary → provider/backup-one → provider/backup-two"), surface);
-    assert.ok(surface.includes("Pending switch: provider/backup-two"), surface);
-    assert.ok(surface.includes("Attempted: provider/primary"), surface);
-    assert.ok(surface.includes("Skipped: provider/backup-one (unregistered)"), surface);
-  }
+  // The footer owns the activity capsule; repeating the full recovery report
+  // there made the same incident appear twice and pushed the card off-screen.
+  assert.doesNotMatch(status, /Main-model recovery|Order:|Pending switch:/, status);
+  assert.match(widget.join("\\n"), /recovery: switching → provider\/backup-two · primary provider\/primary · attempts 1 · skipped 1/);
+  assert.doesNotMatch(widget.join("\\n"), /Order:|Current:|Pending switch:|Attempted:|Skipped:/);
 });
 
 test("standalone main-model recovery remains visible when no goal is active", () => {
@@ -763,6 +793,9 @@ test("v0.34.91: completed goal summary shows the agent's completion recap, not t
   assert.equal(lines.length, 1, "still ONE dim line");
   assert.match(lines[0]!, /✓ done/);
   assert.match(lines[0]!, /Audited all 9 deathrun routes/, "the recap tells what happened");
+  // Audit 2026-09-07: the outcome word leads once — never the
+  // `✓ done · recap · ✓ done · took X` stutter.
+  assert.equal((lines[0]!.match(/✓ done/g) ?? []).length, 1, "outcome appears exactly once");
   assert.doesNotMatch(lines.join("\n"), /Create x\.txt/, "the objective echo is gone — it read like a ticket title, not a recap");
   assert.match(lines[0]!, /took 1h 45m/);
 });
@@ -884,11 +917,14 @@ test("widget: nothing supervised → undefined", () => {
   assert.equal(buildWidgetLines({ goal: null, list: [] }, null, NOW), undefined);
 });
 
-test("widget: goal lines include objective, status, tokens, footer", () => {
+test("widget: goal lines include objective, status, tokens, no footer", () => {
   const lines = buildWidgetLines({ goal: goalOf(), list: [] }, null, NOW)!;
   assert.match(lines[0]!, /● Create x.txt containing ok/);
   assert.match(lines[0]!, /12\.4k\/1000k ▰/); // v0.33.0: budget segment carries a meter
-  assert.ok(lines.some((l) => l.includes("/goal status")));
+  // v0.38.23: command-hint footers are extension meta, not task info.
+  assert.ok(!lines.some((l) => l.includes("/goal status")));
+  assert.ok(!lines.some((l) => l.includes("/glla")));
+  assert.ok(!lines.some((l) => l.startsWith("└─")));
 });
 
 test("widget: paused goal shows reason + suggestion", () => {
@@ -1712,7 +1748,10 @@ test("v0.34.64: retry-class pause shows uniform auto-retrying countdown; no QUOT
   const state = { goal: g, list: [{ id: "next", objective: "later", addedAt: "z" }], loop: null };
   const w = buildWidgetLines(state as never)!;
   assert.ok(w.some((l) => l.includes("auto-retrying") && l.includes("next probe in")), `countdown: ${w.join("\n")}`);
-  assert.ok(w.some((l) => l.includes("saved —")), `saved state: ${w.join("\n")}`);
+  // v0.38.31: recovery-timer waits end at the auto-retry row — the generic
+  // saved/suggested-action tail is gone (owner + next are already above).
+  assert.doesNotMatch(w.join("\n"), /saved —/, "wait tail carries no generic saved line");
+  assert.doesNotMatch(w.join("\n"), /being retried automatically/, "wait tail carries no stock boilerplate");
   assert.doesNotMatch(w.join("\n"), /QUOTA WALL/, "the QUOTA WALL banner is gone");
   assert.doesNotMatch(w.join("\n"), /manual resume required/, "manual-resume wording is gone");
   assert.doesNotMatch(w.join("\n"), /main model quota: 429|Token Plan usage limit reached.*message/, "raw provider JSON stays out of the card");
@@ -1857,6 +1896,9 @@ test("main-model recovery manual hold does not claim a non-quota block", () => {
 });
 
 test("v0.34.51: a passed quota resumeAt says resuming…, never the old 'retrying now'", () => {
+  // v0.38.31: "resuming…" is grace-bounded (field 2026-09-08 180721 — an
+  // hour-overdue retry claimed "resuming now" forever on a held host). A
+  // retry 5m past still reads overdue; a freshly-passed one keeps resuming….
   const g = goalOf({
     status: "paused",
     pauseKind: "wait",
@@ -1865,8 +1907,18 @@ test("v0.34.51: a passed quota resumeAt says resuming…, never the old 'retryin
   });
   const state = { goal: g, list: [], loop: null };
   const s = buildStatusText(state as never)!;
-  assert.match(s, /resuming…/);
+  assert.match(s, /retry overdue/);
+  assert.doesNotMatch(s, /resuming…/);
   assert.doesNotMatch(s, /retrying now/);
+  const gFresh = goalOf({
+    status: "paused",
+    pauseKind: "wait",
+    pauseReason: "main model recovery — retrying in 15m (main model quota: 429 Token Plan usage limit)",
+    pauseResumeAt: new Date(Date.now() - 30_000).toISOString(),
+  });
+  const sFresh = buildStatusText({ goal: gFresh, list: [], loop: null } as never)!;
+  assert.match(sFresh, /resuming…/);
+  assert.doesNotMatch(sFresh, /retrying now/);
 });
 
 test("legacy pause (no kind): flat card unchanged; error-regex still classifies the status line", () => {
@@ -1944,13 +1996,17 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   const midLines = buildWidgetLines({ goal: mid, list: [] }, null, NOW, undefined, 120)!;
   assert.match(midLines[0]!, /1\/4 ▰▱▱▱▱/);
   // Last-action line: Claude's done-row format + the next pending task.
-  assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
-  assert.match(lines[lines.length - 1]!, /^└─ /);
+  // Closed card (field 2026-09-08 220808): with an empty queue there is no
+  // footer, so the last-action line terminates the tree itself — a final
+  // `├─` promised continuation rows that never came and read as cut off.
+  assert.match(lines[1]!, /^└─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
+  assert.equal(lines[lines.length - 1], lines[1]);
+  assert.ok(!lines.some((l) => l.startsWith("├─") || l.startsWith("│ ")));
   // Failed action renders ✗; no ms → no time suffix.
   const failed = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 120, {
     recent: [{ name: "bash", arg: "bun test", ms: 0, ok: false }],
   })!;
-  assert.match(failed[1]!, /^├─ ✗ bash bun test(?! \()/);
+  assert.match(failed[1]!, /^└─ ✗ bash bun test(?! \()/, "failed action closes the card too");
   // v0.34.124: the recent-action ring is NOT goal-scoped — entries from a
   // PREVIOUS goal outlive activation. The card must drop actions stamped
   // before the current goal was created (note.md 221249: the new goal's
@@ -1984,6 +2040,42 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
   assert.match(SRC, /noteToolCall\(event\); \/\/ v0\.33\.0/);
   assert.match(SRC, /noteToolResult\(event\); \/\/ v0\.33\.0/);
+});
+
+test("v0.38.27: widget task count — a closed parent covers its subtasks (ported from Bjynt's PR #45)", () => {
+  // Field symptom: a goal with 6 real tasks displayed "2/24" because two
+  // closed parents were counted but the denominator inflated with subtask
+  // totals. The widget now reports the actual closed-vs-total ratio.
+  const nested = goalOf({ taskList: { version: 1, tasks: [
+    { id: "p1", title: "parent a", status: "complete", subtasks: [
+      { id: "p1.1", title: "sub a1", status: "pending" },
+      { id: "p1.2", title: "sub a2", status: "pending" },
+      { id: "p1.3", title: "sub a3", status: "pending" },
+    ] },
+    { id: "p2", title: "parent b", status: "complete", subtasks: [
+      { id: "p2.1", title: "sub b1", status: "pending" },
+      { id: "p2.2", title: "sub b2", status: "pending" },
+    ] },
+    { id: "p3", title: "parent c", status: "pending", subtasks: [
+      { id: "p3.1", title: "sub c1", status: "pending" },
+    ] },
+    { id: "p4", title: "parent d", status: "pending" },
+    { id: "p5", title: "parent e", status: "pending" },
+    { id: "p6", title: "parent f", status: "pending" },
+  ] } });
+  const nestedLines = buildWidgetLines({ goal: nested, list: [] }, null, NOW, undefined, 120)!;
+  // 2 closed parents (1 + 3 subs + 1 + 2 subs) = 7 of 12, round(7/12*5)=3 cells filled
+  assert.match(nestedLines[0]!, /7\/12 ▰▰▰▱▱/);
+  // Mid-flight parent: its done subtasks count independently.
+  const mid = goalOf({ taskList: { version: 1, tasks: [
+    { id: "p1", title: "parent a", status: "in_progress", subtasks: [
+      { id: "p1.1", title: "sub a1", status: "complete" },
+      { id: "p1.2", title: "sub a2", status: "pending" },
+    ] },
+    { id: "p2", title: "parent b", status: "pending" },
+  ] } });
+  const midLines = buildWidgetLines({ goal: mid, list: [] }, null, NOW, undefined, 120)!;
+  assert.match(midLines[0]!, /1\/4 ▰▱▱▱▱/);
 });
 
 test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag lifecycle", () => {
@@ -2165,20 +2257,20 @@ test("v0.34.96/v0.34.128: complete_goal detects 'already shipped' / 'verified vX
   assert.match(loops, /complete_goal_already_shipped/, "the ledger event is recorded");
 });
 
-test("audit-2026-09-06: widget task-linkage header is not mislabeled as an agent row", () => {
+test("audit-2026-09-07: widget worker rows render bare glyph-first, no `agent: ` prefix", () => {
   const state = { goal: goalOf(), list: [] } as any;
   const lines = buildWidgetLines(state, null, NOW, undefined, 120, {
-    agents: { line: "1 agent", lines: ["→ Run ONE project audit pass", "scout · id bb6d267e", "  RUNNING · silent 0s"] },
+    agents: { line: "1 agent", lines: ["→ Run ONE project audit pass", "scout · id bb6d267e", "  RUNNING · quiet 0s"] },
   } as any)!;
   const text = lines.join("\n");
-  assert.match(text, /├─ → Run ONE project audit pass/, "header renders as a group label");
-  assert.doesNotMatch(text, /agent: →/, "header is never prefixed with 'agent: '");
-  assert.match(text, /agent: scout · id bb6d267e/, "real agent rows keep the prefix");
+  assert.match(text, /├─ → Run ONE project audit pass/, "group label renders as-is");
+  assert.match(text, /scout · id bb6d267e/, "real agent rows render (approved Option-2 shape)");
+  assert.doesNotMatch(text, /agent: /, "no row carries the `agent: ` prefix");
 });
 
 test("audit-2026-09-06: status line honors the width budget", () => {
   const state = { goal: goalOf(), list: [] } as any;
-  const longExtras = { agents: { line: "9 agents · scout silent 0s " + "very-long-detail ".repeat(10), lines: [] } } as any;
+  const longExtras = { agents: { line: "9 agents · scout active 0s " + "very-long-detail ".repeat(10), lines: [] } } as any;
   const full = buildStatusText(state, null, NOW, undefined, longExtras)!;
   const narrow = buildStatusText(state, null, NOW, undefined, longExtras, 40)!;
   assert.ok(visibleWidth(narrow) <= 40, `narrow status fits 40 cells (got ${visibleWidth(narrow)})`);

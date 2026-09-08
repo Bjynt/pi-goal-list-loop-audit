@@ -180,7 +180,9 @@ test("blank restart paints the durable list objective, recovery owner, and next 
   assert.match(widget, /list item/, "the restored artifact is identified as a list item");
   assert.match(widget, /owner: main-model recovery/, "the recovery owner is rendered from durable state");
   assert.match(widget, /next: retrying automatically/, "the next transition is rendered from durable recovery state");
-  assert.match(widget, /\/list resume/, "the saved next action remains visible");
+  // v0.38.31: recovery-timer waits end at the auto-retry row — the generic
+  // suggested-action tail is gone (owner + next above carry the facts).
+  assert.doesNotMatch(widget, /remains safe/, "no generic boilerplate tail on the wait card");
   assert.match(status, /main-model recovery/, "the status bar also names the recovery owner");
 });
 

@@ -802,19 +802,21 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
     const extras = {
       stalls: consecutiveStalls,
       recent: recentActions,
-      // v0.38.22 (display unification): richness ladder for ambient
-      // workers — `rich` (default) restores the detailed rows the v0.37.1
-      // jitter fix removed, now safe because silence ages are bucketed
-      // (widget key only changes on genuine state transitions, not every
-      // tick) plus the task-linkage header native UI can never show.
-      // `compact` keeps the single line; `quiet` surfaces hung/aborting
-      // workers only (HUNG is never silent at any level).
+      // Audit 2026-09-07 (DECIDED: exceptions-only by default): `quiet`
+      // (default) renders troubled rows only — healthy fan-out lives on
+      // the native fleet panel. `rich` restores all detailed rows. All ages
+      // (worker silence, head `stream`, `total` elapsed) ride the shared
+      // bucket grain, so the widget key moves on bucket boundaries + state
+      // changes, not every render tick (the v0.37.1 jumping lesson).
+      // HUNG is never silent at any level.
       ...(() => {
         try {
           const { agents } = getSubagentAgentsSnapshot();
           const rows = agents as AgentsPanelRow[];
-          const extras = assembleAgentsExtras(rows, settings.subagentDisplayRichness ?? "rich", state.goal?.objective ?? "", now);
-          return extras ? { agents: extras } : {};
+          // v0.38.23: the head lifesign reads the same rows the worker
+          // rows render — one snapshot, two projections, never diverging.
+          const extras = assembleAgentsExtras(rows, settings.subagentDisplayRichness ?? "rich", now, theme);
+          return extras ? { agents: extras, agentRows: rows } : { agentRows: rows };
         } catch { return {}; }
       })(),
       ...activity,
@@ -833,7 +835,9 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
     const widgetChanged = contextChanged || widgetKey !== lastUIWidgetKey;
     if (!statusChanged && !widgetChanged) return;
     if (statusChanged) ctx.ui.setStatus("pi-glla", statusText);
-    if (widgetChanged) ctx.ui.setWidget("pi-glla", widgetLines);
+    // v0.38.23: pin the card to the below-chat stack (same zone as the
+    // native fleet) so GLLA and fleet stop trading places across ticks.
+    if (widgetChanged) ctx.ui.setWidget("pi-glla", widgetLines, { placement: "belowEditor" });
     lastUIRenderAt = now;
     lastUIRenderContext = ctx;
     lastUIStatusText = statusText;

@@ -11,8 +11,8 @@
 // in tailChildTranscript through an injected reader so tests stay hermetic.
 
 import * as path from "node:path";
-import { truncateCells } from "./goal-loop-display.js";
-import { sanitizeDisplayText } from "./goal-loop-core.js";
+import { paint, truncateCells, type DisplayTheme } from "./goal-loop-display.js";
+import { bucketSilentMs, fmtDuration, lifesignBandFor, sanitizeDisplayText } from "./goal-loop-core.js";
 
 /** v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of each
  * transcript, not the whole file — up to 25 files were previously read in
@@ -100,17 +100,18 @@ export function truncate(text: string, max: number): string {
   return truncateCells(text, max);
 }
 
-function fmtDuration(ms: number): string {
-  const totalSec = Math.max(0, Math.round(ms / 1000));
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min >= 60) return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}m`;
-  if (min > 0) return `${min}m${String(sec).padStart(2, "0")}s`;
-  return `${sec}s`;
-}
-
 const PANEL_ROW_CAP = 20;
 export const WIDGET_AGENT_ROW_CAP = 8;
+
+/** Audit 2026-09-07 (field screenshots): the age label never says "silent" — that
+ * noun reads as a state claim ("this child is silent") while the child is
+ * visibly working. Fresh bands read `active {age}`, everything else
+ * `quiet {age}`: both are time-since-last-evidence, matching the band
+ * colors. Exported for the count line + panel detail sharing. */
+export function activeAgeLabel(row: AgentsPanelRow): string {
+  const d = fmtDuration(bucketSilentMs(row.silentMs));
+  return lifesignBandFor(row) === "fresh" ? `active ${d}` : `quiet ${d}`;
+}
 
 function rowRank(row: AgentsPanelRow): number {
   if (row.status === "hung") return 0;
@@ -143,7 +144,7 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
   for (const row of shown) {
     const glyph = row.status === "ended" ? "✓" : row.status === "hung" ? "⚠" : "●";
     lines.push(`${glyph} ${rowLabel(row)}  ${rowStateWord(row, now)}`);
-    lines.push(`  id ${cleanField(row.recordId, 18)} · silent ${fmtDuration(row.silentMs)} · tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens}${row.evidence !== "live" ? ` · ${row.evidence}` : ""}`);
+    lines.push(`  id ${cleanField(row.recordId, 18)} · ${activeAgeLabel(row)} · tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens}${row.evidence !== "live" ? ` · ${row.evidence}` : ""}`);
     if (row.action === "abort-requested") {
       lines.push("  └ child-specific abort requested; partial output remains available while it settles");
     } else if (row.action === "unavailable") {
@@ -172,49 +173,67 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
   return lines;
 }
 
-/** Detailed worker rows for the above-editor widget. The widget receives every
- * active row up to a bounded display cap; the remainder has an explicit
- * /glla agents escape hatch rather than disappearing silently. */
-export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now(), maxRows = WIDGET_AGENT_ROW_CAP): string[] {
+/** Single-line glyph-first worker rows for the below-chat widget (v0.38.23
+ * Option-2 shape). One row per tracked child: state reads from the leading
+ * glyph (▶ running, ◉ abort in flight, ⚠ hung/unavailable/failed) so no
+ * state word is needed for the healthy case; the silence age sits before
+ * any trailing suffix so narrow-terminal truncation cuts the least
+ * important field first. Ids live in the /glla agents table, not here.
+ * Overflow names its count without a command hint (v0.38.23: extension
+ * meta is noise). Silence ages stay bucketed — raw per-second values
+ * churn the widget key and re-layout the editor every tick (v0.37.1).
+ * v0.38.23 lifesign: the glyph also takes the semantic band color
+ * (success <5m, warning to 30m, error past it) — color never rides alone,
+ * the shape plus the silence number carry the same meaning unpainted. */
+export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now(), maxRows = WIDGET_AGENT_ROW_CAP, theme?: DisplayTheme): string[] {
   const active = orderedRows(rows.filter((r) => r.status !== "ended"));
   const shown = active.slice(0, Math.max(1, maxRows));
   const lines: string[] = [];
   for (const row of shown) {
-    // Keep identity/purpose and liveness fields on separate short lines so a
-    // narrow terminal does not truncate the silence age—the field that tells
-    // the user whether a worker is actually making progress.
-    lines.push(`${rowLabel(row)} · id ${cleanField(row.recordId, 10)}`);
+    const glyph = row.status === "hung" ? "⚠"
+      : row.action === "abort-requested" ? "◉"
+      : (row.action === "unavailable" || row.action === "failed") ? "⚠"
+      : "▶";
+    const band = lifesignBandFor(row);
+    const color = band === "fresh" ? "success" : band === "aging" ? "warning" : "error";
+    const action = row.action === "abort-requested" ? " · aborting"
+      : row.action === "unavailable" ? " · abort unavailable"
+      : row.action === "failed" ? " · abort failed" : "";
     const evidence = row.evidence !== "live" ? ` · ${row.evidence}` : "";
-    const action = row.action === "abort-requested" ? " · aborting" : row.action === "unavailable" ? " · abort unavailable" : row.action === "failed" ? " · abort failed" : "";
-    // v0.38.22 (display unification): bucket the silence age like the
-    // compact line — raw per-second values churn the widget key and
-    // re-layout the editor every tick (the v0.37.1 jumping, reintroduced
-    // the moment rich lines render ambiently).
-    lines.push(`  ${rowStateWord(row, now)} · silent ${fmtDuration(bucketSilentMs(row.silentMs))}${evidence}${action}`);
+    lines.push(`${paint(theme, color, glyph)} ${rowLabel(row)} · ${activeAgeLabel(row)}${action}${evidence}`);
   }
-  if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents · /glla agents`);
+  if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents`);
   return lines;
 }
 
-/** v0.38.22: safety invariant for the richness ladder — HUNG/aborting
- * workers are never silent, so `quiet` still surfaces them. */
+/** Safety invariant for the richness ladder — HUNG/aborting/failed
+ * workers are never silent, so `quiet` still surfaces them. Audit
+ * 2026-09-07: also covers action failed/unavailable, matching the
+ * lifesignBandFor hung classification and the red rows — the count line
+ * and the rows can never disagree about trouble. */
 export function hasHungWorker(rows: AgentsPanelRow[]): boolean {
-  return rows.some((r) => r.status !== "ended" && (r.status === "hung" || r.action === "abort-requested"));
+  return rows.some((r) => r.status !== "ended"
+    && (r.status === "hung"
+      || r.action === "abort-requested"
+      || r.action === "failed"
+      || r.action === "unavailable"));
 }
 
 export type AgentsExtras = { line: string; lines: string[] };
 
 /** v0.38.22 (display unification): the pure richness switch behind the
- * widget/status worker presence. Rich restores detailed rows (capped,
- * bucketed — the widget key only moves on genuine state transitions)
- * plus the task-linkage header native UI can never show; compact keeps
- * the count line; quiet surfaces hung/aborting workers only. Pure and
- * hermetic for tests; the caller supplies rows + richness + objective. */
+ * widget/status worker presence. Rich restores detailed single-line rows
+ * (capped, bucketed — the widget key only moves on genuine state
+ * transitions); compact keeps the count line; quiet surfaces
+ * hung/aborting workers only. Pure and hermetic for tests; the caller
+ * supplies rows + richness. v0.38.23: the task-linkage header is gone —
+ * the card head already names the objective, so `→ <objective>` only
+ * repeated it verbatim on the next row. */
 export function assembleAgentsExtras(
   rows: AgentsPanelRow[],
   richness: "rich" | "compact" | "quiet",
-  objective: string,
   now = Date.now(),
+  theme?: DisplayTheme,
 ): AgentsExtras | undefined {
   const line = renderAgentsWidgetLine(rows);
   if (!line) return undefined;
@@ -222,10 +241,17 @@ export function assembleAgentsExtras(
   // zero are tracked (line undefined above). Tracked-but-healthy keeps
   // the compact count line — hiding healthy fan-out entirely cost ambient
   // awareness. HUNG still surfaces via the ⚠ in the line itself.
-  if (richness !== "rich") return { line, lines: [] };
-  const clean = objective.replace(/\s+/g, " ").trim();
-  const header = clean ? [`→ ${truncate(clean, 60)}`] : [];
-  return { line, lines: [...header, ...renderAgentsWidgetLines(rows, now)] };
+  // Audit 2026-09-07 (DECIDED: exceptions-only by default): quiet renders
+  // troubled (non-fresh-band) rows only — healthy fan-out lives on the
+  // native fleet panel, which shows it in more detail. The count line
+  // stays at every level (2026-09-06 ambient-awareness decision); HUNG is
+  // never silent at any level.
+  if (richness === "compact") return { line, lines: [] };
+  if (richness === "quiet") {
+    const troubled = rows.filter((r) => lifesignBandFor(r) !== "fresh");
+    return { line, lines: renderAgentsWidgetLines(troubled, now, WIDGET_AGENT_ROW_CAP, theme) };
+  }
+  return { line, lines: renderAgentsWidgetLines(rows, now, WIDGET_AGENT_ROW_CAP, theme) };
 }
 
 /** The compact footer summary: count + the least-live child.
@@ -237,22 +263,19 @@ export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefin
   const active = rows.filter((r) => r.status !== "ended");
   if (active.length === 0) return undefined;
   const busiest = [...active].sort((a, b) => b.silentMs - a.silentMs)[0]!;
-  const hung = busiest.action === "abort-requested"
+  // Audit 2026-09-07 (HIGH): the trouble flag scans ALL live children.
+  // Checking only the stalest hid a hung/aborting child behind a healthy
+  // stalest sibling — HUNG-never-silent means any troubled child flags
+  // the line, while the name/age still describe the stalest child.
+  const hung = active.some((r) => r.action === "abort-requested")
     ? " ⚠ aborting"
-    : busiest.status === "hung"
+    : hasHungWorker(active)
       ? " ⚠"
       : "";
-  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} silent ${fmtDuration(bucketSilentMs(busiest.silentMs))}${hung}`;
+  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} ${activeAgeLabel(busiest)}${hung}`;
 }
 
-/** Bucket silentMs to coarser granularity for display stability:
- * <1m → 5s buckets, <5m → 15s, otherwise 30s. The underlying
- * hung classification still uses the exact value. */
-function bucketSilentMs(ms: number): number {
-  if (ms < 60_000) return Math.floor(ms / 5000) * 5000;
-  if (ms < 300_000) return Math.floor(ms / 15_000) * 15_000;
-  return Math.floor(ms / 30_000) * 30_000;
-}
+
 
 export interface TranscriptTailResult {
   ok: boolean;

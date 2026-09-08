@@ -27,6 +27,8 @@ const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // dec
 const HEARTBEAT_SRC = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
+const ACT = fs.readFileSync("extensions/loops/goal-activation.ts", "utf-8");
+const RECOVERY = fs.readFileSync("extensions/goal-recovery.ts", "utf-8");
 
 test("escalation gate: threshold semantics (0 = never, N = fire at streak N)", () => {
   assert.equal(shouldEscalateStall(5, 5), true);
@@ -381,7 +383,16 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   );
   // 3. The post-compaction refire also respects it:
   assert.match(src, /isSupervising\(\) && !abortedStandDown\) \{/);
-  // 4. autoResume is GLOBAL-only (user directive: "not supporting project
+  // 4. Audit 2026-09-07 (HIGH): every send-side entry refuses while the
+  //    abort latch stands — an armed timer, stall nudge, length nudge, or
+  //    terminal notice must not resurrect a user-Esc/zombie-aborted chain.
+  //    Explicit resume paths clear the latch themselves, so this cannot
+  //    deadlock a resume.
+  assert.match(CONT, /pendingContinuationDispatch \|\| flags\.abortedStandDown\) return;/, "sendContinuation checks the abort latch");
+  assert.match(CONT, /function sendStallEscalation[\s\S]{0,800}?flags\.abortedStandDown\) return;/, "sendStallEscalation checks the abort latch");
+  assert.match(CONT, /function sendLengthContinue[\s\S]{0,800}?flags\.abortedStandDown\) return;/, "sendLengthContinue checks the abort latch");
+  assert.match(CONT, /terminal_completion_notice_refused_stood_down/, "terminal-notice refusal is ledgered");
+  // 5. autoResume is GLOBAL-only (user directive: "not supporting project
   //    level setting for it now, just global") — the restore gate and the
   //    reviewer enqueue gate read loadGlobalSettings(), never the project
   //    cascade. junk-runner had a stale project-local opt-in that kept
@@ -394,6 +405,26 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   assert.match(src, /autoActivate: loadGlobalSettings\(\)\.autoResume === true/);
   assert.ok(!src.includes("resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume"), "no project-cascade autoResume read remains");
   assert.match(settings, /"autoResume",/);
+});
+
+test("audit 2026-09-07 HIGH: zombie retry routes on the abort owner, cycle-reset consumes budget and honors the horizon", () => {
+  // 1. The retry timer must route on its closure goalId, never live state —
+  //    `|| goal` sent a loop retry into the goal branch whenever any goal
+  //    object existed, stranding the loop paused forever with budget left.
+  assert.ok(!ACT.includes("if (goalId !== undefined || goal) {"), "no live-state routing in the zombie retry timer");
+  // 2. The fallback-exhausted cycle-reset must not re-activate immediately:
+  //    it increments attempts and parks through the standard envelope
+  //    (growing backoff + 24h horizon + manual hold) instead of a 1s
+  //    continuation with an unincremented count.
+  const resetAt = RECOVERY.indexOf("main_model_fallback_cycle_reset");
+  assert.ok(resetAt >= 0, "cycle-reset ledger site exists");
+  const resetHead = RECOVERY.slice(Math.max(0, resetAt - 600), resetAt);
+  assert.match(resetHead, /attempted: \[current\][\s\S]{0,200}?attempts: recovery\.attempts \+ 1/, "each new cycle consumes backoff budget");
+  const resetEnd = RECOVERY.indexOf('mode: "cycle-reset"', resetAt);
+  assert.ok(resetEnd > resetAt, "cycle-reset probe ledger ends the block");
+  const resetBlock = RECOVERY.slice(resetAt, resetEnd);
+  assert.match(resetBlock, /holdMainModelRecovery\(ctx, next/, "past the horizon the reset holds for manual resume instead of resurrecting");
+  assert.match(resetBlock, /scheduleContinuation\(ctx, true, 1_000\)/, "the probe turn still resumes synchronously (v0.34.132 contract: the turn IS the health check)");
 });
 
 test("v0.35.x — zombie-run watchdog: busy + zero stream events gets bounded abort and recovery guidance", () => {
@@ -501,7 +532,9 @@ test("v0.34.12: eager continuation settles 2.5s past agent_end (hellhunter 60s-p
 
 test("v0.34.12 + v0.34.64: wait-pause status line counts down live + ticker survives the wait (pully field request)", () => {
   const d = fs.readFileSync(path.resolve("extensions/goal-loop-display.ts"), "utf-8");
-  assert.match(d, /rms <= 0 \? " · resuming…" : ` · auto-retry in \$\{fmtElapsed\(rms\)\}`/, "live countdown, honest past-resumeAt");
+  // v0.38.31: "resuming…" is grace-bounded — a retry long past with no
+  // dispatch reads "retry overdue" instead of promising resume forever.
+  assert.match(d, /-rms >= PAUSED_RESUME_GRACE_MS \? " · retry overdue" : " · resuming…"/, "live countdown, grace-bounded past-resumeAt");
   const g = readGoalRuntimeSource();
   assert.match(g, /const auditVisible = state\.goal\?\.status === "auditing";/, "ticker keeps detached-auditor clocks live between worker events");
   assert.match(g, /isSupervising\(\) \|\| auditVisible \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
@@ -580,4 +613,14 @@ test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported w
   assert.match(CONT, /if \(!isSupervising\(\)\) return;/, "paused/completed disarms");
   assert.ok((CONT.match(/armQueueStuckProbe\(lastContinuationSentAt\);/g) ?? []).length >= 2, "armed on goal + stall sends (decomposition step 5: send paths moved)");
   assert.match(CONT, /const ctx = freshCtx\(\);\n      if \(!ctx\) return;.*no fresh lifecycle context/s, "probe resolves a fresh ctx at fire time instead of retaining the sender ctx");
+});
+
+test("audit 2026-09-07 MEDIUM: fallback ack refuses when a user message arrived after the send", () => {
+  // A manual turn inside the watchdog window must not settle the dispatch:
+  // the user message stamps lastUserMessageAt, and the agent_start /
+  // turn_start fallback refuses + ledgers instead of acknowledging.
+  assert.match(CONT, /export function noteUserMessageForDispatch/, "the stamp is exported for the message_start handler");
+  assert.match(CONT, /if \(lastUserMessageAt > record\.sentAt\)/, "fallback compares the user stamp against the dispatch send time");
+  assert.match(CONT, /continuation_start_ack_refused_user_turn/, "the refusal is ledgered");
+  assert.match(ACT, /noteUserMessageForDispatch\(\)/, "message_start stamps genuine user messages");
 });

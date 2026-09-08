@@ -561,10 +561,10 @@ export function buildSettingsRows(
     id: "subagentDisplayRichness",
     section: "subagents",
     label: "Subagent display richness",
-    valueText: show("subagentDisplayRichness", "rich"),
+    valueText: show("subagentDisplayRichness", "quiet"),
     sourceText: src("subagentDisplayRichness"),
     description:
-      "rich shows worker rows + task linkage (default); compact shows the count line; quiet shows hung/aborting workers only — HUNG is never silent",
+      "quiet shows troubled workers only + the count line (default — healthy fan-out lives on the fleet panel); rich shows all worker rows; compact shows the count line only — HUNG is never silent",
   });
   for (const name of OVERRIDABLE_AGENT_TYPES) {
     rows.push({

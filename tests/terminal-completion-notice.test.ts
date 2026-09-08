@@ -28,7 +28,22 @@ import { MockPi, makeMockCtx, tmpCwd, type MockCtx } from "./harness/mock-pi.js"
 const pi = new MockPi();
 activate(pi.api);
 
-const MAIN_SM = { name: "main-session-manager" };
+const MAIN_SM = {
+  name: "main-session-manager",
+  entries: [] as any[],
+  file: "",
+  getBranch() { return this.entries; },
+  getSessionFile() { return this.file; },
+};
+const originalSend = pi.api.sendMessage.bind(pi.api);
+pi.api.sendMessage = (message, options) => {
+  originalSend(message, options);
+  if (options?.triggerTurn === false) {
+    const entry = { type: "custom_message", id: String(MAIN_SM.entries.length), ...message };
+    MAIN_SM.entries.push(entry);
+    fs.appendFileSync(MAIN_SM.file, JSON.stringify(entry) + "\n");
+  }
+};
 const HOOKS_SRC = fs.readFileSync(
   new URL("../extensions/loops/goal-auditor-hooks.ts", import.meta.url),
   "utf-8",
@@ -41,6 +56,8 @@ function readLedger(cwd: string): Array<{ type: string; value: Record<string, un
 }
 
 async function freshSession(cwd: string): Promise<MockCtx> {
+  MAIN_SM.entries = [];
+  MAIN_SM.file = path.join(cwd, "session.jsonl");
   const ctx = makeMockCtx(cwd, { sessionManager: MAIN_SM });
   await pi.fire("session_start", { reason: "reload" }, ctx);
   return ctx;
@@ -81,7 +98,8 @@ test("v0.38.18 terminal notice: the done brief lands in the conversation exactly
   assert.equal(pi.sent.length, sendsBefore + 1, "one followUp turn carries the closure");
   const sentText = JSON.stringify(pi.sent[pi.sent.length - 1]);
   assert.match(sentText, /✓ done — audit pass closed/);
-  assert.match(sentText, /goal archived; nothing further is owed/);
+  assert.equal(pi.sent.at(-1)?.message.display, true);
+  assert.deepEqual(pi.sent.at(-1)?.options, { triggerTurn: false });
   const ledger = readLedger(cwd);
   assert.equal(ledger.filter((e) => e.type === "terminal_completion_notice_sent").length, 1);
 
@@ -92,9 +110,9 @@ test("v0.38.18 terminal notice: the done brief lands in the conversation exactly
     outcome: "audit pass closed — suite green",
     details: ["Evidence: 5744 tests green."],
   });
-  assert.equal(second, false, "the fire-once fence holds");
+  assert.equal(second, true, "already persisted is a valid outbox acknowledgement");
   assert.equal(pi.sent.length, sendsBefore + 1, "no second turn is started");
-  assert.equal(readLedger(cwd).filter((e) => e.type === "terminal_completion_notice_sent").length, 1);
+  assert.equal(readLedger(cwd).filter((e) => e.type === "terminal_completion_notice_sent").length, 2);
 
   // A different goal gets its own notice.
   const third = sendTerminalCompletionNotice(ctx as never, {
@@ -108,7 +126,7 @@ test("v0.38.18 terminal notice: the done brief lands in the conversation exactly
 
 test("v0.38.18 source: the detached-approval branch closes the transcript", () => {
   assert.match(HOOKS_SRC, /sendTerminalCompletionNotice\(liveCtx, \{/);
-  assert.match(HOOKS_SRC, /if \(origin !== "manual"\)/);
+  assert.match(HOOKS_SRC, /replayUndeliveredApprovalRenders/);
 });
 
 test("audit-2026-09-06: a stale-generation notice never fires into the successor session", async () => {

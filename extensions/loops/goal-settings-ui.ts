@@ -23,6 +23,7 @@ import * as path from "node:path";
 
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateCells } from "../goal-loop-display.js";
 import { Type } from "typebox";
 
 // v0.34.109 (decomposition step 1): the state singleton and the persistence
@@ -742,7 +743,9 @@ async function promptSettingsMenu(
   // Audit 2026-09-06: bound the flat option strings — full VALUE +
   // DESCRIPTION previously rendered unbounded. The resolution prefix
   // (`[section] label —`) sits at the head, so tail truncation is safe.
-  const flat = rows.map((r) => truncateToWidth(`[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`, 120, "…"));
+  // v0.38.30 audit: headless select values are plain-text — use the
+  // ANSI-free truncator (truncateToWidth stays for the painted TUI table).
+  const flat = rows.map((r) => truncateCells(`[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`, 120));
   flat.push("Done");
   const v = await ctx.ui.select(title, flat);
   if (!v || v === "Done") return undefined;
@@ -1362,15 +1365,28 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const inheritedThinking = ctx.thinkingLevel ?? "max";
       const levels = auditorThinkingLevels(pickedModel);
       if (levels.length <= 1) {
-        ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — this model exposes no thinking levels (auditor runs with thinking off).`, "info");
+        // Audit 2026-09-07 (MEDIUM, finding 387): a non-reasoning model
+        // must not inherit a dead override — clear it so the next
+        // reasoning model starts from session inheritance, not a stale pin.
+        if (curThinking !== undefined) saveSettings("global", ctx.cwd, { auditorThinkingLevel: undefined });
+        ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — this model exposes no thinking levels (auditor runs with thinking off)${curThinking !== undefined ? "; cleared the stale thinking override" : ""}.`, "info");
         return;
       }
+      // Audit 2026-09-07 (MEDIUM, finding 386): parity with the drafter
+      // flow — a `session — inherit` row clears the override (undefined
+      // already means inherit at the auditor spawn sites).
       const t = await ctx.ui.select(
         "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
-        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? inheritedThinking) ? " (current)" : ""}`),
+        drafterThinkingChoiceOptions(
+          levels,
+          levels.includes(curThinking ?? inheritedThinking) ? (curThinking ?? inheritedThinking) : levels.includes("high") ? "high" : levels[levels.length - 1],
+          curThinking === undefined,
+        ),
       );
-      if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
-      ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
+      const inheritThinking = t?.startsWith("session —") ?? false;
+      if (inheritThinking) saveSettings("global", ctx.cwd, { auditorThinkingLevel: undefined });
+      else if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
+      ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${inheritThinking ? " · thinking inherited from the session" : t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
       return;
     }
     case "auditorModelFallbacks": {
@@ -1601,9 +1617,9 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "subagentDisplayRichness": {
       const v = await ctx.ui.select("Subagent display richness (ambient worker UI)", [
-      "rich — worker rows + task linkage (recommended)",
+      "rich — all worker rows",
       "compact — the count line only",
-      "quiet — hung/aborting workers only (HUNG is never silent)",
+      "quiet — troubled workers only + the count line (default, HUNG is never silent)",
       ]);
       if (v) {
         const richness: SubagentDisplayRichness = v.startsWith("compact") ? "compact" : v.startsWith("quiet") ? "quiet" : "rich";
@@ -1618,7 +1634,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     case "notifyCmd": {
       const v = await ctx.ui.input("Notify command — the event message is passed as $1", "custom command · empty = auto-detect (notify-send/osascript) · 'off' = silent");
-      if (v !== undefined) saveSettings("global", ctx.cwd, { notifyCmd: v.trim() || undefined });
+      // Audit 2026-09-07 (LOW, finding 400): the menu VALUE column shows
+      // `auto` for unset — typing that visible word must round-trip to
+      // unset, not persist a shell command literally named `auto`.
+      if (v !== undefined) {
+        const raw = v.trim();
+        const auto = /^(auto(?:-detect)?|default)$/i.test(raw);
+        saveSettings("global", ctx.cwd, { notifyCmd: !raw || auto ? undefined : raw });
+      }
       return;
     }
     case "tokenLimit": {

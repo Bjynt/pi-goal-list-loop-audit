@@ -529,7 +529,7 @@ test("audit 2026-09-06: normalizeLoadedSettings resets junk numerics/enums/strin
     auditCap: 2.5,
     stuckMaxInterventions: "many",
     stallEscalationRefires: -1,
-    stallShortWords: 0,
+    stallShortWords: -1,
     stallSimilarityThreshold: 7,
     wedgeAlertMinutes: Number.NaN,
     carryover: "sometimes",
@@ -548,6 +548,10 @@ test("audit 2026-09-06: normalizeLoadedSettings resets junk numerics/enums/strin
   ] as const) {
     assert.equal(out[key], undefined, `${key} resets to unset`);
   }
+  // Audit 2026-09-07 (MEDIUM, findings 383-385): 0 = off is a legal saved
+  // value for stallShortWords and must survive normalization.
+  const off = normalizeLoadedSettings({ stallShortWords: 0 } as any);
+  assert.equal(off.stallShortWords, 0, "0 = off survives");
   // Valid values survive untouched.
   const kept = normalizeLoadedSettings({
     tokenLimit: 1000, auditCap: 0, stuckMaxInterventions: 3, stallShortWords: 20,
@@ -574,4 +578,13 @@ test("audit 2026-09-06: legacy reviewer block migrates to postaudit", async () =
   // postaudit wins when both are present.
   fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ reviewer: { mode: "on" }, postaudit: { mode: "off" } }));
   assert.deepEqual(loadSettings(cwd).postaudit, { mode: "off" });
+});
+
+test("audit 2026-09-07 (LOW, findings 392-394): quiet copy names the count line at every surface", () => {
+  const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  assert.match(SETTINGS, /The count\n   \* line stays at every level/, "type comment documents the count line");
+  const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
+  assert.match(MENU, /quiet shows troubled workers only \+ the count line/, "menu description names the count line");
+  const UI = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
+  assert.match(UI, /quiet — troubled workers only \+ the count line/, "picker option names the count line");
 });

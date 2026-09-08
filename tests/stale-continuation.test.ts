@@ -104,12 +104,16 @@ test("helper: stall warning with active goal is not stale", () => {
   assert.equal(reason, null);
 });
 
-test("helper: length continue is never stale (generic truncation recovery)", () => {
-  resetState();
+test("helper: length continue delivers with live supervision, stale without (audit 2026-09-07)", () => {
+  // The old "never stale" pin encoded the bug: a queued length nudge with
+  // NO supervision is an unowned turn (queued before archival) and must
+  // sanitize like any other marker-less goal-event. A truncated turn
+  // implies a live turn, which implies active supervision — so the live
+  // case still delivers and no live nudge is dropped.
   const cwd = tmpCwd();
   const content = "Your previous response was cut off at the model's per-response output token limit. Continue EXACTLY where you stopped";
-  const reason = __testOnlyClassifyStaleContinuation(content, cwd);
-  assert.equal(reason, null, "length continue must pass even with no supervision");
+  resetState();
+  assert.match(__testOnlyClassifyStaleContinuation(content, cwd)!, /no active supervision/);
   // also with active goal
   replaceState({ goal: seedGoal({ status: "active" }), list: [], loop: null } as any);
   assert.equal(__testOnlyClassifyStaleContinuation(content, cwd), null);

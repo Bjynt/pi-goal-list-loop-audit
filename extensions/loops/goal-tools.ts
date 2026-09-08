@@ -18,6 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { sendTerminalCompletionNotice } from "../goal-continuation.js";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -253,7 +254,8 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { buildApprovalChatLines, compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary, terminalHumanBrief, withoutStaleNext } from "../completion-summary.js";
+import { buildTerminalApprovalRender, compactCompletionSummary, compactTerminalCompletionSummary } from "../completion-summary.js";
+import { persistApprovalRender, replayUndeliveredApprovalRenders } from "../approval-render-store.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -542,7 +544,8 @@ function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "complete_goal",
     label: "Complete goal",
-    description: "Mark the active goal as complete. Queues a detached auditor worker to verify without holding the main pi turn. Use only when the objective is genuinely satisfied.",
+    description: "Submit a completion claim for detached audit; this does NOT complete or approve the goal. Use only when the objective is genuinely satisfied. Return without waiting for the auditor; GLLA delivers the final user summary after verified approval and durable archive.",
+    promptGuidelines: ["complete_goal queues a nonterminal claim. Do not say done, complete, approved, or accepted as a completion verdict while audit is pending. Do not poll or wait; if needed give only a brief pending status. GLLA posts the final outcome summary after approval; do not duplicate it."],
     parameters: Type.Object({
       // v0.34.136: completionSummary adopts the six-label recap from
       // audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md (Outcome / Changed
@@ -1267,11 +1270,18 @@ function registerAgentTools(pi: any): void {
           const terminalGoal = state.goal;
           if (!terminalGoal) return staleToolResult();
           const terminalReason = "completed without audit (user choice after Esc)";
-          const recap = compactTerminalCompletionSummary({
+          const escArchivePath = path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id);
+          // v0.38.25: canonical render (same voice as every approval path).
+          // Built from the terminalGoal local, which survives the archive
+          // fence clearing state.goal.
+          const escRender = buildTerminalApprovalRender({
             goal: terminalGoal,
             status: "complete",
             stopReason: terminalReason,
-            archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id),
+            archivePath: escArchivePath,
+            approval: `— completed without audit (your choice).`,
+            record: `— record: ${escArchivePath}`,
+            auditNote: "completed without audit (your choice)",
           });
           if (!archiveCurrentGoal(ctx, "complete", terminalReason)) {
             return {
@@ -1279,23 +1289,21 @@ function registerAgentTools(pi: any): void {
               details: {},
             };
           }
-          const brief = terminalHumanBrief({
-            goal: terminalGoal,
-            status: "complete",
-            stopReason: terminalReason,
-            archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id),
-          });
           // v0.38.20: the command output keeps the informing details (stale
           // `Next:` stripped); the chat notify is outcome + approval +
           // record pointer like every other approval path.
-          const briefBlock = [...withoutStaleNext(brief.details), `— completed without audit (your choice).`].join("\n");
-          ctx.ui.notify(buildApprovalChatLines({
-            outcome: brief.outcome,
-            details: brief.details,
-            approval: `— completed without audit (your choice).`,
-            record: `— record: ${path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id)}`,
-          }).join("\n"), "info");
-          notifyExternal(ctx, `Goal complete without audit (user choice): ${recap}`);
+          const briefBlock = escRender.transcriptLines.join("\n");
+
+          notifyExternal(ctx, `Goal complete without audit (user choice): ${escRender.recap}`);
+          const persisted = persistApprovalRender(ctx.cwd, {
+            goalId: terminalGoal.id,
+            objective: terminalGoal.objective,
+            chatLines: escRender.chatLines,
+          });
+          if (persisted) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+            goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+          }), terminalGoal.id);
+          else ctx.ui.notify("Goal archived, but its chat summary could not be persisted. Review the archived completion summary.", "warning");
           return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${briefBlock}` }], details: {} };
         }
         scheduleContinuation(ctx, true);
@@ -1315,22 +1323,25 @@ function registerAgentTools(pi: any): void {
         // saying "auditor approved" — pure process, no information
         // (Screenshot_20260808_012905/013220/013515).
         const terminalReason = `auditor ${result.model} approved`;
-        const recap = compactTerminalCompletionSummary({
-          goal: state.goal,
-          status: "complete",
-          stopReason: terminalReason,
-          archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
-        }, state.goal.completionSummary);
-        // Computed pre-archive: archiveCurrentGoal clears state.goal.
-        const brief = terminalHumanBrief({
-          goal: state.goal,
-          status: "complete",
-          stopReason: terminalReason,
-          archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
-        }, state.goal.completionSummary);
+        const manualArchivePath = path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id);
         // v0.38.20: captured pre-archive — archiveCurrentGoal clears
         // state.goal, so the record pointer must be computed here.
-        const manualArchiveRecord = `— record: ${path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id)}`;
+        const manualArchiveRecord = `— record: ${manualArchivePath}`;
+        // v0.38.25: canonical render — same voice as the detached path.
+        const manualRender = buildTerminalApprovalRender({
+          goal: state.goal,
+          status: "complete",
+          stopReason: terminalReason,
+          archivePath: manualArchivePath,
+          completionSummary: state.goal.completionSummary,
+          approval: `— auditor ${result.model} approved.`,
+          record: manualArchiveRecord,
+          extras: inspectionSessionPath
+            ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
+            : [],
+        });
+        const manualObjective = state.goal.objective;
+        const manualGoalId = state.goal.id;
         const archived = archiveCurrentGoal(ctx, "complete", terminalReason);
         if (!archived) {
           // The archive helper preserves the live objective and emits the
@@ -1349,17 +1360,17 @@ function registerAgentTools(pi: any): void {
         // v0.38.20: same approval voice as the detached path — the stale
         // pre-verdict `Next:` never reaches the chat.
         // PR #43: append the kept inspection-session pointer when present.
-        ctx.ui.notify([...buildApprovalChatLines({
-          outcome: brief.outcome,
-          details: brief.details,
-          approval: `— auditor ${result.model} approved.`,
-          record: manualArchiveRecord,
-        }),
-          ...(inspectionSessionPath
-            ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
-            : []),
-        ].join("\n"), "info");
-        notifyExternal(ctx, `Goal complete (auditor approved): ${recap}`);
+
+        notifyExternal(ctx, `Goal complete (auditor approved): ${manualRender.recap}`);
+        const persisted = persistApprovalRender(ctx.cwd, {
+          goalId: manualGoalId,
+          objective: manualObjective,
+          chatLines: manualRender.chatLines,
+        });
+        if (persisted) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+          goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+        }), manualGoalId);
+        else ctx.ui.notify("Goal archived, but its chat summary could not be persisted. Review the archived completion summary.", "warning");
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
 
@@ -1915,8 +1926,10 @@ function registerAgentTools(pi: any): void {
         if (notifyFailure) current.ui.notify(`Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it.`, "warning");
       });
       return {
-        content: [{ type: "text", text: `Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The verdict will be applied asynchronously.` }],
-        details: {},
+        content: [{ type: "text", text: `AUDIT PENDING — nonterminal. Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The goal is not approved or complete. Do not claim completion or give a final success summary. Do not wait or poll: GLLA will post the concrete final summary after verified approval and durable archive; rejection resumes work.` }],
+        details: { status: "audit-pending", terminal: false },
+        // End this tool batch, not the goal; the detached worker owns settlement.
+        terminate: true,
       };
     },
   }));

@@ -636,6 +636,9 @@ export const LIST_MUTATING_SUBCOMMANDS = new Set([
  * table choice writes state. wipe/reset/cancel/resume/reviewer/postaudit/
  * tooloverride mutate directly. Read-only surfaces (status, log, stats,
  * audits) and the unknown-action notice stay available for inspection.
+ * `fallbacks` is mixed: bare display reads only (allowed on a stale
+ * handle), while clear/off/unset/none mutates (refused) — the call site
+ * in goal-commands.ts arg-gates it (audit 2026-09-07, finding 399).
  */
 export const SETTINGS_MUTATING_ACTIONS = new Set([
   "wipe",
@@ -1051,12 +1054,46 @@ export function countTrailingDisapprovals(history: AuditVerdict[]): number {
  * signal. Infrastructure entries are transparent, but a changed contract
  * revision breaks the comparison because the auditor may now be judging new
  * work. */
+/** v0.38.32 (DECIDED 2026-09-08 migrate-on-read): replay the
+ * appendAuditVerdict scope-transition rules chronologically over a stored
+ * history, backfilling superseded/supersededBy on pre-v0.38.21 entries that
+ * a later verdict settled. Add-only (never clears a flag) and idempotent:
+ * a second run over the same array marks nothing, and replaying over
+ * post-v0.38.21 histories that live code already flagged is a no-op.
+ * Returns the count newly marked. Durability: callers mutate the live state
+ * object in place; the flags ride the next normal state write to disk, and
+ * the replay re-runs harmlessly until then. Never call this from a
+ * persistence fence — it is a read-path migration, not a write. */
+export function backfillSupersededObjections(history: AuditVerdict[]): number {
+  let n = 0;
+  for (let i = 0; i < history.length; i++) {
+    const trigger = history[i]!;
+    if (!((trigger.disapproved && !trigger.error) || (trigger.approved && !trigger.error))) continue;
+    const byRef = trigger.disapproved ? `disapproval:${trigger.at}` : `approval:${trigger.at}`;
+    for (let j = 0; j < i; j++) {
+      const older = history[j]!;
+      if (older.disapproved && !older.superseded) {
+        older.superseded = true;
+        older.supersededBy = byRef;
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
 /** v0.38.21 (objection pinning): the latest still-live disapproval — the
  * objection set the next retry must argue. Superseded rounds and
  * verdictless infrastructure entries are never live. A later clean
  * approval clears the pin, so a live entry is always the newest
  * verdict-bearing disapproval. */
 export function liveDisapproval(history: AuditVerdict[]): AuditVerdict | undefined {
+  // v0.38.32: migrate-on-read — legacy entries predate the pinning flags.
+  // Backfill what later verdicts settled before selecting, so a settled
+  // objection is never argued as live again. Add-only + idempotent (see
+  // backfillSupersededObjections); post-v0.38.21 histories pass through
+  // untouched.
+  backfillSupersededObjections(history);
   for (let i = history.length - 1; i >= 0; i--) {
     const v = history[i]!;
     if (v.superseded) continue;
@@ -3667,6 +3704,93 @@ export async function runWithInfraRetry<T extends { error?: string; approved: bo
 
 /** /glla audits default view: the ACTIVE goal's own audit history (the
  * surface the goal spec asked for), one line per verdict. */
+// ---- v0.38.23 lifesign: evidence-gated head + row bands (display-only) ----
+//
+// The widget head breathes only on genuine evidence (tool/output counters),
+// never on wall-clock ticks: the breather frame derives from counters that
+// move solely when a worker produces output, so the widget key stays stable
+// between evidence and the v0.37.1 per-second re-layout cannot return.
+
+export function fmtDuration(ms: number): string {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min >= 60) return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}m`;
+  if (min > 0) return `${min}m${String(sec).padStart(2, "0")}s`;
+  return `${sec}s`;
+}
+
+/** Bucket silentMs to coarser granularity for display stability:
+ * <1m → 5s buckets, <5m → 15s, otherwise 30s. The underlying
+ * hung classification still uses the exact value. */
+export function bucketSilentMs(ms: number): number {
+  if (ms < 60_000) return Math.floor(ms / 5000) * 5000;
+  if (ms < 300_000) return Math.floor(ms / 15_000) * 15_000;
+  return Math.floor(ms / 30_000) * 30_000;
+}
+
+export type LifesignBand = "fresh" | "aging" | "stale" | "hung";
+export const LIFESIGN_FRESH_MS = 5 * 60_000;
+export const LIFESIGN_STALE_MS = 30 * 60_000;
+export const BREATH_FRAMES = ["●", "◉", "○", "◉"] as const;
+
+/** Minimal structural row for lifesign math — AgentsPanelRow satisfies it. */
+export interface LifesignRow {
+  status: string;
+  action?: string;
+  silentMs: number;
+  toolUses?: number;
+  outputTokens?: number;
+}
+
+/** Per-row band. Queued caps at aging: waiting is not moving, but it is
+ * not broken either — red is reserved for hung/failed and 30m-stale
+ * running rows. Monochrome readers get the same information from the
+ * glyph shape (▶/◉/⚠) plus the silence number. */
+export function lifesignBandFor(row: LifesignRow): LifesignBand {
+  if (row.status === "hung" || row.action === "failed" || row.action === "unavailable") return "hung";
+  if (row.action === "abort-requested") return "aging";
+  if (row.status === "queued") return row.silentMs >= LIFESIGN_FRESH_MS ? "aging" : "fresh";
+  const age = Math.max(0, row.silentMs);
+  if (age < LIFESIGN_FRESH_MS) return "fresh";
+  if (age < LIFESIGN_STALE_MS) return "aging";
+  return "stale";
+}
+
+export interface HeadLifesign {
+  band: LifesignBand;
+  freshestMs: number;
+  /** active-clear head glyph: breathing cycle while fresh, frozen
+   * ring/hollow/triangle after. Callers paint it success/warning/error. */
+  breath: string;
+}
+
+/** Head lifesign from tracked rows. Ended rows are ignored; undefined when
+ * nothing is tracked (the head keeps its plain status glyph — no readout
+ * is invented without evidence). The breather advances on evidence
+ * counters, never on time. */
+const LIFESIGN_SEVERITY: Record<LifesignBand, number> = { fresh: 0, aging: 1, stale: 2, hung: 3 };
+
+export function headLifesign(rows: LifesignRow[] | undefined): HeadLifesign | undefined {
+  const active = (rows ?? []).filter((r) => r.status !== "ended");
+  if (active.length === 0) return undefined;
+  const freshestMs = Math.min(...active.map((r) => Math.max(0, r.silentMs)));
+  // Audit 2026-09-07: triangle on failed/unavailable too — the rows render
+  // them as red hung, so a breathing head would contradict the card.
+  if (active.some((r) => r.status === "hung" || r.action === "failed" || r.action === "unavailable")) return { band: "hung", freshestMs, breath: "⚠" };
+  // Audit 2026-09-07 (one-snapshot-never-diverging): the head band is the
+  // worst per-row band, not a freshest-age cut. Raw freshestMs let a
+  // queued-40m head read stale while its row read aging (queued caps at
+  // aging), and an aborting-10s head read fresh while its row read aging.
+  // Sharing lifesignBandFor keeps head and rows on the same snapshot.
+  const band: LifesignBand = active
+    .map((r) => lifesignBandFor(r))
+    .reduce((worst, b) => LIFESIGN_SEVERITY[b] > LIFESIGN_SEVERITY[worst] ? b : worst, "fresh" as LifesignBand);
+  const total = active.reduce((n, r) => n + (r.toolUses ?? 0) + (r.outputTokens ?? 0), 0);
+  const breath = band === "fresh" ? BREATH_FRAMES[total % BREATH_FRAMES.length]! : band === "aging" ? "◉" : "○";
+  return { band, freshestMs, breath };
+}
+
 export function formatGoalAuditHistory(goal: { id: string; auditHistory?: Array<any> }): string {
   const history = goal.auditHistory ?? [];
   if (history.length === 0) return "(no audits on this goal yet)";

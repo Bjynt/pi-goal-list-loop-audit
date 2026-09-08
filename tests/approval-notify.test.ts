@@ -10,8 +10,12 @@ import {
 // reprinted the agent's pre-verdict recap verbatim — `Next: detached auditor
 // verdict decides.` directly above `— auditor … approved.` — reading as
 // complete-before-verify, and five 120-char label lines scanning as soup.
-// The approval voice is now outcome + at most two details + approval +
-// record pointer, with the stale Next stripped on every approval surface.
+// The approval voice is now outcome + all bounded informing details +
+// approval + record pointer, with the stale Next stripped on every
+// approval surface. The v0.38.20 two-detail cap was deliberately lifted:
+// trimming Tests/Unresolved hid the proof the user asked for, and the
+// filler filter upstream (briefValueContent) already keeps the chat
+// glanceable by dropping content-free labels.
 
 test("v0.38.20 approval chat drops the stale pre-verdict Next line", () => {
   const lines = buildApprovalChatLines({
@@ -33,15 +37,22 @@ test("v0.38.20 approval chat drops the stale pre-verdict Next line", () => {
   ]);
 });
 
-test("v0.38.20 approval chat keeps at most two details", () => {
+test("approval chat keeps every informing detail (Tests + meaningful Unresolved preserved)", () => {
   const lines = buildApprovalChatLines({
     outcome: "done",
     details: ["Changed: a", "Evidence: b", "Tests: c", "Unresolved: d"],
     approval: "— auditor m approved.",
     record: "— record: x.md",
   });
-  assert.equal(lines.length, 5);
-  assert.ok(!lines.some((l) => l.startsWith("Tests:")), "third detail trimmed — the archive holds the rest");
+  assert.deepEqual(lines, [
+    "✓ done — done",
+    "Changed: a",
+    "Evidence: b",
+    "Tests: c",
+    "Unresolved: d",
+    "— auditor m approved.",
+    "— record: x.md",
+  ]);
 });
 
 test("v0.38.20 withoutStaleNext strips Next case-insensitively, keeps the rest", () => {
