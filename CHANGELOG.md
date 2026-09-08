@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.38.37 — bullets + deliberate non-do (2026-09-09)
+
+### Fixed
+
+- **Auditor disapproval of v0.38.36 answered:** the posted summary now carries one `•` bullet per informing detail on both posted surfaces (chat + transcript); new optional `complete_goal` `leftOut` parameter renders as the closing `• Left out:` bullet on all three approval sites (fresh, detached-retry, Esc-anyway). Absent stays absent — never invented, filler drops. Recap/archive format unchanged.
+- **Stale pins updated deliberately:** approval-chat `deepEqual` expectations now bullet-prefixed.
+
+### Verification
+
+- New pins: bullet count/evidence + present/absent/filler non-do (render unit), end-to-end `leftOut` claim → posted bullet (MockPi).
+- Full `release:check`: (see release log) 0 failures across all files; `tsc --noEmit` clean.
+- Evidence: `audit/HUMAN-VOICE-SUMMARY-2026-09-08.md`.
+
 ## 0.38.36 — human-voice terminal summaries (2026-09-08)
 
 ### Fixed

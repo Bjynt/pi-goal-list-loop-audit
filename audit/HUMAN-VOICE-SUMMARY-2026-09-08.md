@@ -28,6 +28,27 @@ the v0.38.34 summary pipeline working but reading like a machine receipt:
   surface), pending notice rewritten in **plain voice**, verified by
   **tests + full gate**.
 
+## Disapproval 2026-09-08T23:36Z — answered in v0.38.37
+
+The detached auditor correctly rejected v0.38.36: clause cuts and
+verdict-only counts shipped, but the render was still `Label: value`
+lines (no bullets) and the deliberate non-do was waived instead of
+built. Fixed for real:
+
+- `buildApprovalChatLines` + `transcriptLines` bullet every informing
+detail (`• Changed: …`) on the two posted surfaces; recap/archive
+untouched (archive format unchanged per contract).
+- New optional `complete_goal` `leftOut` parameter (maxLength 500) →
+stored on the pending claim → rendered as the closing
+`• Left out: …` bullet on all three approval sites (fresh approval,
+detached retry, Esc-complete-anyway). Absent stays absent — the
+normalizer preserves the field, the filler filter drops `none`.
+- Pinned: bullet count ≤ 6 with inline evidence (render unit),
+present/absent/filler non-do (render unit), end-to-end `leftOut`
+claim → posted `[goal-event]` bullet (MockPi).
+- Visual: no fresh screenshot exists in this loop; the shape is proven
+by the render-unit + MockPi pins above, not by pixels.
+
 ## New behavior (v0.38.36)
 
 - `clipSummaryValue` cuts at the last clause boundary (`, ; : · — – ( [`)
