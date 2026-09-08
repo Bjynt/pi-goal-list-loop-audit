@@ -37,3 +37,10 @@ Confirmation means persisted visible chat, not proof a human read it. JSONL conf
 - Selected existing detached-approval and list/standalone queue regressions: 4 passed, 127 filtered (`/tmp/glla-summary-regressions.log`).
 - `npm run check`: `tsc --noEmit` passed (`/tmp/glla-summary-tsc.log`). `git diff --check` passed; no staged files.
 - Total targeted checks: 63 passing tests. Full release suite and live TUI/RPC exercise deferred to independent review/publication; no release command was run.
+
+### Independent review + v0.38.34 follow-through
+
+- Fresh-context reviewer verdict on exact diff `be27789..1412ae9`: pending/approved/rejected semantics, archive gates, delivery confirmation, fences, and SDK use all correct; no concrete production merge-blocker in the completion path. Two findings.
+- **P1 (stale assertions, not regressions):** five release-gate failures — the lifted two-detail cap, three continuation-payload byte fixtures (+543/payload from the new guidance, growth exactly linear), and the no-audit toast assertion. Refreshed deliberately in v0.38.34 (see CHANGELOG); the measured-growth invariant is preserved, not weakened.
+- **P2 (real bug, fixed in v0.38.34):** replay always took the oldest five pending entries, so five persistently unconfirmed receipts starved a sixth render forever. Attempted-but-undelivered entries now rotate behind the unattempted in-scope tail; six-render regression test pins it.
+- Full `TMPDIR=/var/tmp npm run release:check`: **2034 pass / 2 skip / 0 fail** across 204 files (`/var/tmp/glla-completion-release-check2.log`); `tsc --noEmit` clean.

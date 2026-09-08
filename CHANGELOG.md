@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.38.34 — completion communication: fair replay rotation + stale-test refresh (2026-09-08)
+
+### Fixed
+
+- **Replay starvation (review P2, real bug):** `replayUndeliveredApprovalRenders` always took the oldest five pending entries, so five persistently unconfirmed receipts pinned the head forever and a sixth pending summary was never attempted in that session. Attempted-but-still-pending entries now rotate behind the unattempted in-scope tail (stable within groups; delivered/out-of-scope untouched), so every pending render is attempted within `ceil(n/5)` contacts. No entry dropped, confirmation rules unchanged, rotation alone never acknowledges. Pinned by a six-render regression test.
+- **Five stale release-gate assertions refreshed deliberately:** the approval-chat two-detail cap is lifted (Tests + meaningful Unresolved preserved — the filler filter already keeps chat glanceable); the no-audit briefing test now configures the session file and asserts on the visible session entry instead of the removed toast; continuation-payload byte fixtures updated for the completion-communication guidance (+543 bytes/payload, growth stays exactly linear).
+
+### Verification
+
+- Full `release:check`: 2034 pass / 2 skip / 0 fail across 204 files; `tsc --noEmit` clean.
+
 ## 0.38.33 — findings.md indent convention normalized (2026-09-08)
 
 ### Fixed
