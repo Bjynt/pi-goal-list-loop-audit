@@ -20,7 +20,6 @@ import {
 } from "../extensions/completion-summary.js";
 import {
   approvalRenderStorePath,
-  isApprovalContextIdle,
   persistApprovalRender,
   replayUndeliveredApprovalRenders,
 } from "../extensions/approval-render-store.js";
@@ -97,7 +96,7 @@ test("buildApprovalChatLines stays backward compatible without counts", () => {
 test("idle-persisted render replays once on the next live contact", () => {
   const cwd = tmpCwd();
   const chatLines = ["✓ done — shipped it", "— auditor m approved.", "— run: 1 turns · 0 file writes · 0 bash calls · auditor approved (1 verdict).", "— record: r"];
-  assert.equal(persistApprovalRender(cwd, { goalId: "g1", objective: "ship it", chatLines, delivered: false }), true);
+  assert.equal(persistApprovalRender(cwd, { goalId: "g1", objective: "ship it", chatLines }), true);
   const ctx = makeMockCtx(cwd, { idle: false });
   assert.equal(replayUndeliveredApprovalRenders(ctx, (entry) => { ctx.ui.notify(entry.chatLines.join("\n"), "info"); return true; }), 1, "confirmed delivery acknowledges the render");
   assert.equal(ctx.ui.notifies.length, 1, "exactly one notify goes out");
@@ -111,10 +110,11 @@ test("idle-persisted render replays once on the next live contact", () => {
   assert.match(ledger, /terminal_approval_render_replayed/, "replay is ledgered");
 });
 
-test("render delivered on a live turn never replays", () => {
+test("render with confirmed delivery never replays", () => {
   const cwd = tmpCwd();
-  persistApprovalRender(cwd, { goalId: "g2", objective: "live one", chatLines: ["✓ done — live"], delivered: true });
+  persistApprovalRender(cwd, { goalId: "g2", objective: "live one", chatLines: ["✓ done — live"] });
   const ctx = makeMockCtx(cwd, { idle: false });
+  assert.equal(replayUndeliveredApprovalRenders(ctx, () => true), 1);
   assert.equal(replayUndeliveredApprovalRenders(ctx), 0);
   assert.equal(ctx.ui.notifies.length, 0);
 });
@@ -129,9 +129,3 @@ test("corrupt store degrades to zero replays, never throws", () => {
   assert.match(ledger, /terminal_approval_render_store_invalid/, "corruption is ledgered, not thrown");
 });
 
-test("idle probe fails toward undelivered (never silent)", () => {
-  assert.equal(isApprovalContextIdle(makeMockCtx(tmpCwd(), { idle: true })), true, "idle host ⇒ undelivered ⇒ replay later");
-  assert.equal(isApprovalContextIdle(makeMockCtx(tmpCwd(), { idle: false })), false, "streaming turn ⇒ delivered at once");
-  assert.equal(isApprovalContextIdle({ isIdle: () => { throw new Error("weird"); } }), true, "throwing probe ⇒ undelivered, never lost");
-  assert.equal(isApprovalContextIdle({}), true, "missing probe ⇒ undelivered");
-});

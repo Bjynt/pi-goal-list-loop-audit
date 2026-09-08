@@ -202,7 +202,7 @@ test("v0.38.30: approval store truncates by code points and caps chat lines", ()
     const emojiObjective = "😀".repeat(400);
     const longLines = Array.from({ length: 100 }, (_, i) => `line ${i} ` + "y".repeat(2000));
     assert.equal(
-      persistApprovalRender(cwd, { goalId: "g1", objective: emojiObjective, chatLines: longLines, delivered: false }),
+      persistApprovalRender(cwd, { goalId: "g1", objective: emojiObjective, chatLines: longLines }),
       true,
     );
     const stored = JSON.parse(fs.readFileSync(approvalRenderStorePath(cwd), "utf-8"));

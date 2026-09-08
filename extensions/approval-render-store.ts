@@ -82,13 +82,11 @@ function writeRenders(cwd: string, renders: PendingApprovalRender[]): boolean {
   return landed === true;
 }
 
-/** Persist before attempting delivery. `delivered` is retained for old callers;
- * production callers always enqueue false and acknowledge through replay. */
+/** Enqueue before attempting delivery. Only replay can acknowledge it. */
 export function persistApprovalRender(cwd: string, render: {
   goalId: string;
   objective: string;
   chatLines: string[];
-  delivered: boolean;
 }): boolean {
   const at = nowIso();
   const existing = readRenders(cwd);
@@ -100,19 +98,18 @@ export function persistApprovalRender(cwd: string, render: {
     objective: [...render.objective].slice(0, 300).join(""),
     chatLines: render.chatLines.slice(0, MAX_RENDER_CHAT_LINES).map((line) => [...line].slice(0, MAX_RENDER_LINE_CHARS).join("")),
     createdAt: at,
-    ...(render.delivered ? { deliveredAt: at } : {}),
   };
   // The cap trims DELIVERED history only: undelivered renders are never
   // dropped (each is ~1KB and any user command replays them, so the
   // undelivered tail is self-draining in practice).
   const undelivered = existing.filter((e) => !e.deliveredAt);
-  const delivered = [...existing.filter((e) => e.deliveredAt), ...(render.delivered ? [entry] : [])];
-  const deliveredBudget = Math.max(0, MAX_STORED_RENDERS - undelivered.length - (render.delivered ? 0 : 1));
-  const next = [...undelivered, ...(render.delivered ? [] : [entry]), ...(deliveredBudget > 0 ? delivered.slice(-deliveredBudget) : [])];
+  const delivered = existing.filter((e) => e.deliveredAt);
+  const deliveredBudget = Math.max(0, MAX_STORED_RENDERS - undelivered.length - 1);
+  const next = [...undelivered, entry, ...(deliveredBudget > 0 ? delivered.slice(-deliveredBudget) : [])];
   if (!writeRenders(cwd, next)) return false;
   appendLedger(cwd, "terminal_approval_render_persisted", {
     goalId: render.goalId,
-    delivered: render.delivered,
+    delivered: false,
     lines: render.chatLines.length,
   });
   return true;
@@ -150,18 +147,3 @@ export function replayUndeliveredApprovalRenders(
   return replayed;
 }
 
-/** Liveness probe for delivery marking. Unknown/throwing ⇒ idle ⇒
- * undelivered ⇒ replayed on the next live contact. The safe direction is
- * never-silent: a duplicate render on the next command beats a lost one. */
-export function isApprovalContextIdle(ctx: { isIdle?: () => boolean }): boolean {
-  try {
-    return ctx.isIdle?.() ?? true;
-  } catch {
-    return true;
-  }
-}
-
-/** Test-only reset for store isolation. */
-export function __testOnlyResetApprovalRenderStore(): void {
-  // No module-level cache — isolation is via cwd-scoped files.
-}

@@ -1463,7 +1463,6 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       goalId,
       objective: approvalObjective,
       chatLines: approvalRender.chatLines,
-      delivered: false,
     });
     if (persisted) {
       replayUndeliveredApprovalRenders(liveCtx, (entry) => sendTerminalCompletionNotice(liveCtx, {

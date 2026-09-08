@@ -54,7 +54,7 @@ test("no-file session never acknowledges but does not repeat the visible summary
 test("outbox survives failed delivery and restart; acknowledged render never replays", () => {
   const h = host(); h.setPersist(false);
   const chatLines = ["✓ done — fixed routing", "Tests: routing suite passed", "— auditor approved."];
-  persistApprovalRender(h.cwd, { goalId: "g1", objective: "fix routing", chatLines, delivered: false });
+  persistApprovalRender(h.cwd, { goalId: "g1", objective: "fix routing", chatLines });
   const replay = (target: ReturnType<typeof host>) => replayUndeliveredApprovalRenders(target.ctx, e => target.deliver(e.goalId, e.chatLines.join("\n")));
   assert.equal(replay(h), 0);
   assert.equal(JSON.parse(fs.readFileSync(approvalRenderStorePath(h.cwd), "utf8"))[0].deliveredAt, undefined);
@@ -63,13 +63,13 @@ test("outbox survives failed delivery and restart; acknowledged render never rep
   assert.equal(replay(restarted), 0);
   assert.equal(restarted.calls.length, 1);
   // A repeated settlement cannot enqueue the same goal again.
-  persistApprovalRender(h.cwd, { goalId: "g1", objective: "fix routing", chatLines, delivered: false });
+  persistApprovalRender(h.cwd, { goalId: "g1", objective: "fix routing", chatLines });
   assert.equal(replay(restarted), 0);
 });
 
 test("failed outbox acknowledgement does not duplicate an existing persisted branch summary", () => {
   const h = host(); assert.equal(h.deliver(), true);
-  persistApprovalRender(h.cwd, { goalId: "g1", objective: "routing", chatLines: h.calls[0].message.content.split("\n"), delivered: false });
+  persistApprovalRender(h.cwd, { goalId: "g1", objective: "routing", chatLines: h.calls[0].message.content.split("\n") });
   assert.equal(replayUndeliveredApprovalRenders(h.ctx, e => h.deliver(e.goalId, e.chatLines.join("\n"))), 1);
   assert.equal(h.calls.length, 1);
 });

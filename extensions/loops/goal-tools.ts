@@ -1249,7 +1249,6 @@ function registerAgentTools(pi: any): void {
             goalId: terminalGoal.id,
             objective: terminalGoal.objective,
             chatLines: escRender.chatLines,
-            delivered: false,
           });
           replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
             goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
@@ -1316,7 +1315,6 @@ function registerAgentTools(pi: any): void {
           goalId: manualGoalId,
           objective: manualObjective,
           chatLines: manualRender.chatLines,
-          delivered: false,
         });
           replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
             goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
