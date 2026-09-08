@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-08):**
+- `FRESH-AUDIT-PASS-2026-09-08.md` — v0.38.30: three-scout fresh pass, nine LOW fixes (replay-after-fence guard, recursive countDone, ANSI-free plain-text truncation, narrow-width budgets, wider objective strip, sidecar hardening, goal-kind card ownership, topOpen strip parity, valid-value loop-arg parsing) + two DECIDE raised
 - `UI-CARD-COMPACTNESS-2026-09-08.md` — v0.38.29: active recovery is one compact card row; the footer no longer repeats the full recovery report; judgment prose is bounded and Markdown wrappers stay out of the headline
 - `UI-PROVENANCE-CLOSURE-2026-09-08.md` — v0.38.28: duplicate primary/handled-turn provenance hidden; terminal provenance connector closes with `└─` instead of dangling `│`/`├─`
 - `PR-45-46-DISPOSITION-2026-09-08.md` — v0.38.27: selective native port of Bjynt's PRs #45/#46 (`/loop pause` soft-hold + widget subtask count, both pinned); `auditTasks` + `bypassTriggered` held with rationale, malformed auditor line dropped
