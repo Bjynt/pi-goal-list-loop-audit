@@ -1259,6 +1259,39 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
+  // v0.38.27 (ported from Bjynt's PR #46): soft-hold, parallel to /goal
+  // pause and /glla pause. The loop stops firing iterations but stays in
+  // a resumable held state — NO finishLoopGit, NO hard-stop ledger, NO
+  // list-queue advance. /loop resume picks it up via RESUMABLE_STOP with
+  // iteration, best value, and history preserved verbatim.
+  if (sub === "pause") {
+    if (!state.loop) {
+      ctx.ui.notify("No loop to pause.", "info");
+      return;
+    }
+    if (!state.loop.active) {
+      ctx.ui.notify(`Loop is not active (${state.loop.stopReason ?? "held"}). Use /loop resume to continue, or /loop status to inspect.`, "info");
+      return;
+    }
+    clearLoopTimer();
+    clearToolActivityState();
+    if (state.mainModelRecovery?.kind === "loop") {
+      clearMainModelRecoveryTimer();
+      state.mainModelRecovery = undefined;
+      flags.mainModelAbortForRecovery = false;
+      flags.continuationDispatchStoodDown = false;
+    }
+    state.loop = { ...state.loop, active: false, stopReason: "paused by user (/loop pause)" };
+    persistState(ctx);
+    appendLedger(ctx.cwd, "loop_paused", { reason: "user", iterations: state.loop.iteration, best: state.loop.bestValue });
+    ctx.ui.notify(
+      `Loop paused after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.\nUse /loop resume to continue.`,
+      "info",
+    );
+    notifyExternal(ctx, `Loop paused by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"}). /loop resume to continue.`);
+    return;
+  }
+
   // v0.25.1: a CLEAN end — "completed: <reason>", distinct from
   // stuck/plateau/stopped-by-user. Additive: /loop stop is untouched.
   if (sub === "finish") {
