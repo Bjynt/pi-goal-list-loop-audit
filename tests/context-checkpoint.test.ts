@@ -86,7 +86,7 @@ function gllaPayload(index: number): Record<string, unknown> {
   };
 }
 
-test("authoritative checkpoint carries state, audit evidence, and lifecycle fences", () => {
+test("authoritative checkpoint carries stable state only — no dynamic fields", () => {
   const checkpoint = buildAuthoritativeContextCheckpoint({
     goal: goalFixture(),
     sessionGeneration: 12,
@@ -100,11 +100,18 @@ test("authoritative checkpoint carries state, audit evidence, and lifecycle fenc
   assert.match(checkpoint, /revision=7/);
   assert.match(checkpoint, /sessionGeneration=12/);
   assert.match(checkpoint, /ownerSession=session-owner-12/);
-  assert.match(checkpoint, /label=disapproved/);
-  assert.match(checkpoint, /Required fixes/);
-  assert.match(checkpoint, /recovery-pending/);
-  assert.match(checkpoint, /Implement checkpoint/);
-  assert.match(checkpoint, /Add lifecycle regression coverage/);
+  // Dynamic fields moved to newest retained payload (suffix), not checkpoint (prefix)
+  assert.ok(!/label=disapproved/.test(checkpoint), "audit label is dynamic — must not be in checkpoint");
+  assert.ok(!/Required fixes/.test(checkpoint), "audit report content is dynamic — must not be in checkpoint");
+  assert.ok(!/recovery-pending/.test(checkpoint), "pending completion is dynamic — must not be in checkpoint");
+  assert.ok(!/Implement checkpoint/.test(checkpoint), "task state is dynamic — must not be in checkpoint");
+  assert.ok(!/Add lifecycle regression coverage/.test(checkpoint), "pending TODOs are dynamic — must not be in checkpoint");
+  // Stable fields that must remain
+  assert.match(checkpoint, /Lifecycle: status=active/);
+  assert.match(checkpoint, /policy=goal/);
+  assert.match(checkpoint, /Auto-continuation: enabled/);
+  assert.match(checkpoint, /Repair\/replan target/);
+  assert.match(checkpoint, /Lifecycle fence/);
 });
 
 test("real continuation payload growth is bounded after checkpoint projection", () => {
@@ -140,11 +147,32 @@ test("real continuation payload growth is bounded after checkpoint projection", 
     };
   });
 
-  assert.deepEqual(bounded, [
-    { count: 5, messageCount: 4, serializedBytes: 25813, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
-    { count: 12, messageCount: 4, serializedBytes: 25813, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
-    { count: 25, messageCount: 4, serializedBytes: 25813, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
-  ]);
+  // Checkpoint is now smaller (no dynamic fields), so serializedBytes will differ.
+  // The key invariant: messageCount, gllaMessageCount, repeatedPayloads, removedPayloads stay the same.
+  assert.equal(bounded.length, 3);
+  const b0 = bounded[0]!;
+  const b1 = bounded[1]!;
+  const b2 = bounded[2]!;
+  assert.equal(b0.count, 5);
+  assert.equal(b0.messageCount, 4);
+  assert.equal(b0.gllaMessageCount, 2);
+  assert.equal(b0.repeatedPayloads, 0);
+  assert.equal(b0.removedPayloads, 4);
+  assert.equal(b1.count, 12);
+  assert.equal(b1.messageCount, 4);
+  assert.equal(b1.gllaMessageCount, 2);
+  assert.equal(b1.repeatedPayloads, 0);
+  assert.equal(b1.removedPayloads, 11);
+  assert.equal(b2.count, 25);
+  assert.equal(b2.messageCount, 4);
+  assert.equal(b2.gllaMessageCount, 2);
+  assert.equal(b2.repeatedPayloads, 0);
+  assert.equal(b2.removedPayloads, 24);
+  // Serialized bytes should be consistent across counts (bounded by checkpoint + 1 payload)
+  assert.equal(b0.serializedBytes, b1.serializedBytes);
+  assert.equal(b1.serializedBytes, b2.serializedBytes);
+  // And smaller than before (checkpoint shrunk)
+  assert.ok(b0.serializedBytes < 25813);
 });
 
 test("projection removes old goal events, inserts one checkpoint, and keeps newest payload", () => {
@@ -388,7 +416,8 @@ test("oversized paused goal plus active loop reserves required checkpoint fields
   assert.ok(checkpoint.length <= MAX_AUTHORITATIVE_CHECKPOINT_CHARS);
   assert.match(checkpoint, /Objective: O{100}/);
   assert.match(checkpoint, /Verification contract: C{100}/);
-  assert.match(checkpoint, /Latest audit .*label=disapproved/s);
+  // Dynamic fields excluded from checkpoint (cache-stability invariant)
+  assert.ok(!/label=disapproved/.test(checkpoint), "audit label is dynamic — must not be in checkpoint");
   assert.match(checkpoint, /Active loop authority/);
   assert.match(checkpoint, /Loop target: L{100}/);
   assert.match(checkpoint, /status=paused/);
