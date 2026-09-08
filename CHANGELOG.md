@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.38.35 — closed card + smart summary (2026-09-08)
+
+### Fixed
+
+- **Card no longer reads cut off (field 2026-09-08 220808):** the head objective now cuts at the last clause boundary inside the budget instead of mid-word (`truncateObjective`; character cut remains the fallback); the steady-state `model: primary … · inherited from session` row is dropped — it restated pi's own status line two rows below; and every card closes — the final `├─`/`│` row becomes `└─` whatever built it (active action row, lone orphan worker row). Provenance still renders on any news (pin, fallbacks, skips, failover); `/goal status` keeps the full chain.
+- **Stale card tests updated deliberately, purpose preserved:** the v0.33.0 slim-card `├─` tail, the v0.38.28 lone-row close, the loop-kind test's incidental model assertion, the narrow-width truncation fixture (now on a pinned row), and the worker-before-footer invariant (detail never lands *after* a footer).
+
+### Verification
+
+- Full `release:check`: 2037 pass / 2 skip / 0 fail across 204 files; `tsc --noEmit` clean.
+- Evidence: `audit/UI-CARD-CLOSED-2026-09-08.md`.
+
 ## 0.38.34 — completion communication: fair replay rotation + stale-test refresh (2026-09-08)
 
 ### Fixed
