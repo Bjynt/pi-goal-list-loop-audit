@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.38.27 — selective port of PRs #45/#46: /loop pause + widget subtask count (2026-09-08)
+
+### Added
+- `/loop pause` soft-hold (ported from Bjynt's PR #46): parallel to `/goal pause` and `/glla pause` — clears the tick, holds iteration/best/history verbatim with `stopReason: "paused by user (/loop pause)"`, ledger `loop_paused`, no `finishLoopGit`, no queue advance; `/loop resume` picks it up via the extended `RESUMABLE_STOP`. Pinned by `tests/loop-pause.test.ts` (3 tests).
+- Widget task count: a closed parent covers its subtasks (ported from Bjynt's PR #45 — field symptom 6 real tasks displayed "2/24"). Pinned (7/12 + 1/4 cases).
+- Held with recorded rationale (`audit/PR-45-46-DISPOSITION-2026-09-08.md`): `auditTasks` per-task auditor (token-cost surface needs dedicated review), `bypassTriggered` abort shortening (round-trip untested + v0.38.24 abort-latch interaction unverified); dropped the malformed "best solution" auditor line (taste-judge scope creep). Full gate 1990 pass / 0 fail.
+
 ## 0.38.26 — approval-render store: spillway cap keeps undelivered renders (2026-09-08)
 
 ### Fixed
