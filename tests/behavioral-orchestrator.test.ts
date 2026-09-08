@@ -3556,7 +3556,8 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     // summary — field 2026-09-04). Substance lives in the transcript
     // notice + archive; the chat stays glanceable but never boilerplate.
     for (const label of ["Changed:", "Evidence:", "Tests:"]) {
-      assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `approved briefing keeps informing label ${label}`);
+      // v0.38.37: informing details arrive as verifiable-result bullets.
+      assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.replace(/^• /, "").startsWith(label)), `approved briefing keeps informing label ${label}`);
     }
     assert.ok(recapNotifs[0]!.message.split("\n").length <= 8, "summary keeps bounded evidence, tests, and unresolved facts");
     assert.match(recapNotifs[0]!.message, /— audit: auditor .* \(.*verdicts?\)\./, "chat notify carries the verdict-only counts line");
