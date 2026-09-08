@@ -59,6 +59,7 @@ const MAIN_SM = {
   getBranch() { return this.entries; },
   getSessionFile() { return this.file || undefined; },
 };
+afterEach(() => { MAIN_SM.entries = []; MAIN_SM.file = ""; });
 const originalSummarySend = pi.api.sendMessage.bind(pi.api);
 pi.api.sendMessage = (message, options) => {
   originalSummarySend(message, options);
@@ -74,8 +75,6 @@ function ownerCtx(cwd: string): MockCtx {
 }
 
 async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
-  MAIN_SM.entries = [];
-  MAIN_SM.file = path.join(cwd, "summary-session.jsonl");
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason }, ctx);
   return ctx;
@@ -3240,6 +3239,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
   process.env.GLLA_PI_BINARY = fakePi;
   try {
     const ctx = await freshSession(cwd, "startup");
+    MAIN_SM.file = path.join(cwd, "summary-session.jsonl");
     await pi.command("goal", "start detached approval target — done when pinned", ctx);
     await tick();
     const started = Date.now();
@@ -3526,6 +3526,7 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
   process.env.GLLA_PI_BINARY = writeFakeAuditor(cwd, "approved", 0);
   try {
     const ctx = await freshSession(cwd, "startup");
+    MAIN_SM.file = path.join(cwd, "summary-session.jsonl");
     await pi.command("goal", "start recap-notify target — done when pinned", ctx);
     await tick();
     const longValidRecap = [
