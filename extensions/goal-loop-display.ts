@@ -1915,7 +1915,8 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // no recent action, pending task, or queue footer. Close that block with a
   // terminator instead of leaving `├─`/`│` suggesting missing rows.
   const provenanceEnd = provenanceStart + provenance.length;
-  if (provenance.length > 0 && provenanceEnd === lines.length) {
+  const detailedAgentRows = extras?.agents?.lines ?? (extras?.agents?.line ? [extras.agents.line] : []);
+  if (provenance.length > 0 && detailedAgentRows.length === 0 && provenanceEnd === lines.length) {
     const last = lines[provenanceEnd - 1]!;
     if (last.startsWith("├─ ") || last.startsWith("│ ")) {
       lines[provenanceEnd - 1] = `└─ ${last.slice(3)}`;
