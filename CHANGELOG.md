@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.38.36 — human-voice terminal summaries (2026-09-08)
+
+### Fixed
+
+- **Summaries read as machine receipts (field 20260908_223522/223523):** `clipSummaryValue` now cuts at clause boundaries and strips stranded punctuation (`…append/replace Apply…`, never `…playlist auto-add,…`); the counts line is verdict-only (`— audit: auditor approved (1 verdict).`, raw run stats stay in the archive); the AUDIT PENDING notice states facts instead of agent imperatives. Agent-written summaries get Codex-shape guidance in the continuation prompt (outcome-first, verifiable bullets, clause cuts). Researched from real Codex transcripts + agy binary strings; user chose Codex-style chat shape.
+- **Stale pins updated deliberately:** `— run:` telemetry assertions, `/detached auditor queued/` wordings, continuation-payload byte fixtures (+344/payload, growth exactly linear).
+
+### Verification
+
+- Full `release:check`: 2038 pass / 2 skip / 0 fail across 204 files; `tsc --noEmit` clean.
+- Evidence: `audit/HUMAN-VOICE-SUMMARY-2026-09-08.md`.
+
 ## 0.38.35 — closed card + smart summary (2026-09-08)
 
 ### Fixed
