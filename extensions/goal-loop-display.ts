@@ -83,6 +83,35 @@ export function truncateCells(s: string, max: number): string {
   return `${out}…`;
 }
 
+/** Clause-aware objective shortening for the card head. A raw character cut
+ * ends objectives mid-word ("…restyle the …") which reads as a clipped
+ * card rather than a summary (field 2026-09-08 220808). When the text
+ * overruns, prefer cutting at the last clause boundary (: ; · — – ( [)
+ * inside the budget so the head reads as an intentional summary; fall back
+ * to the character cut when no boundary clears the floor. Display-only. */
+export function truncateObjective(s: string, max: number): string {
+  const clean = compactDisplayText(s);
+  if (tuiVisibleWidth(clean) <= max) return clean;
+  if (max <= 1) return truncateCells(clean, max);
+  const budget = max - 1;
+  const floor = Math.max(16, Math.floor(budget * 0.4));
+  let out = "";
+  let w = 0;
+  let boundaryLen = -1;
+  for (const ch of clean) {
+    const cw = tuiVisibleWidth(ch);
+    if (w + cw > budget) break;
+    out += ch;
+    w += cw;
+    if (/[:;·—–(\[]/.test(ch)) boundaryLen = out.length;
+  }
+  if (boundaryLen > 0) {
+    const cut = [...out].slice(0, boundaryLen).join("").replace(/[:;·—–(\[\s]+$/u, "");
+    if (tuiVisibleWidth(cut) >= Math.min(floor, 16)) return `${cut}…`;
+  }
+  return `${out}…`;
+}
+
 function displayPauseReason(reason: string): string {
   return compactDisplayText(sanitizeProviderDisplayText(reason));
 }
@@ -353,26 +382,34 @@ function compactMainModelRecoveryLine(recovery: MainModelRecovery | undefined, c
 
 function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, width?: number): string[] {
   if (!provenance) return [];
+  const primary = typeof provenance.primary === "string" ? provenance.primary.trim() : "";
+  const fallbacks = uniqueModelRefs(provenance.fallbackRefs);
+  const skipped = uniqueModelRefs(provenance.skippedForbiddenRefs);
+  const handledTurn = typeof provenance.handledTurn === "string" ? provenance.handledTurn.trim() : "";
+  const handledTurnNews = !!handledTurn && handledTurn.toLowerCase() !== (primary || "").toLowerCase();
+  const handledAudit = typeof provenance.handledAudit === "string" ? provenance.handledAudit.trim() : "";
+  // The card sits just above pi's own status line, which already names the
+  // session model. A lone `model: primary X · inherited from session` row
+  // restates that indicator for zero new information while deepening the
+  // tree (field 2026-09-08 220808). Show the block only when it carries
+  // news: a pinned selection, fallbacks, skips, or a failover that
+  // handled work. `/goal status` keeps the full chain regardless.
+  if (primary && provenance.primarySource !== "pinned" && fallbacks.length === 0 && skipped.length === 0 && !handledTurnNews && !handledAudit) return [];
   const budget = budgetFor(width, 3, 60);
   const lines: string[] = [];
-  const primary = typeof provenance.primary === "string" ? provenance.primary.trim() : "";
   if (primary) {
     const source = provenance.primarySource === "pinned" ? "pinned" : "inherited from session";
     lines.push(`model: primary ${truncate(primary, budget)} · ${source}`);
   }
-  const fallbacks = uniqueModelRefs(provenance.fallbackRefs);
   if (fallbacks.length > 0) lines.push(`fallbacks: ${truncate(fallbacks.join(" → "), budget)}`);
-  const skipped = uniqueModelRefs(provenance.skippedForbiddenRefs);
   if (skipped.length > 0) lines.push(`skipped forbidden: ${truncate(skipped.join(", "), budget)}`);
-  const handledTurn = typeof provenance.handledTurn === "string" ? provenance.handledTurn.trim() : "";
   // A normal turn is handled by the configured primary model. Repeating the
   // same ref immediately below it adds no information and, when it is the
   // last row, leaves a misleading continuation glyph in the card. Keep the
   // row only when a recovery/failover actually handled the turn.
-  if (handledTurn && handledTurn.toLowerCase() !== primary.toLowerCase()) {
+  if (handledTurnNews) {
     lines.push(`handled turn: ${truncate(handledTurn, budget)}`);
   }
-  const handledAudit = typeof provenance.handledAudit === "string" ? provenance.handledAudit.trim() : "";
   if (handledAudit) {
     const source = provenance.handledAuditSource?.trim() ? modelSourceLabel(provenance.handledAuditSource) : "";
     const via = source ? ` · via ${truncate(source, 24)}` : "";
@@ -1450,15 +1487,17 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
       withAgents = orphanHead ? [orphanHead, ...agentLines] : [...agentLines];
     }
   }
-  // Keep the final tree row visually closed when the compact judgment block
-  // ends without a queue footer. Without this, its last `├─` reads like a
-  // missing continuation and makes an already dense card feel unfinished.
-  if (withAgents && inner && detailedAgents.length === 0 && extras?.durableDeferRecommendation && withAgents.length > 0) {
+  // The card always reads as a finished block: a final `├─`/`│` row
+  // promises continuation rows that never come (field 2026-09-08 220808 —
+  // the active card ended on its action row, reading as cut off). Close
+  // the tail whatever built it; rows that already close (`└─`, the head,
+  // the spacer) are untouched. Tree prefixes are literal — paint wraps
+  // content, never the glyph — so this holds themed too.
+  if (withAgents && withAgents.length > 0) {
     const tailIndex = withAgents.length - 1;
     const tail = withAgents[tailIndex]!;
-    if (tail.startsWith("├─ ") || tail.startsWith("│ ")) {
-      withAgents[tailIndex] = `└─ ${tail.slice(3)}`;
-    }
+    const m = tail.match(/^(├─ |│  |│ )/);
+    if (m) withAgents[tailIndex] = `└─ ${tail.slice(m[1].length)}`;
   }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
@@ -1663,7 +1702,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const headIcon = headLive
     ? paint(theme, headLive.band === "fresh" ? "success" : headLive.band === "aging" ? "warning" : "error", headLive.breath)
     : icon;
-  const head = `${headIcon} ${truncate(displayObjective(g.objective), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
+  const head = `${headIcon} ${truncateObjective(displayObjective(g.objective), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
   // v0.38.8: durable verdict tally as a first-class card row — the widget
   // is the glance surface, and stored verdicts are the progress evidence
