@@ -151,7 +151,6 @@ test("real continuation payload growth is bounded after checkpoint projection", 
   // Cardinality pins (messageCount 4, one checkpoint, removed == count - 1) are the
   // real bounded-growth invariant — bytes name the current template.
   // Template changes (e.g., completion-communication guidance) add bytes uniformly.
-  // Our fix removed dynamic fields, so checkpoint is smaller than upstream's 26356.
   const expectedBytes = 25737;
   assert.deepEqual(bounded, [
     { count: 5, messageCount: 4, serializedBytes: expectedBytes, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
