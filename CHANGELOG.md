@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.29 — compact active-card recovery and judgment details (2026-09-08)
+
+### Fixed
+- The active goal card now renders main-model recovery as one compact, truthful row instead of repeating the full chain, current model, pending switch, attempts, and skip details. Full recovery diagnostics remain available through `/goal status`; the status footer no longer duplicates that report.
+- Durable-vs-defer plaques cap their glance-card prose while preserving ordering, recommendation, and selected-choice facts. The final judgment row closes the tree cleanly.
+- Markdown emphasis/code wrappers are removed from the display-only objective projection, so `**objective**` and backtick-wrapped commands no longer add visual noise. Stored objectives remain unchanged.
+- Added regression coverage for compact recovery, duplicate suppression, Markdown cleanup, and the closed judgment tail.
+
 ## 0.38.28 — close redundant provenance rows in the active goal card (2026-09-08)
 
 ### Fixed
