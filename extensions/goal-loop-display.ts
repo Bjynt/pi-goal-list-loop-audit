@@ -1273,8 +1273,15 @@ function countDone(g: Goal): number {
   let n = 0;
   const walk = (ts: Array<{ status: string; subtasks?: any[] }>) => {
     for (const t of ts) {
-      if (t.status === "complete") n++;
-      if (t.subtasks) walk(t.subtasks);
+      if (t.status === "complete") {
+        // Ported from Bjynt's PR #45: a closed parent covers its subtasks
+        // (field: 2 closed parents with pending subtasks displayed "2/24"
+        // for 6 real tasks). Mid-flight parents still count done subtasks
+        // independently via the walk below.
+        n += 1 + (t.subtasks?.length ?? 0);
+      } else if (t.subtasks) {
+        walk(t.subtasks);
+      }
     }
   };
   walk(g.taskList?.tasks ?? []);

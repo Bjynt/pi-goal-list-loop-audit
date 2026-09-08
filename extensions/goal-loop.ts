@@ -1032,7 +1032,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // predicate it lands in never matched the prefix, so /loop resume
       // answered "No held loop to resume" and the preserved iteration,
       // best value, and history were unreachable without re-drafting.
-      !!r?.startsWith("stopped: automatic zero-stream abort");
+      !!r?.startsWith("stopped: automatic zero-stream abort") ||
+      // v0.38.27 (ported from Bjynt's PR #46): /loop pause is a soft-hold
+      // parallel to /goal pause. The loop stays resumable; finishLoopGit
+      // was skipped, so resume picks up iteration/best/history verbatim.
+      !!r?.startsWith("paused by user (/loop pause)");
     if (stored && !stored.active && RESUMABLE_STOP(stored.stopReason)) {
       // Branch-mode stop returns HEAD to originalBranch. Refuse a resume from
       // there rather than letting the next tick commit loop work to the
