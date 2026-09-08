@@ -1,5 +1,5 @@
 import type { Goal, Status } from "./goal-loop-core.js";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateCells } from "./goal-loop-display.js";
 
 /**
  * The durable, user-facing terminal recap contract. Keep this as a small
@@ -303,7 +303,10 @@ export function completionSummaryLines(text: string | undefined, maxValueLength 
     const line = `${name}: ${clipSummaryValue(rawValue || "not recorded", maxValueLength)}`;
     // Audit 2026-09-06: optional width budget for width-bound surfaces —
     // the default 240-char values previously had no width-conscious path.
-    return lineWidth && lineWidth > 0 ? truncateToWidth(line, lineWidth, "…") : line;
+    // v0.38.30 audit: plain-text surface — use the ANSI-free truncator
+    // (pi-tui truncateToWidth wraps the ellipsis in resets even for plain
+    // text, polluting notify/log/pager consumers).
+    return lineWidth && lineWidth > 0 ? truncateCells(line, lineWidth) : line;
   });
 }
 

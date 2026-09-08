@@ -431,8 +431,23 @@ export function parseLoopStartArgs(raw: string): {
   const spans: Array<[number, number]> = [];
   while ((m = kvRe.exec(rest)) !== null) {
     if (insideQuote(m.index)) continue; // key-looking text inside the target's quotes — leave it
-    if (!KNOWN_KEYS.has(m[1]!.toLowerCase())) continue; // unknown key — leave it in the target
-    kv.set(m[1]!.toLowerCase(), m[2] ?? m[3] ?? m[4] ?? "");
+    const key = m[1]!.toLowerCase();
+    if (!KNOWN_KEYS.has(key)) continue; // unknown key — leave it in the target
+    const value = m[2] ?? m[3] ?? m[4] ?? "";
+    // v0.38.30 audit: only consume known keys with VALID values — junk like
+    // unquoted `time=out` used to be stripped from the target while silently
+    // falling back to defaults. Invalid values stay in the target prose.
+    // `done` always consumes (any use teaches the v0.15.0 removal); `measure`
+    // accepts any non-empty command string.
+    let valid = true;
+    if (key === "direction") valid = value.toLowerCase() === "min" || value.toLowerCase() === "max";
+    else if (key === "window") { const n = Number.parseInt(value, 10); valid = Number.isFinite(n) && n > 0; }
+    else if (key === "max") { const n = Number.parseInt(value, 10); valid = Number.isFinite(n) && n >= 0; }
+    else if (key === "branch" || key === "force") valid = ["1", "true", "yes", "0", "false", "no"].includes(value.toLowerCase());
+    else if (key === "time" || key === "cadence") { const n = Number.parseFloat(value); valid = Number.isFinite(n) && n > 0; }
+    else if (key === "tokens" || key === "toolsamerepeat") { const n = Number.parseInt(value, 10); valid = Number.isInteger(n) && n >= 0; }
+    if (!valid) continue; // junk value — leave the span in the target
+    kv.set(key, value);
     spans.push([m.index, m.index + m[0].length]);
   }
   // Remove kv spans from the target text.
@@ -601,7 +616,9 @@ export function topOpenAuditFinding(cwd: string): string | null {
     const p = join(piGlaDir(cwd), "audit-loop/findings.md");
     if (!existsSync(p)) return null;
     const line = readFileSync(p, "utf-8").split("\n").find((l) => /^- \[[ \t]+\]/.test(l));
-    return line ? line.replace(/^- \[ \]\s*/, "").trim().slice(0, 120) : null;
+    // v0.38.30 audit: strip with the same [ \t]+ class as the matcher
+    // (an aligned `- [  ]` box used to leak markup into the reprieve note).
+    return line ? line.replace(/^- \[[ \t]+\]\s*/, "").trim().slice(0, 120) : null;
   } catch {
     return null;
   }

@@ -95,7 +95,14 @@ function displayObjective(objective: string): string {
   return compactDisplayText(objective)
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/__([^_]+)__/g, "$1")
-    .replace(/`([^`\n]*)`/g, "$1");
+    .replace(/`([^`\n]*)`/g, "$1")
+    // v0.38.30 audit: strip the remaining common single-line wrappers so the
+    // glance card keeps its plain-text promise (headers, quotes, links,
+    // single-emphasis). Display-only; prompts/archives/state keep verbatim.
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1");
 }
 
 /** v0.33.1: painted strings measure by their terminal-cell width. */
@@ -261,7 +268,11 @@ export const WORKER_TEXT_SPACER = "\u00A0";
 
 function budgetFor(width: number | undefined, prefixCols: number, floor: number): number {
   if (!width || width <= 0) return floor;
-  return Math.max(floor, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
+  // v0.38.30 audit: clamp to the available width (narrow terminals used to
+  // get the floor, so the inner truncate no-opped and the outer hard-cut
+  // sliced mid-token). Floor applies only when width is unknown; otherwise
+  // the available width wins with a small absolute minimum to avoid junk.
+  return Math.max(10, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
 }
 
 function uniqueModelRefs(refs: readonly string[] | undefined): string[] {
@@ -291,8 +302,10 @@ function modelSourceLabel(source: string): string {
   return source.trim();
 }
 
-function compactMainModelRecoveryLine(recovery: MainModelRecovery | undefined, configuredBackups: string[] = [], now = Date.now()): string | undefined {
+function compactMainModelRecoveryLine(recovery: MainModelRecovery | undefined, configuredBackups: string[] = [], now = Date.now(), width?: number): string | undefined {
   if (!recovery || !recovery.primary.trim()) return undefined;
+  // v0.38.30 audit: width-aware inner budgets (fixed 48/56 silently dropped
+  // the attempts/skipped tail at narrow widths when the outer hard-cut ran).
   const primary = recovery.primary.trim();
   const current = (recovery.active ?? primary).trim() || primary;
   const backups = uniqueModelRefs(configuredBackups).slice(0, 10);
@@ -308,7 +321,7 @@ function compactMainModelRecoveryLine(recovery: MainModelRecovery | undefined, c
   const phase = recovery.manualResumeRequired
     ? "manual hold"
     : recovery.pendingModelSwitch
-      ? `switching → ${truncate(recovery.pendingModelSwitch, 48)}`
+      ? `switching → ${truncate(recovery.pendingModelSwitch, budgetFor(width, 20, 48))}`
       : Number.isFinite(retryMs)
         ? retryMs <= 0 ? "retrying now" : `retrying in ${fmtElapsed(retryMs)}`
         : recovery.primaryProbeInFlight
@@ -330,12 +343,12 @@ function compactMainModelRecoveryLine(recovery: MainModelRecovery | undefined, c
   // A recovery object can briefly survive the successful primary selection.
   // Do not label that normal state as an incident, but keep the selected model
   // on the card when no separate provenance row is available.
-  if (!hasEpisode) return `model: ${truncate(current, 56)} · primary`;
+  if (!hasEpisode) return `model: ${truncate(current, budgetFor(width, 12, 56))} · primary`;
   const history = [
     recovery.attempts > 0 ? `attempts ${recovery.attempts}` : "",
     skipped > 0 ? `skipped ${skipped}` : "",
   ].filter(Boolean);
-  return `recovery: ${phase} · ${selected} ${truncate(current, 48)}${history.length > 0 ? ` · ${history.join(" · ")}` : ""}`;
+  return `recovery: ${phase} · ${selected} ${truncate(current, budgetFor(width, 20, 48))}${history.length > 0 ? ` · ${history.join(" · ")}` : ""}`;
 }
 
 function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, width?: number): string[] {
@@ -1340,6 +1353,12 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
 
 function countDone(g: Goal): number {
   let n = 0;
+  const countAllDescendants = (ts?: any[]): number => {
+    if (!ts) return 0;
+    let c = 0;
+    for (const s of ts) c += 1 + countAllDescendants(s.subtasks);
+    return c;
+  };
   const walk = (ts: Array<{ status: string; subtasks?: any[] }>) => {
     for (const t of ts) {
       if (t.status === "complete") {
@@ -1347,7 +1366,9 @@ function countDone(g: Goal): number {
         // (field: 2 closed parents with pending subtasks displayed "2/24"
         // for 6 real tasks). Mid-flight parents still count done subtasks
         // independently via the walk below.
-        n += 1 + (t.subtasks?.length ?? 0);
+        // v0.38.30 audit: count ALL descendants, not just direct children
+        // (a closed parent with nested grandchildren under-read done).
+        n += 1 + countAllDescendants(t.subtasks);
       } else if (t.subtasks) {
         walk(t.subtasks);
       }
@@ -1648,9 +1669,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // active. Keep that fact visible, but do not print the full recovery report
   // into the glance card; it made the card taller than the space below the
   // editor. `/goal status` remains the detailed recovery surface.
+  // v0.38.30 audit: goal card owns goal-kind episodes only (a kind:loop
+  // episode beside an active goal used to misattribute loop recovery here
+  // and hide the goal's own provenance; loop kinds keep the parked /
+  // standalone cards). Fall back to provenance when the compact line is
+  // undefined (blank-primary edge left no model fact at all).
+  const goalRecovery = state.mainModelRecovery?.kind === "goal" ? state.mainModelRecovery : undefined;
   let recoveryLine: string | undefined;
-  if (g.status === "active" && state.mainModelRecovery) {
-    recoveryLine = compactMainModelRecoveryLine(state.mainModelRecovery, extras?.mainModelFallbacks, now);
+  if (g.status === "active" && goalRecovery) {
+    recoveryLine = compactMainModelRecoveryLine(goalRecovery, extras?.mainModelFallbacks, now, width);
     if (recoveryLine) lines.push(`├─ ${paint(theme, "dim", recoveryLine)}`);
   }
   // Model provenance is a card fact, not a notification: keep it visible
@@ -1658,7 +1685,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // active recovery the compact recovery row owns the model fact, so do not
   // print a second primary/current row beside it. The full chain and skipped
   // refs remain available through `/goal status`.
-  const provenance = state.mainModelRecovery
+  const provenance = recoveryLine
     ? []
     : modelProvenanceLines(extras?.modelProvenance, width);
   const provenanceStart = lines.length;

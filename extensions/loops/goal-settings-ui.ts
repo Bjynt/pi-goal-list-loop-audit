@@ -23,6 +23,7 @@ import * as path from "node:path";
 
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateCells } from "../goal-loop-display.js";
 import { Type } from "typebox";
 
 // v0.34.109 (decomposition step 1): the state singleton and the persistence
@@ -742,7 +743,9 @@ async function promptSettingsMenu(
   // Audit 2026-09-06: bound the flat option strings — full VALUE +
   // DESCRIPTION previously rendered unbounded. The resolution prefix
   // (`[section] label —`) sits at the head, so tail truncation is safe.
-  const flat = rows.map((r) => truncateToWidth(`[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`, 120, "…"));
+  // v0.38.30 audit: headless select values are plain-text — use the
+  // ANSI-free truncator (truncateToWidth stays for the painted TUI table).
+  const flat = rows.map((r) => truncateCells(`[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`, 120));
   flat.push("Done");
   const v = await ctx.ui.select(title, flat);
   if (!v || v === "Done") return undefined;
