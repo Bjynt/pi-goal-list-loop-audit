@@ -10,7 +10,7 @@
 ### Verification
 
 - New pins: bullet count/evidence + present/absent/filler non-do (render unit), end-to-end `leftOut` claim → posted bullet (MockPi).
-- Full `release:check`: (see release log) 0 failures across all files; `tsc --noEmit` clean.
+- Full `release:check`: 2040 pass / 2 skip / 0 fail across 204 files (`/var/tmp/glla-bullets-release-check2.log`, tarball `pi-goal-list-loop-audit-0.38.37.tgz`); `tsc --noEmit` clean.
 - Evidence: `audit/HUMAN-VOICE-SUMMARY-2026-09-08.md`.
 
 ## 0.38.36 — human-voice terminal summaries (2026-09-08)
