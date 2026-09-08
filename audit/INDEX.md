@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-08):**
+- `UI-PROVENANCE-CLOSURE-2026-09-08.md` — v0.38.28: duplicate primary/handled-turn provenance hidden; terminal provenance connector closes with `└─` instead of dangling `│`/`├─`
 - `PR-45-46-DISPOSITION-2026-09-08.md` — v0.38.27: selective native port of Bjynt's PRs #45/#46 (`/loop pause` soft-hold + widget subtask count, both pinned); `auditTasks` + `bypassTriggered` held with rationale, malformed auditor line dropped
 - `POST-OBJECTIVE-SUMMARY-2026-09-07.md` — v0.38.25 (+v0.38.26 store-cap fix): cross-harness end-of-run survey (Codex CLI, Claude Code, pi-goal-x) + chosen shape; ONE canonical approval builder, audit-goal counts line, persist + replay on next live contact (field: 12ddoy record perfect, delivery silent)
 - `AUDIT-PASS-2026-09-07.md` — v0.38.24: full display/lifecycle/settings audit pass (goal `20260907131550-12ddoy`), 44 findings → 0 open; head-owns-liveness + exceptions-only `quiet` default (user-grilled); send-side abort-latch guards, zombie closure-routing, ownership compare-and-swap, auditor inherit/clear parity, `stallShortWords` 0 = off, arg-aware fallbacks gate
