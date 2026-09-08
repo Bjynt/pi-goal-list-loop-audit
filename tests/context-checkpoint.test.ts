@@ -151,14 +151,19 @@ test("real continuation payload growth is bounded after checkpoint projection", 
   // Cardinality pins (messageCount 4, one checkpoint, removed == count - 1) are the
   // real bounded-growth invariant — bytes name the current template.
   // Template changes (e.g., completion-communication guidance) add bytes uniformly.
+  // Our fix removed dynamic fields, so checkpoint is smaller than upstream's 26356.
+  const expectedBytes = 25737;
   assert.deepEqual(bounded, [
-    { count: 5, messageCount: 4, serializedBytes: 26356, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
-    { count: 12, messageCount: 4, serializedBytes: 26356, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
-    { count: 25, messageCount: 4, serializedBytes: 26356, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
+    { count: 5, messageCount: 4, serializedBytes: expectedBytes, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
+    { count: 12, messageCount: 4, serializedBytes: expectedBytes, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
+    { count: 25, messageCount: 4, serializedBytes: expectedBytes, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
   ]);
   // Serialized bytes consistent across counts (bounded by checkpoint + 1 payload)
-  assert.equal(bounded[0].serializedBytes, bounded[1].serializedBytes);
-  assert.equal(bounded[1].serializedBytes, bounded[2].serializedBytes);
+  const b0 = bounded[0]!;
+  const b1 = bounded[1]!;
+  const b2 = bounded[2]!;
+  assert.equal(b0.serializedBytes, b1.serializedBytes);
+  assert.equal(b1.serializedBytes, b2.serializedBytes);
 });
 
 test("projection removes old goal events, inserts one checkpoint, and keeps newest payload", () => {
