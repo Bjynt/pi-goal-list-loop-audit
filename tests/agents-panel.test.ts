@@ -339,14 +339,15 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
   const agentAt = withAgents.findIndex((l) => l.includes("Explore · inspect auth"));
   assert.ok(agentAt >= 0, "worker detail stays inside the card");
   const footerAt = withAgents.findIndex((l) => l.startsWith("└─"));
-  // v0.38.23: empty queue means no card footer at all — when a footer
-  // exists (queued depth) the detail must precede it.
-  assert.ok(footerAt === -1 || agentAt < footerAt, "detail precedes any footer");
+  // v0.38.23: empty queue means no separate queue footer. Closed card
+  // (field 2026-09-08 220808): with no queue the detail row itself
+  // terminates the tree — worker rows must never land AFTER a footer.
+  assert.ok(footerAt === -1 || agentAt <= footerAt, "detail never lands after the footer");
 
   // Audit 2026-09-07: no invented header — bare rows stand alone, and
   // the count line leads when the snapshot carries one.
   const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["▶ Explore · inspect auth · active 5s"] } })!;
-  assert.equal(agentOnly[0], "├─ ▶ Explore · inspect auth · active 5s", "orphan rows render bare, no invented header");
+  assert.equal(agentOnly[0], "└─ ▶ Explore · inspect auth · active 5s", "orphan rows render bare and closed, no invented header");
   assert.doesNotMatch(agentOnly.join("\n"), /active workers/);
   const agentOnlyCounted = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { line: "● 1 agent · Explore active 5s", lines: ["▶ Explore · inspect auth · active 5s"] } })!;
   assert.equal(agentOnlyCounted[0], "● 1 agent · Explore active 5s", "the count line leads orphan rows when present");

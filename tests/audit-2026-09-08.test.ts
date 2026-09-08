@@ -109,7 +109,8 @@ test("v0.38.30: kind:loop recovery does not hijack the active goal card", () => 
   })!;
   const rendered = lines.join("\n");
   assert.doesNotMatch(rendered, /recovery:/, "loop-kind episode stays off the goal card");
-  assert.match(rendered, /model: primary provider\/primary/);
+  assert.doesNotMatch(rendered, /model: primary/, "steady-state inherited row is dropped — pi's status line already names it");
+  assert.equal(lines.length, 1, "head-only card");
 });
 
 // FIX: blank-primary recovery falls back to provenance (no missing model fact).
@@ -131,12 +132,14 @@ test("v0.38.30: blank-primary recovery falls back to provenance", () => {
   assert.match(lines.join("\n"), /model: primary provider\/primary · pinned/);
 });
 
-// FIX: narrow widths no longer hard-cut provenance mid-token.
+// FIX: narrow widths no longer hard-cut provenance mid-token. The steady-state
+// inherited row is dropped by design, so this exercises inner truncation on a
+// pinned row (a user pin is news and stays visible).
 test("v0.38.30: narrow width keeps provenance inner-truncated, not mid-token cut", () => {
   const lines = buildWidgetLines(
     { goal: goal(), list: [] } as unknown as State,
     null, NOW, undefined, 40,
-    { modelProvenance: { primary: "provider/a-very-long-primary-model-reference-name", primarySource: "inherited" } },
+    { modelProvenance: { primary: "provider/a-very-long-primary-model-reference-name", primarySource: "pinned" } },
   )!;
   const row = lines.find((l) => l.includes("model: primary"))!;
   assert.match(row, /…/, "inner truncation owns the cut");
