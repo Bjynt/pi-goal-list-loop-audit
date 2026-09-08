@@ -81,6 +81,17 @@ for (const idle of [true, false]) test(`pending is nonterminal; approval deliver
   assert.equal(entries.length, 1, "settle and contact do not duplicate summary");
 });
 
+test("complete_goal leftOut renders the deliberate-non-do bullet end to end", async () => {
+  const { ctx, entries } = await setup("approved");
+  await pi.command("goal", "fix routing — done when pinned", ctx);
+  await pi.runTool("complete_goal", { completionSummary: summary, verificationSummary: "pinned", leftOut: "the walkthrough artifact surface" }, ctx);
+  await waitFor(() => entries.length === 1);
+  assert.equal(entries.length, 1);
+  assert.match(entries[0].content, /• Left out: the walkthrough artifact surface/);
+  const bullets = entries[0].content.split("\n").filter((l: string) => l.startsWith("• "));
+  assert.ok(bullets.length >= 1 && bullets.length <= 6, `posted summary carries 4-6 bullets, got ${bullets.length}`);
+});
+
 test("disapproval remains unfinished, no final success is posted", async () => {
   const { cwd, ctx, entries } = await setup("disapproved");
   await pi.command("goal", "fix routing — done when pinned", ctx);

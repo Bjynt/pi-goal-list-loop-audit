@@ -95,7 +95,29 @@ test("counts line proofs the audit verdict from durable state only", () => {
 
 test("buildApprovalChatLines stays backward compatible without counts", () => {
   const lines = buildApprovalChatLines({ outcome: "did it", details: ["Changed: x"], approval: "— approved.", record: "— record: p" });
-  assert.deepEqual(lines, ["✓ done — did it", "Changed: x", "— approved.", "— record: p"]);
+  assert.deepEqual(lines, ["✓ done — did it", "• Changed: x", "— approved.", "— record: p"]);
+});
+
+test("v0.38.37 posted summary carries verifiable-result bullets plus the deliberate non-do", () => {
+  const base = {
+    goal: richGoal(),
+    status: "complete" as const,
+    stopReason: "auditor auditor-model approved (detached)",
+    archivePath: ".pi-glla/archive/20260907-approval-render.md",
+    approval: "— auditor auditor-model approved.",
+    record: "— record: .pi-glla/archive/20260907-approval-render.md",
+  };
+  const withLeftOut = buildTerminalApprovalRender({ ...base, leftOut: "the walkthrough artifact surface" });
+  const bullets = withLeftOut.chatLines.filter((l) => l.startsWith("• "));
+  assert.ok(bullets.length >= 1 && bullets.length <= 6, `4-6 verifiable-result bullets, got ${bullets.length}`);
+  assert.ok(bullets.some((l) => /Changed: extensions\/completion-summary\.ts/.test(l)), "each bullet carries its evidence inline");
+  assert.ok(withLeftOut.chatLines.some((l) => l === "• Left out: the walkthrough artifact surface"), "agent-claimed non-do closes the bullets");
+  assert.ok(withLeftOut.transcriptLines.some((l) => l === "• Left out: the walkthrough artifact surface"), "transcript surface carries the non-do too");
+  const without = buildTerminalApprovalRender(base);
+  assert.ok(!without.chatLines.some((l) => /Left out:/.test(l)), "absent non-do stays absent, never invented");
+  assert.ok(!without.transcriptLines.some((l) => /Left out:/.test(l)), "transcript never invents a non-do");
+  const filler = buildTerminalApprovalRender({ ...base, leftOut: "none" });
+  assert.ok(!filler.chatLines.some((l) => /Left out:/.test(l)), "filler non-do drops like any filler label");
 });
 
 test("idle-persisted render replays once on the next live contact", () => {
