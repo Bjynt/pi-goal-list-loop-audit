@@ -61,6 +61,8 @@ for (const idle of [true, false]) test(`pending is nonterminal; approval deliver
   await pi.command("goal", "fix routing — done when pinned", ctx);
   const result = await pi.runTool("complete_goal", { completionSummary: summary, verificationSummary: "pinned" }, ctx) as any;
   assert.match(result.content[0].text, /AUDIT PENDING — nonterminal/);
+  assert.doesNotMatch(result.content[0].text, /Do not (claim|give|wait)/, "pending states facts, never agent imperatives (field 2026-09-08)");
+  assert.match(result.content[0].text, /Ending this turn now is correct/, "pending names the correct next step");
   assert.deepEqual(result.details, { status: "audit-pending", terminal: false });
   assert.equal(result.terminate, true, "stop the acknowledgement-only batch, not the goal");
   assert.equal(readState(cwd).goal?.status, "auditing");

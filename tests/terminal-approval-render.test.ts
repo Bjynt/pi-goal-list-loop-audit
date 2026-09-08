@@ -86,6 +86,11 @@ test("counts line proofs the audit verdict from durable state only", () => {
     /completed without audit \(your choice\)/,
     "no-audit path says so honestly",
   );
+  assert.doesNotMatch(
+    buildAuditCountsLine(richGoal()),
+    /turns|file writes|bash calls/,
+    "raw run stats stay in the archive, never in user chat (field 2026-09-08)",
+  );
 });
 
 test("buildApprovalChatLines stays backward compatible without counts", () => {
