@@ -294,7 +294,13 @@ function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, wi
   const skipped = uniqueModelRefs(provenance.skippedForbiddenRefs);
   if (skipped.length > 0) lines.push(`skipped forbidden: ${truncate(skipped.join(", "), budget)}`);
   const handledTurn = typeof provenance.handledTurn === "string" ? provenance.handledTurn.trim() : "";
-  if (handledTurn) lines.push(`handled turn: ${truncate(handledTurn, budget)}`);
+  // A normal turn is handled by the configured primary model. Repeating the
+  // same ref immediately below it adds no information and, when it is the
+  // last row, leaves a misleading continuation glyph in the card. Keep the
+  // row only when a recovery/failover actually handled the turn.
+  if (handledTurn && handledTurn.toLowerCase() !== primary.toLowerCase()) {
+    lines.push(`handled turn: ${truncate(handledTurn, budget)}`);
+  }
   const handledAudit = typeof provenance.handledAudit === "string" ? provenance.handledAudit.trim() : "";
   if (handledAudit) {
     const source = provenance.handledAuditSource?.trim() ? modelSourceLabel(provenance.handledAuditSource) : "";
@@ -1580,6 +1586,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // particular, never replace a configured forbidden ref with "none" — the
   // skipped line explains why it did not handle the turn.
   const provenance = modelProvenanceLines(extras?.modelProvenance, width);
+  const provenanceStart = lines.length;
   provenance.forEach((line, i) => {
     lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
   });
@@ -1904,6 +1911,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // `/goal status` / `/glla` command hints were extension meta, not task
   // information — dropped. No queue, no footer at all.
   if (queue > 0) lines.push(`└─ ${paint(theme, "dim", `${queue} queued`)}`);
+  // v0.38.28: provenance rows can be the entire detail block when there is
+  // no recent action, pending task, or queue footer. Close that block with a
+  // terminator instead of leaving `├─`/`│` suggesting missing rows.
+  const provenanceEnd = provenanceStart + provenance.length;
+  if (provenance.length > 0 && provenanceEnd === lines.length) {
+    const last = lines[provenanceEnd - 1]!;
+    if (last.startsWith("├─ ") || last.startsWith("│ ")) {
+      lines[provenanceEnd - 1] = `└─ ${last.slice(3)}`;
+    }
+  }
   return lines;
 }
 
