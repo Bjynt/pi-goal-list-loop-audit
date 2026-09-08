@@ -2404,3 +2404,10 @@
 {"type":"reviewer_fired","value":{"goalId":"20260908181959-3zhmz2","kind":"list","findings":0,"enqueued":0,"proposed":0,"cascadeStep":"notify-and-idle","report":".pi-glla/reviews/20260908181959-3zhmz2-2026-09-08T18-40-59-439Z.md"},"at":"2026-09-08T18:40:59.440Z"}
 {"type":"state","value":{"goal":null,"list":[],"loop":null,"mainModelRecovery":null,"lastModelRef":"opencode-go/muse-spark-1.3-contributor","lastCompactionAt":1788788437077,"supervisorPausedAt":null,"loadHoldAt":null,"lastOutcome":null},"at":"2026-09-08T18:40:59.440Z"}
 {"type":"terminal_approval_render_persisted","value":{"goalId":"20260908181959-3zhmz2","delivered":false,"lines":6},"at":"2026-09-08T18:40:59.441Z"}
+{"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-09-08T19:14:41.014Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-09-08T19:14:44.366Z"}
+{"type":"id_invalidation","value":{"oldId":"01a054a9-e07f-705b-87a1-9421f9b906dc","newId":"01a08271-a7b1-74d3-a455-e63ba7072a64","reason":"session_shutdown","shutdownReason":"quit","at":"2026-09-08T19:14:44.372Z"},"at":"2026-09-08T19:14:44.372Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-09-08T19:14:44.372Z"}
+{"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-09-08T19:14:47.719Z"}
+{"type":"session_rebound","value":{"reason":"resume"},"at":"2026-09-08T19:14:48.527Z"}
+{"type":"id_invalidation","value":{"oldId":"01a08271-a7b1-74d3-a455-e63ba7072a64","newId":"01a054a9-e07f-705b-87a1-9421f9b906dc","reason":"session_shutdown","shutdownReason":"resume","at":"2026-09-08T19:14:48.530Z"},"at":"2026-09-08T19:14:48.530Z"}
