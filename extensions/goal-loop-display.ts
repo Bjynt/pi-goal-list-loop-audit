@@ -1415,6 +1415,17 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
       withAgents = orphanHead ? [orphanHead, ...agentLines] : [...agentLines];
     }
   }
+  // Keep the final tree row visually closed even when the detail block ends
+  // with a judgment or a detailed worker row rather than the queue footer.
+  // Without this, the last `├─`/`│` reads like a missing continuation and
+  // makes an already dense card feel unfinished.
+  if (withAgents && inner && withAgents.length > 0) {
+    const tailIndex = withAgents.length - 1;
+    const tail = withAgents[tailIndex]!;
+    if (tail.startsWith("├─ ") || tail.startsWith("│ ")) {
+      withAgents[tailIndex] = `└─ ${tail.slice(3)}`;
+    }
+  }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
   let lines: string[] | undefined = withAgents;
@@ -1436,7 +1447,7 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
 function waitingListStatus(state: State, _now: number, theme?: DisplayTheme, width?: number): string {
   const queue = state.list ?? [];
   const head = queue[0];
-  const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
+  const objective = head?.objective?.trim() ? displayObjective(head.objective) : "unnamed queued item";
   const hold = typeof state.loadHoldAt === "number" ? " · held on restore" : "";
   // Audit 2026-09-06: the width budget truncates the END of the status
   // line — the `/glla resume` action must survive, so the OBJECTIVE takes
@@ -1453,7 +1464,7 @@ function waitingListStatus(state: State, _now: number, theme?: DisplayTheme, wid
 function waitingListLines(state: State, theme?: DisplayTheme, width?: number): string[] {
   const queue = state.list ?? [];
   const head = queue[0];
-  const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
+  const objective = head?.objective?.trim() ? displayObjective(head.objective) : "unnamed queued item";
   const objectiveBudget = budgetFor(width, visibleLen("├─ up next: "), 56);
   const action = typeof state.loadHoldAt === "number"
     ? "held on restore · /glla resume starts the queue · /list next skips/chooses"
@@ -1618,7 +1629,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const headIcon = headLive
     ? paint(theme, headLive.band === "fresh" ? "success" : headLive.band === "aging" ? "warning" : "error", headLive.breath)
     : icon;
-  const head = `${headIcon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
+  const head = `${headIcon} ${truncate(displayObjective(g.objective), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
   // v0.38.8: durable verdict tally as a first-class card row — the widget
   // is the glance surface, and stored verdicts are the progress evidence
@@ -1635,20 +1646,21 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     lines.push(`├─ ${paint(theme, "dim", `Recovery: ${repairStep}`)}`);
   }
   // A model switch crosses an asynchronous boundary while the goal remains
-  // active. Keep the complete durable recovery projection on the widget too;
-  // otherwise the head says only "active" while pending/attempted/skipped
-  // candidates are invisible until the goal is parked.
+  // active. Keep that fact visible, but do not print the full recovery report
+  // into the glance card; it made the card taller than the space below the
+  // editor. `/goal status` remains the detailed recovery surface.
   if (g.status === "active" && state.mainModelRecovery) {
-    const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-    recoverySummary.forEach((line, i) => {
-      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
-    });
+    const recoveryLine = compactMainModelRecoveryLine(state.mainModelRecovery, extras?.mainModelFallbacks, now);
+    if (recoveryLine) lines.push(`├─ ${paint(theme, "dim", recoveryLine)}`);
   }
   // Model provenance is a card fact, not a notification: keep it visible
-  // across active, interrupted, auditing, and paused branches. In
-  // particular, never replace a configured forbidden ref with "none" — the
-  // skipped line explains why it did not handle the turn.
-  const provenance = modelProvenanceLines(extras?.modelProvenance, width);
+  // across active, interrupted, auditing, and paused branches. During an
+  // active recovery the compact recovery row owns the model fact, so do not
+  // print a second primary/current row beside it. The full chain and skipped
+  // refs remain available through `/goal status`.
+  const provenance = state.mainModelRecovery
+    ? []
+    : modelProvenanceLines(extras?.modelProvenance, width);
   const provenanceStart = lines.length;
   provenance.forEach((line, i) => {
     lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
