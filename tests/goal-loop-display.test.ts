@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { buildWidgetLines } from "../extensions/goal-loop-display.ts";
+import { buildWidgetLines, truncateObjective } from "../extensions/goal-loop-display.ts";
 import type { Goal, State } from "../extensions/goal-loop-core.ts";
 
 const NOW = Date.parse("2026-08-17T20:10:00Z");
@@ -60,7 +60,7 @@ test("active goal card pins primary, ordered fallbacks, skipped forbidden refs, 
   assert.match(pinned.at(-1)!, /^└─ model:/, "a lone provenance row closes the tree");
 });
 
-test("v0.38.28: duplicate handled-turn provenance is omitted", () => {
+test("v0.38.28: duplicate handled-turn provenance is omitted; lone inherited row is dropped", () => {
   const lines = buildWidgetLines(
     { goal: goal(), list: [] },
     null,
@@ -77,7 +77,8 @@ test("v0.38.28: duplicate handled-turn provenance is omitted", () => {
   )!;
   const rendered = lines.join("\n");
   assert.doesNotMatch(rendered, /handled turn:/, "same primary/handled model is redundant");
-  assert.match(lines.at(-1)!, /^└─ model:/, "the remaining row is closed");
+  assert.doesNotMatch(rendered, /model: primary/, "a lone inherited row restates pi's own status line");
+  assert.equal(lines.length, 1, "head-only card, nothing dangling");
 });
 
 test("v0.38.29: active recovery is a compact model row, not a duplicate report", () => {
@@ -139,4 +140,41 @@ test("v0.38.29: settled recovery does not leave Markdown noise in the head", () 
   assert.match(lines[0]!, /Ship the compact card/);
   assert.doesNotMatch(lines[0]!, /\*\*|`/);
   assert.match(lines.find((line) => line.startsWith("└─ model:")) ?? "", /provider\/primary/);
+});
+
+test("card head cuts the objective at a clause boundary, never mid-word", () => {
+  const out = truncateObjective(
+    "Studio visual overhaul (ViewStats-style velocity bar): rebuild StudioRail on the chat PremiumSidebar pattern (collapse, search)",
+    80,
+  );
+  assert.ok(out.endsWith("pattern…"), `cuts at the parenthetical, not mid-word: ${out}`);
+  assert.ok(out.length <= 80);
+  assert.doesNotMatch(out, /colla…/);
+});
+
+test("truncateObjective falls back to a character cut with no usable boundary", () => {
+  assert.equal(truncateObjective("abcdefghijklmnopqrstuvwxyz0123456789", 10), "abcdefghi…");
+  assert.equal(truncateObjective("short", 80), "short");
+  // Boundary below the floor is not a summary — cut characters instead.
+  assert.equal(truncateObjective("ab: cdefghijklmnopqrstuvwxyz", 12), "ab: cdefghi…");
+});
+
+test("active card with an action row closes the tree", () => {
+  const lines = buildWidgetLines(
+    { goal: goal(), list: [] },
+    null,
+    NOW,
+    undefined,
+    120,
+    {
+      modelProvenance: {
+        primary: "opencode-go/muse-spark-1.3-contributor",
+        primarySource: "inherited",
+      },
+      recent: [{ name: "bash", arg: "cd /home/dracon/Dev/dracon-platform", ms: 13_000, ok: true, at: NOW }],
+    },
+  )!;
+  const rendered = lines.join("\n");
+  assert.doesNotMatch(rendered, /model: primary/, "steady-state model row is dropped");
+  assert.match(lines.at(-1)!, /^└─ ✓ bash/, "the action row closes the card instead of promising more");
 });
