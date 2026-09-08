@@ -3191,7 +3191,7 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
     const replacement = ownerCtx(cwd);
     await pi.fire("session_start", { reason: "reload" }, replacement);
     const result = await audit;
-    assert.match(result.content[0]!.text, /audit queued — nonterminal/i, "complete_goal returns without waiting on the old generation");
+    assert.match(result.content[0]!.text, /AUDIT PENDING — nonterminal/, "complete_goal returns without waiting on the old generation");
 
     const after = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string; phase?: string } };
     assert.ok(["auditing", "paused"].includes(after.status), "the replacement keeps the audit lifecycle recoverable");
@@ -3259,7 +3259,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
       verificationSummary: "The fake auditor will inspect the pinned artifact.",
     }, ctx);
     const elapsed = Date.now() - started;
-    assert.match(result.content[0]!.text, /detached auditor queued/i);
+    assert.match(result.content[0]!.text, /detached auditor is settling/i, "pending names the settling auditor in plain voice");
     assert.ok(elapsed < 300, `complete_goal waited ${elapsed}ms for the worker`);
     const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string } };
     assert.equal(claimed.status, "auditing", "claim is durable before the detached result");
