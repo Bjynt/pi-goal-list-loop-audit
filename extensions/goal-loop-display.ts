@@ -1419,7 +1419,7 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   // with a judgment or a detailed worker row rather than the queue footer.
   // Without this, the last `├─`/`│` reads like a missing continuation and
   // makes an already dense card feel unfinished.
-  if (withAgents && inner && withAgents.length > 0) {
+  if (withAgents && inner && detailedAgents.length === 0 && withAgents.length > 0) {
     const tailIndex = withAgents.length - 1;
     const tail = withAgents[tailIndex]!;
     if (tail.startsWith("├─ ") || tail.startsWith("│ ")) {

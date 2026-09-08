@@ -603,7 +603,7 @@ test("paused lifecycle projection names owner, queue, last activity, and next tr
   assert.ok(widget.some((line) => line.includes("last host activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
-test("active/in-flight main-model recovery keeps full chain state on status and widget", () => {
+test("active/in-flight main-model recovery uses one compact card row", () => {
   const state = {
     goal: goalOf({ status: "active", objective: "continue on the selected model — done when pinned" }),
     list: [],
@@ -621,13 +621,11 @@ test("active/in-flight main-model recovery keeps full chain state on status and 
   const extras = { mainModelFallbacks: ["provider/backup-one", "provider/backup-two"] };
   const status = buildStatusText(state, null, NOW, undefined, extras)!;
   const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
-  for (const surface of [status, widget.join("\\n")]) {
-    assert.ok(surface.includes("Main-model recovery: primary selected"), surface);
-    assert.ok(surface.includes("Order: provider/primary → provider/backup-one → provider/backup-two"), surface);
-    assert.ok(surface.includes("Pending switch: provider/backup-two"), surface);
-    assert.ok(surface.includes("Attempted: provider/primary"), surface);
-    assert.ok(surface.includes("Skipped: provider/backup-one (unregistered)"), surface);
-  }
+  // The footer owns the activity capsule; repeating the full recovery report
+  // there made the same incident appear twice and pushed the card off-screen.
+  assert.doesNotMatch(status, /Main-model recovery|Order:|Pending switch:/, status);
+  assert.match(widget.join("\\n"), /recovery: switching → provider\/backup-two · primary provider\/primary · attempts 1 · skipped 1/);
+  assert.doesNotMatch(widget.join("\\n"), /Order:|Current:|Pending switch:|Attempted:|Skipped:/);
 });
 
 test("standalone main-model recovery remains visible when no goal is active", () => {
@@ -1950,7 +1948,7 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   // Last-action line: Claude's done-row format + the next pending task.
   // v0.38.23: with an empty queue there is no footer, so the last-action
   // line is the card's last line.
-  assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
+  assert.match(lines[1]!, /^└─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
   assert.equal(lines[lines.length - 1], lines[1]);
   assert.ok(!lines.some((l) => l.startsWith("└─")));
   // Failed action renders ✗; no ms → no time suffix.
