@@ -29,3 +29,11 @@ Read installed Pi `docs/extensions.md` and `docs/session-format.md` completely b
 ## Limits
 
 Confirmation means persisted visible chat, not proof a human read it. JSONL confirmation reads at most 256 KiB per delivery/replay, never polls. A receipt older than that tail remains pending conservatively (without repeating into the same branch); recovery into another branch/session can deliver again. No-file sessions retain pending outbox entries. There is no transaction spanning Pi session persistence and GLLA outbox acknowledgement: a crash before acknowledgement can replay into a different session, while an existing matching branch suppresses duplicates. Legacy `deliveredAt` records are not retroactively reclassified. If the outbox write itself fails after archive, automatic render replay is unavailable; the warning points to the archived recap. No live `.pi-glla` edits were made by this implementation.
+
+### Validation run
+
+- `bun test --parallel=1 --max-concurrency=1 --timeout=30000 tests/completion-communication.test.ts`: 6 passed (`/tmp/glla-summary-behavior.log`).
+- Bounded terminal-summary/notice/render, summary-lines/quality, and `audit-2026-09-08` group: 53 passed (`/tmp/glla-summary-tests.log`).
+- Selected existing detached-approval and list/standalone queue regressions: 4 passed, 127 filtered (`/tmp/glla-summary-regressions.log`).
+- `npm run check`: `tsc --noEmit` passed (`/tmp/glla-summary-tsc.log`). `git diff --check` passed; no staged files.
+- Total targeted checks: 63 passing tests. Full release suite and live TUI/RPC exercise deferred to independent review/publication; no release command was run.

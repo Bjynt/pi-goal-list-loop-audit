@@ -93,3 +93,25 @@ test("bounded confirmation fails conservatively when receipt is outside tail", (
   assert.equal(h.deliver(), false);
   assert.equal(h.calls.length, 1);
 });
+
+test("failed outbox acknowledgement write retries without resending the visible message", () => {
+  const h = host();
+  persistApprovalRender(h.cwd, { goalId: "g1", objective: "routing", chatLines: ["✓ done — routing"] });
+  const tmp = approvalRenderStorePath(h.cwd) + ".tmp";
+  fs.mkdirSync(tmp);
+  const replay = () => replayUndeliveredApprovalRenders(h.ctx, e => h.deliver(e.goalId, e.chatLines.join("\n")));
+  assert.equal(replay(), 1);
+  assert.equal(JSON.parse(fs.readFileSync(approvalRenderStorePath(h.cwd), "utf8"))[0].deliveredAt, undefined);
+  fs.rmdirSync(tmp);
+  assert.equal(replay(), 1);
+  assert.equal(replay(), 0);
+  assert.equal(h.calls.length, 1);
+});
+
+test("current settlement is not starved by older unconfirmed renders", () => {
+  const h = host();
+  for (let i = 0; i < 8; i++) persistApprovalRender(h.cwd, { goalId: `g${i}`, objective: "routing", chatLines: [`✓ done — routing ${i}`] });
+  assert.equal(replayUndeliveredApprovalRenders(h.ctx, e => h.deliver(e.goalId, e.chatLines.join("\n")), "g7"), 1);
+  assert.equal(h.calls.length, 1);
+  assert.match(h.calls[0].message.content, /routing 7/);
+});
