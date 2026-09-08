@@ -1219,14 +1219,16 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     if (kind === "wait" || kind === "blocked") {
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
       // timed wait) — "auto-retry in 23m" beats a static clock time, and a
-      // passed resumeAt says "resuming…" instead of lying about the past.
+      // freshly-passed resumeAt says "resuming…" instead of lying about the
+      // past. v0.38.31: "resuming…" shares the transition grace window — a
+      // retry time long past with no dispatch reads "retry overdue".
       // Every retry-class pause renders the same ⏳ auto-retrying… line +
       // countdown; blocked pauses without a recovery timer render as
       // ⏸ action needed. A main-model manual hold names its recovery owner.
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
-      const when = Number.isFinite(rms)
-        ? rms <= 0 ? " · resuming…" : ` · auto-retry in ${fmtElapsed(rms)}`
-        : "";
+      const when = !Number.isFinite(rms) ? ""
+        : rms > 0 ? ` · auto-retry in ${fmtElapsed(rms)}`
+        : -rms >= PAUSED_RESUME_GRACE_MS ? " · retry overdue" : " · resuming…";
       if (kind === "blocked") {
         const label = state.mainModelRecovery?.manualResumeRequired === true
           ? "⏸ manual recovery hold"
@@ -1899,7 +1901,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       recoverySummary.forEach((line) => lines.push(`│  ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`));
     }
     else if (Number.isFinite(retryMs)) {
-      const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;
+      // v0.38.31: "now" shares the transition grace window — a retry time
+      // that passed long ago with no dispatch is overdue, not imminent.
+      const overdue = -retryMs >= PAUSED_RESUME_GRACE_MS;
+      const when = retryMs > 0 ? `next probe in ${fmtElapsed(retryMs)}`
+        : overdue ? "overdue — waiting on recovery timer"
+        : "now";
       lines.push(`├─ ${paint(theme, "dim", `auto-retrying · ${when}`)}`);
     } else if (kind === "blocked" && state.mainModelRecovery?.manualResumeRequired === true) {
       lines.push(`├─ ${paint(theme, "warning", "manual recovery hold — automatic probes stopped")}`);
@@ -1940,6 +1947,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // before the first turn), render "awaiting first turn" instead of "saved"
     // — the latter was misleading because no work was ever "saved" before the
     // session ended.
+    if (kind === "wait") {
+      // v0.38.31 (field 2026-09-08 180721): a recovery-timer wait carries no
+      // objective-specific tail — owner + next are already on the lifecycle /
+      // transition / auto-retry rows, and the parked suggestedAction is stock
+      // provider-failure boilerplate identical on every recovery wait. End
+      // the card here, closing the previous row as the footer.
+      const tail = lines[lines.length - 1];
+      if (tail !== undefined) lines[lines.length - 1] = tail.replace(/^├─|^│\s*/, "└─ ");
+      return lines;
+    }
     const spent: string[] = [];
     const tokUsed = g.usage?.tokensUsed ?? 0;
     const audits = g.auditHistory?.length ?? 0;
