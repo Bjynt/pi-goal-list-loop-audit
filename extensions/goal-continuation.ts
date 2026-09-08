@@ -1,3 +1,4 @@
+import { deliverTerminalSummary } from "./terminal-summary-delivery.js";
 // ============================================================================
 // goal-continuation.ts — decomposition step 5 (v0.34.113)
 // ============================================================================
@@ -1183,19 +1184,8 @@ export function sendTerminalCompletionNotice(ctx: ExtensionContext, notice: Term
     `✓ done — ${notice.outcome}`,
     ...notice.details,
   ]).join("\n");
-  const confirmed = (): boolean => ctx.sessionManager.getBranch().some((entry) =>
-    entry.type === "custom_message" && entry.customType === GOAL_EVENT_ENTRY &&
-    entry.display === true && entry.details?.terminalApprovalGoalId === notice.goalId,
-  );
   try {
-    if (confirmed()) return true;
-    flags.extensionApi.sendMessage({
-      customType: GOAL_EVENT_ENTRY,
-      content,
-      display: true,
-      details: { terminalApprovalGoalId: notice.goalId },
-    }, { triggerTurn: false });
-    if (!confirmed()) return false;
+    if (!deliverTerminalSummary(ctx, flags.extensionApi, GOAL_EVENT_ENTRY, notice.goalId, content)) return false;
   } catch {
     appendLedger(ctx.cwd, "terminal_completion_notice_unsent", { goalId: notice.goalId });
     return false;
