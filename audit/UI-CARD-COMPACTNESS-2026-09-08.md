@@ -49,5 +49,11 @@ judgment production fixtures).
 
 `npx tsc --noEmit`: pass.
 
-The release gate is run separately after the version bump; its result is added
-here without replacing this append-only finding.
+## Release evidence
+
+- `TMPDIR=/var/tmp npm run release:check`: 1993 pass, 2 skip, 0 fail;
+  packed-artifact smoke test passed.
+- Git tag `v0.38.29` and GitHub Release were published from `5f245cf7`.
+- GitHub Actions publish run `34240463260` completed successfully.
+- `npm view pi-goal-list-loop-audit version dist-tags.latest` reports
+  `0.38.29` for both values.
