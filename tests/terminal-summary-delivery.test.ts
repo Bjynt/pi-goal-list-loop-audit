@@ -115,3 +115,24 @@ test("current settlement is not starved by older unconfirmed renders", () => {
   assert.equal(h.calls.length, 1);
   assert.match(h.calls[0].message.content, /routing 7/);
 });
+
+test("persistently unconfirmed head rotates so a later render is attempted", () => {
+  const h = host();
+  for (let i = 0; i < 6; i++) persistApprovalRender(h.cwd, { goalId: `g${i}`, objective: "routing", chatLines: [`✓ done — routing ${i}`] });
+  // The first five never confirm; only the sixth can land. Without fair
+  // rotation the oldest-five window would pin the head forever and g5
+  // would never be attempted in this session.
+  const attempted: string[] = [];
+  const replay = () => replayUndeliveredApprovalRenders(h.ctx, (e) => {
+    attempted.push(e.goalId);
+    return e.goalId === "g5" ? h.deliver(e.goalId, e.chatLines.join("\n")) : false;
+  });
+  assert.equal(replay(), 0);
+  assert.deepEqual(attempted, ["g0", "g1", "g2", "g3", "g4"]);
+  assert.equal(replay(), 1, "the sixth render is attempted on the next contact");
+  assert.ok(attempted.includes("g5"));
+  const stored = JSON.parse(fs.readFileSync(approvalRenderStorePath(h.cwd), "utf8"));
+  assert.equal(stored.length, 6, "rotation drops no entry");
+  assert.ok(stored.find((e: { goalId: string }) => e.goalId === "g5").deliveredAt !== undefined);
+  assert.equal(stored.filter((e: { deliveredAt?: string }) => e.deliveredAt === undefined).length, 5);
+});

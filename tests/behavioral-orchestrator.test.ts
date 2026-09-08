@@ -462,6 +462,9 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
   const previous = process.env.GLLA_PI_BINARY;
   process.env.GLLA_PI_BINARY = fakePi;
   const ctx = await freshSession(cwd, "startup");
+  // The no-audit briefing is a persisted visible session message, not a
+  // ui.notify toast: the session file must exist or delivery stays pending.
+  MAIN_SM.file = path.join(cwd, "no-audit-session.jsonl");
   const controller = new AbortController();
   let confirmationTitle = "";
   ctx.ui.confirmImpl = async (title) => {
@@ -479,8 +482,9 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
     controller.abort();
     await queued;
     await waitUntil(() => readState(cwd).goal === null);
-    const notices = ctx.ui.notifies.map((entry) => entry.message).join("\n");
-    const notice = ctx.ui.notifies.find((entry) => entry.message.includes("completed without audit (your choice)"))?.message ?? "";
+    const briefings = MAIN_SM.entries.filter((e) => typeof e.content === "string" && e.content.includes("completed without audit (your choice)"));
+    assert.ok(briefings.length > 0, "the no-audit briefing reached the visible session");
+    const notice = briefings[0].content as string;
     assert.equal(confirmationTitle, "Audit aborted", "the explicit audit-abort choice was presented");
     assert.match(notice, /^✓ done — Objective "complete without audit target/, "the briefing leads with the archived objective");
     assert.match(notice, /— completed without audit \(your choice\)\./, "the no-audit trailer closes the briefing");
@@ -3547,7 +3551,7 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     assert.ok(recapNotifs.some((n: { message: string }) => n.message.includes("Changed:") && n.message.includes("\n")), "the recap arrives as one-label-per-line, not the single-line mash");
     assert.equal(recapNotifs.length, 1, "the persisted summary is the single decisive end-of-goal voice");
     assert.match(recapNotifs[0]!.message, /^✓ done — Pinned the R-key\/HUD retire parity/, "the briefing leads with the outcome in the header");
-    // v0.38.20: the chat notify is outcome + at most two details + approval
+    // The chat notify is outcome + informing details + approval
     // + record pointer (five 120-char label lines scan as soup, not a
     // summary — field 2026-09-04). Substance lives in the transcript
     // notice + archive; the chat stays glanceable but never boilerplate.

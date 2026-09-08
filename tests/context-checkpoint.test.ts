@@ -140,10 +140,16 @@ test("real continuation payload growth is bounded after checkpoint projection", 
     };
   });
 
+  // Deterministic post-projection bytes. Refresh deliberately when the
+  // continuation template changes: the completion-communication guidance
+  // added +543 bytes per payload (the newest payload survives projection,
+  // so every probe size grows by exactly that). Cardinality pins above
+  // (messageCount 4, one checkpoint, removed == count - 1) are the real
+  // bounded-growth invariant — bytes only name the current template.
   assert.deepEqual(bounded, [
-    { count: 5, messageCount: 4, serializedBytes: 25813, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
-    { count: 12, messageCount: 4, serializedBytes: 25813, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
-    { count: 25, messageCount: 4, serializedBytes: 25813, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
+    { count: 5, messageCount: 4, serializedBytes: 26356, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
+    { count: 12, messageCount: 4, serializedBytes: 26356, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
+    { count: 25, messageCount: 4, serializedBytes: 26356, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
   ]);
 });
 

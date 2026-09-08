@@ -115,9 +115,10 @@ export function persistApprovalRender(cwd: string, render: {
   return true;
 }
 
-/** Replay oldest first through the ownership-fenced sender. A queued, refused,
- * or unconfirmed send stays pending. Session identity deduplicates retries
- * even when writing deliveredAt fails after the message landed. */
+/** Replay oldest first through the ownership-fenced sender, with bounded
+ * fair rotation. A queued, refused, or unconfirmed send stays pending.
+ * Session identity deduplicates retries even when writing deliveredAt
+ * fails after the message landed. */
 export function replayUndeliveredApprovalRenders(
   ctx: { cwd: string },
   deliver: (entry: PendingApprovalRender) => boolean = () => false,
@@ -125,7 +126,8 @@ export function replayUndeliveredApprovalRenders(
 ): number {
   const renders = readRenders(ctx.cwd);
   if (renders.length === 0) return 0;
-  const pending = renders.filter((e) => !e.deliveredAt && (!onlyGoalId || e.goalId === onlyGoalId)).slice(0, MAX_REPLAY_PER_CONTACT);
+  const inScope = (e: PendingApprovalRender) => !e.deliveredAt && (!onlyGoalId || e.goalId === onlyGoalId);
+  const pending = renders.filter(inScope).slice(0, MAX_REPLAY_PER_CONTACT);
   if (pending.length === 0) return 0;
   const at = nowIso();
   let replayed = 0;
@@ -144,7 +146,27 @@ export function replayUndeliveredApprovalRenders(
       break;
     }
   }
-  if (replayed > 0) writeRenders(ctx.cwd, renders);
+  // Fair rotation: the window above always takes the oldest pending
+  // entries, so persistently unconfirmed receipts used to pin the head
+  // forever and a later render was never attempted in that session.
+  // Attempted-but-still-pending entries rotate behind the unattempted
+  // in-scope tail — stable within each group, delivered and out-of-scope
+  // entries untouched — so every pending render is attempted within
+  // ceil(n/MAX_REPLAY_PER_CONTACT) contacts. No entry is dropped and the
+  // confirmation rules are unchanged; rotation alone never acknowledges.
+  const stalled = pending.filter((e) => !e.deliveredAt);
+  let rotated = false;
+  if (stalled.length > 0 && renders.filter(inScope).length > pending.length) {
+    const moved = new Set(stalled);
+    const rest = renders.filter((e) => !moved.has(e));
+    let insertAt = rest.length;
+    rest.forEach((e, i) => { if (inScope(e)) insertAt = i + 1; });
+    rest.splice(insertAt, 0, ...stalled);
+    renders.length = 0;
+    renders.push(...rest);
+    rotated = true;
+  }
+  if (replayed > 0 || rotated) writeRenders(ctx.cwd, renders);
   return replayed;
 }
 
