@@ -1245,14 +1245,15 @@ function registerAgentTools(pi: any): void {
           const briefBlock = escRender.transcriptLines.join("\n");
 
           notifyExternal(ctx, `Goal complete without audit (user choice): ${escRender.recap}`);
-          persistApprovalRender(ctx.cwd, {
+          const persisted = persistApprovalRender(ctx.cwd, {
             goalId: terminalGoal.id,
             objective: terminalGoal.objective,
             chatLines: escRender.chatLines,
           });
-          replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+          if (persisted) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
             goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
-          }));
+          }), terminalGoal.id);
+          else ctx.ui.notify("Goal archived, but its chat summary could not be persisted. Review the archived completion summary.", "warning");
           return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${briefBlock}` }], details: {} };
         }
         scheduleContinuation(ctx, true);
@@ -1311,14 +1312,15 @@ function registerAgentTools(pi: any): void {
         // PR #43: append the kept inspection-session pointer when present.
 
         notifyExternal(ctx, `Goal complete (auditor approved): ${manualRender.recap}`);
-        persistApprovalRender(ctx.cwd, {
+        const persisted = persistApprovalRender(ctx.cwd, {
           goalId: manualGoalId,
           objective: manualObjective,
           chatLines: manualRender.chatLines,
         });
-          replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
-            goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
-          }));
+        if (persisted) replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
+          goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
+        }), manualGoalId);
+        else ctx.ui.notify("Goal archived, but its chat summary could not be persisted. Review the archived completion summary.", "warning");
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
 

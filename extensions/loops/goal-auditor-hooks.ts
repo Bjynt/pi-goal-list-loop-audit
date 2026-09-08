@@ -1471,7 +1471,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         outcome: entry.objective,
         details: [],
         chatLines: entry.chatLines,
-      }));
+      }), goalId);
     } else {
       liveCtx.ui.notify("Goal archived, but its chat summary could not be persisted. Review the archived completion summary.", "warning");
     }

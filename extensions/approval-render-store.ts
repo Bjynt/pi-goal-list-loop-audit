@@ -121,16 +121,17 @@ export function persistApprovalRender(cwd: string, render: {
 export function replayUndeliveredApprovalRenders(
   ctx: { cwd: string },
   deliver: (entry: PendingApprovalRender) => boolean = () => false,
+  onlyGoalId?: string,
 ): number {
   const renders = readRenders(ctx.cwd);
   if (renders.length === 0) return 0;
-  const pending = renders.filter((e) => !e.deliveredAt).slice(0, MAX_REPLAY_PER_CONTACT);
+  const pending = renders.filter((e) => !e.deliveredAt && (!onlyGoalId || e.goalId === onlyGoalId)).slice(0, MAX_REPLAY_PER_CONTACT);
   if (pending.length === 0) return 0;
   const at = nowIso();
   let replayed = 0;
   for (const entry of pending) {
     try {
-      if (!deliver(entry)) break;
+      if (!deliver(entry)) continue;
       entry.deliveredAt = at;
       replayed += 1;
       appendLedger(ctx.cwd, "terminal_approval_render_replayed", {
