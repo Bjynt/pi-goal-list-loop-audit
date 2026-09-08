@@ -1748,7 +1748,10 @@ test("v0.34.64: retry-class pause shows uniform auto-retrying countdown; no QUOT
   const state = { goal: g, list: [{ id: "next", objective: "later", addedAt: "z" }], loop: null };
   const w = buildWidgetLines(state as never)!;
   assert.ok(w.some((l) => l.includes("auto-retrying") && l.includes("next probe in")), `countdown: ${w.join("\n")}`);
-  assert.ok(w.some((l) => l.includes("saved —")), `saved state: ${w.join("\n")}`);
+  // v0.38.31: recovery-timer waits end at the auto-retry row — the generic
+  // saved/suggested-action tail is gone (owner + next are already above).
+  assert.doesNotMatch(w.join("\n"), /saved —/, "wait tail carries no generic saved line");
+  assert.doesNotMatch(w.join("\n"), /being retried automatically/, "wait tail carries no stock boilerplate");
   assert.doesNotMatch(w.join("\n"), /QUOTA WALL/, "the QUOTA WALL banner is gone");
   assert.doesNotMatch(w.join("\n"), /manual resume required/, "manual-resume wording is gone");
   assert.doesNotMatch(w.join("\n"), /main model quota: 429|Token Plan usage limit reached.*message/, "raw provider JSON stays out of the card");
@@ -1893,6 +1896,9 @@ test("main-model recovery manual hold does not claim a non-quota block", () => {
 });
 
 test("v0.34.51: a passed quota resumeAt says resuming…, never the old 'retrying now'", () => {
+  // v0.38.31: "resuming…" is grace-bounded (field 2026-09-08 180721 — an
+  // hour-overdue retry claimed "resuming now" forever on a held host). A
+  // retry 5m past still reads overdue; a freshly-passed one keeps resuming….
   const g = goalOf({
     status: "paused",
     pauseKind: "wait",
@@ -1901,8 +1907,18 @@ test("v0.34.51: a passed quota resumeAt says resuming…, never the old 'retryin
   });
   const state = { goal: g, list: [], loop: null };
   const s = buildStatusText(state as never)!;
-  assert.match(s, /resuming…/);
+  assert.match(s, /retry overdue/);
+  assert.doesNotMatch(s, /resuming…/);
   assert.doesNotMatch(s, /retrying now/);
+  const gFresh = goalOf({
+    status: "paused",
+    pauseKind: "wait",
+    pauseReason: "main model recovery — retrying in 15m (main model quota: 429 Token Plan usage limit)",
+    pauseResumeAt: new Date(Date.now() - 30_000).toISOString(),
+  });
+  const sFresh = buildStatusText({ goal: gFresh, list: [], loop: null } as never)!;
+  assert.match(sFresh, /resuming…/);
+  assert.doesNotMatch(sFresh, /retrying now/);
 });
 
 test("legacy pause (no kind): flat card unchanged; error-regex still classifies the status line", () => {

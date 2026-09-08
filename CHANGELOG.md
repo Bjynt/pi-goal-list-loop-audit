@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.38.31 — overdue wait-pause stops promising imminent resume (2026-09-08)
+
+### Fixed
+- A recovery-timer wait whose retry time passed long ago on a held/idle host no longer claims `next: resuming now` / `auto-retrying · now` forever while also reading `paused` + `safely parked` (field screenshot 20260908_180721). `resuming now` / `resuming…` / `now` are grace-bounded (90s); past that the card and status bar name the timer (`next: recovery timer`, `auto-retrying · overdue — waiting on recovery timer`, `retry overdue`).
+- Recovery-timer waits end at the auto-retry row: the stock provider-failure `pauseSuggestedAction` boilerplate and the generic `awaiting first turn` / `saved` tail are gone (owner + next are already on the rows above); the previous row closes the tree with `└─`. Decision/error/blocked pauses are unchanged.
+- Regression coverage in `tests/paused-overdue-display.test.ts` (6 pins); two v0.34-era pins that encoded the old permanent-`resuming…` wording updated to the grace contract; `tsc` clean.
+
 ## 0.38.30 — fresh audit pass: nine low-severity fixes (2026-09-08)
 
 ### Fixed
