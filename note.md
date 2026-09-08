@@ -8,10 +8,15 @@ we are still looking off
 
 ##
 
-very busy ui
+bit busy ui
 /home/dracon/Pictures/Screenshots/Screenshot_20260908_170803.png 
 
+/home/dracon/Pictures/Screenshots/Screenshot_20260908_173823.png 
+
 # Later
+
+##
+Summary?
 
 ## 
 
