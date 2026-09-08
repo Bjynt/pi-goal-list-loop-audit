@@ -143,13 +143,15 @@ test("v0.38.29: settled recovery does not leave Markdown noise in the head", () 
 });
 
 test("card head cuts the objective at a clause boundary, never mid-word", () => {
-  const out = truncateObjective(
-    "Studio visual overhaul (ViewStats-style velocity bar): rebuild StudioRail on the chat PremiumSidebar pattern (collapse, search)",
-    80,
-  );
+  const objective = "Studio visual overhaul (ViewStats-style velocity bar): rebuild StudioRail on the chat PremiumSidebar pattern (collapse, search)";
+  const out = truncateObjective(objective, 120);
   assert.ok(out.endsWith("pattern…"), `cuts at the parenthetical, not mid-word: ${out}`);
-  assert.ok(out.length <= 80);
+  assert.ok(out.length <= 120);
   assert.doesNotMatch(out, /colla…/);
+  // A tighter budget stops at the earlier colon instead of mid-word.
+  const tight = truncateObjective(objective, 80);
+  assert.ok(tight.endsWith("bar)…"), `colon cut reads intentional: ${tight}`);
+  assert.ok(tight.length <= 80);
 });
 
 test("truncateObjective falls back to a character cut with no usable boundary", () => {

@@ -1497,7 +1497,8 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
     const tailIndex = withAgents.length - 1;
     const tail = withAgents[tailIndex]!;
     const m = tail.match(/^(├─ |│  |│ )/);
-    if (m) withAgents[tailIndex] = `└─ ${tail.slice(m[1].length)}`;
+    const prefix = m?.[1] ?? "";
+    if (prefix) withAgents[tailIndex] = `└─ ${tail.slice(prefix.length)}`;
   }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
