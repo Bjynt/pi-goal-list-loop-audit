@@ -1315,6 +1315,38 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   return true;
 }
 
+/** v0.38.30 audit: non-notifying stale probe for the approval-render replay.
+ * The command wrappers replay undelivered renders on every live contact, but
+ * they run BEFORE the inner warnIfStaleAtEntry fence — a superseded session
+ * running stale-allowed `/loop status` (or any refused command) used to
+ * rewrite pending-approval-renders.json + ledger and notify into a dead
+ * session, marking delivery the user never saw. Workers are never live
+ * contact either. Passive flags only (no absorb side effects); fail closed. */
+export function shouldSkipApprovalRenderReplay(ctx: ExtensionContext): boolean {
+  try {
+    if (isWorkerSessionCtx(ctx)) return true;
+  } catch {
+    return true;
+  }
+  try {
+    if (processOwnerDeniedCwd === ctx.cwd) return true;
+  } catch {
+    return true;
+  }
+  if (sessionHandoffPending) return true;
+  try {
+    if (Date.now() < sessionReplacementUntil) return true;
+  } catch {
+    return true;
+  }
+  try {
+    if (probeExtensionApiStale()) return true;
+  } catch {
+    return true;
+  }
+  return false;
+}
+
 /** v0.28.12: draft-class confirm with the auto-accept escape hatch SURFACED.
  * The polis incident: a user sat through a 14-item batch Confirm having
  * already reviewed every item during drafting, never knowing /glla

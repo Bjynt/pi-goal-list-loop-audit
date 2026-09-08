@@ -227,6 +227,7 @@ import {
   type ProjectRollup,
 } from "../goal-loop-stats.js";
 import { releaseAuditorSurface, suppressAuditorSurfaceAfterColdRestore } from "./goal-auditor-surface.js";
+import { shouldSkipApprovalRenderReplay } from "./goal-session.js";
 import {
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
@@ -781,7 +782,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (refuseForeignCommand(ctx)) return Promise.resolve();
       // v0.38.25: live contact — replay any approval render that landed
       // with no live turn (persist-first, never silent).
-      replayUndeliveredApprovalRenders(ctx);
+      // v0.38.30 audit: skip on stale/worker handles — the wrappers run
+      // before the inner stale fence, and a superseded session used to mark
+      // delivery into a dead session (stale-allowed /loop status included).
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
       return cmdGoal(args, ctx);
     },
   });
@@ -790,7 +794,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (refuseForeignCommand(ctx)) return Promise.resolve();
     // v0.38.25: live contact — replay any approval render that landed
     // with no live turn (persist-first, never silent).
-    replayUndeliveredApprovalRenders(ctx);
+    // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+    if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
     return cmdSettings(args, ctx);
   };
   pi.registerCommand("glla", {
@@ -821,7 +826,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (refuseForeignCommand(ctx)) return Promise.resolve();
       // v0.38.25: live contact — replay any approval render that landed
       // with no live turn (persist-first, never silent).
-      replayUndeliveredApprovalRenders(ctx);
+      // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
       return cmdReview(args, ctx);
     },
   });
@@ -850,7 +856,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (refuseForeignCommand(ctx)) return Promise.resolve();
       // v0.38.25: live contact — replay any approval render that landed
       // with no live turn (persist-first, never silent).
-      replayUndeliveredApprovalRenders(ctx);
+      // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
       return cmdList(args, ctx);
     },
   });
@@ -875,7 +882,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (refuseForeignCommand(ctx)) return Promise.resolve();
       // v0.38.25: live contact — replay any approval render that landed
       // with no live turn (persist-first, never silent).
-      replayUndeliveredApprovalRenders(ctx);
+      // v0.38.30 audit: skip on stale/worker handles (see /goal wrapper).
+      if (!shouldSkipApprovalRenderReplay(ctx)) replayUndeliveredApprovalRenders(ctx);
       return cmdLoop(args, ctx);
     },
   });
