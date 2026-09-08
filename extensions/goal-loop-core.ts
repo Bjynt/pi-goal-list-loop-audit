@@ -1054,12 +1054,46 @@ export function countTrailingDisapprovals(history: AuditVerdict[]): number {
  * signal. Infrastructure entries are transparent, but a changed contract
  * revision breaks the comparison because the auditor may now be judging new
  * work. */
+/** v0.38.32 (DECIDED 2026-09-08 migrate-on-read): replay the
+ * appendAuditVerdict scope-transition rules chronologically over a stored
+ * history, backfilling superseded/supersededBy on pre-v0.38.21 entries that
+ * a later verdict settled. Add-only (never clears a flag) and idempotent:
+ * a second run over the same array marks nothing, and replaying over
+ * post-v0.38.21 histories that live code already flagged is a no-op.
+ * Returns the count newly marked. Durability: callers mutate the live state
+ * object in place; the flags ride the next normal state write to disk, and
+ * the replay re-runs harmlessly until then. Never call this from a
+ * persistence fence — it is a read-path migration, not a write. */
+export function backfillSupersededObjections(history: AuditVerdict[]): number {
+  let n = 0;
+  for (let i = 0; i < history.length; i++) {
+    const trigger = history[i]!;
+    if (!((trigger.disapproved && !trigger.error) || (trigger.approved && !trigger.error))) continue;
+    const byRef = trigger.disapproved ? `disapproval:${trigger.at}` : `approval:${trigger.at}`;
+    for (let j = 0; j < i; j++) {
+      const older = history[j]!;
+      if (older.disapproved && !older.superseded) {
+        older.superseded = true;
+        older.supersededBy = byRef;
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
 /** v0.38.21 (objection pinning): the latest still-live disapproval — the
  * objection set the next retry must argue. Superseded rounds and
  * verdictless infrastructure entries are never live. A later clean
  * approval clears the pin, so a live entry is always the newest
  * verdict-bearing disapproval. */
 export function liveDisapproval(history: AuditVerdict[]): AuditVerdict | undefined {
+  // v0.38.32: migrate-on-read — legacy entries predate the pinning flags.
+  // Backfill what later verdicts settled before selecting, so a settled
+  // objection is never argued as live again. Add-only + idempotent (see
+  // backfillSupersededObjections); post-v0.38.21 histories pass through
+  // untouched.
+  backfillSupersededObjections(history);
   for (let i = history.length - 1; i >= 0; i--) {
     const v = history[i]!;
     if (v.superseded) continue;
