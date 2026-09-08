@@ -111,3 +111,14 @@ test("approval summary does not replace independent next-item continuation", { t
   assert.equal(entries.length, 1);
   await waitFor(() => pi.sent.some(s => s.message.content?.includes(nextId) && (s.options as any)?.triggerTurn !== false), 20000);
 });
+
+test("outbox write failure warns without claiming summary delivery", async () => {
+  const { cwd, ctx, entries } = await setup("approved");
+  await pi.command("goal", "fix routing — done when pinned", ctx);
+  fs.mkdirSync(approvalRenderStorePath(cwd));
+  await pi.runTool("complete_goal", { completionSummary: summary, verificationSummary: "pinned" }, ctx);
+  await waitFor(() => readState(cwd).goal === null);
+  assert.equal(entries.length, 0);
+  assert.ok(ctx.ui.matching("chat summary could not be persisted").length > 0);
+  assert.doesNotMatch(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /"terminal_completion_notice_sent"/);
+});
