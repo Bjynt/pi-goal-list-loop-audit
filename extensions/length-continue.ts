@@ -46,6 +46,10 @@ export interface AssistantLengthMessageLike {
   usage?: {
     output?: number;
   };
+  /** Provider error message, when stopReason is "error". */
+  errorMessage?: string;
+  /** Error type from provider (e.g., "exceed_context_size_error"). */
+  errorType?: string;
 }
 
 export const LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT = 90;
@@ -60,21 +64,49 @@ export const LENGTH_CONTINUE_CONTEXT_STARVED_MAX_OUTPUT = 8;
  * here queues another 1-token request before pi's post-agent_end compaction
  * check and delays the actual cure (field: darklord 2026-08-02, 198,116 /
  * 198,179 total tokens of a 200,000 window, output=1 twice).
+ *
+ * v0.38.36: also detect explicit context-overflow provider errors
+ * (e.g., "exceed_context_size_error", "exceeds the available context size")
+ * which arrive as stopReason="error" with an errorMessage, not as
+ * stopReason="length". These are also context starvation — the request
+ * exceeded the model's context window before generation could start.
  */
 export function isContextStarvedLengthStop(
   message: AssistantLengthMessageLike | null | undefined,
   contextUsage: ContextUsageLike | null | undefined,
 ): boolean {
-  if (message?.stopReason !== "length") return false;
-  const output = message.usage?.output;
-  if (typeof output !== "number" || !Number.isFinite(output)) return false;
-  if (output > LENGTH_CONTINUE_CONTEXT_STARVED_MAX_OUTPUT) return false;
-  const percent = typeof contextUsage?.percent === "number"
-    ? contextUsage.percent
-    : typeof contextUsage?.tokens === "number" && typeof contextUsage?.contextWindow === "number" && contextUsage.contextWindow > 0
-      ? (contextUsage.tokens / contextUsage.contextWindow) * 100
-      : null;
-  return percent !== null && Number.isFinite(percent) && percent >= LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT;
+  // Case 1: pi's context-safety clamp (stopReason="length" with tiny output)
+  if (message?.stopReason === "length") {
+    const output = message.usage?.output;
+    if (typeof output === "number" && Number.isFinite(output) && output <= LENGTH_CONTINUE_CONTEXT_STARVED_MAX_OUTPUT) {
+      const percent = typeof contextUsage?.percent === "number"
+        ? contextUsage.percent
+        : typeof contextUsage?.tokens === "number" && typeof contextUsage?.contextWindow === "number" && contextUsage.contextWindow > 0
+          ? (contextUsage.tokens / contextUsage.contextWindow) * 100
+          : null;
+      return percent !== null && Number.isFinite(percent) && percent >= LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT;
+    }
+    return false; // Real overlong response, not context starvation
+  }
+  // Case 2: explicit provider context-overflow error (stopReason="error")
+  if (message?.stopReason === "error") {
+    const errMsg = (message.errorMessage ?? message.errorType ?? "").toLowerCase();
+    if (
+      errMsg.includes("exceed_context_size") ||
+      errMsg.includes("exceeds the available context") ||
+      errMsg.includes("exceeds the context window") ||
+      (errMsg.includes("exceeds the model") && errMsg.includes("context")) ||
+      (errMsg.includes("context window") && errMsg.includes("exceed"))
+    ) {
+      const percent = typeof contextUsage?.percent === "number"
+        ? contextUsage.percent
+        : typeof contextUsage?.tokens === "number" && typeof contextUsage?.contextWindow === "number" && contextUsage.contextWindow > 0
+          ? (contextUsage.tokens / contextUsage.contextWindow) * 100
+          : null;
+      return percent !== null && Number.isFinite(percent) && percent >= LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT;
+    }
+  }
+  return false;
 }
 
 export function makeLengthContinueTracker(max: number = LENGTH_CONTINUE_MAX) {
