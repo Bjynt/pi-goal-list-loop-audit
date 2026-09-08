@@ -1,11 +1,5 @@
 # Now
 
-
-
-
-##
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
-
 ##
 aduit pass no summary
 /home/dracon/Pictures/Screenshots/Screenshot_20260907_153747.png 
