@@ -57,7 +57,7 @@ test("canonical render keeps the outcome-first voice with counts before the reco
   });
   assert.ok((render.chatLines[0] ?? "").startsWith("✓ done — "), "chat opens with the outcome");
   const approvalIdx = render.chatLines.findIndex((l) => l.startsWith("— auditor"));
-  const countsIdx = render.chatLines.findIndex((l) => l.startsWith("— run:"));
+  const countsIdx = render.chatLines.findIndex((l) => l.startsWith("— audit:"));
   const recordIdx = render.chatLines.findIndex((l) => l.startsWith("— record:"));
   assert.ok(approvalIdx > 0 && countsIdx > approvalIdx && recordIdx > countsIdx, "approval, then counts, then the record pointer stays last");
   assert.ok(!render.chatLines.some((l) => /^\s*Next\s*:/i.test(l)), "stale pre-verdict Next never reaches the chat");
@@ -67,10 +67,10 @@ test("canonical render keeps the outcome-first voice with counts before the reco
   assert.equal(render.outcome, (render.chatLines[0] ?? "").replace(/^✓ done — /, ""), "outcome matches the chat lead");
 });
 
-test("counts line proofs execution + audit from durable state only", () => {
+test("counts line proofs the audit verdict from durable state only", () => {
   assert.equal(
     buildAuditCountsLine(richGoal()),
-    "— run: 42 turns · 17 file writes · 23 bash calls · auditor approved (1 verdict).",
+    "— audit: auditor approved (1 verdict).",
   );
   const two = richGoal();
   two.auditHistory = [...(two.auditHistory ?? []), { at: "2026-09-07T01:00:00.000Z", approved: false, disapproved: true, model: "m2" }];
@@ -78,7 +78,7 @@ test("counts line proofs execution + audit from durable state only", () => {
   const bare = seedGoal({ completionSummary: SIX }) as unknown as Goal;
   assert.equal(
     buildAuditCountsLine(bare),
-    "— run: no execution telemetry was recorded · no auditor verdict was recorded.",
+    "— audit: no auditor verdict was recorded.",
     "absent facts named as absent, never invented",
   );
   assert.match(
@@ -95,7 +95,7 @@ test("buildApprovalChatLines stays backward compatible without counts", () => {
 
 test("idle-persisted render replays once on the next live contact", () => {
   const cwd = tmpCwd();
-  const chatLines = ["✓ done — shipped it", "— auditor m approved.", "— run: 1 turns · 0 file writes · 0 bash calls · auditor approved (1 verdict).", "— record: r"];
+  const chatLines = ["✓ done — shipped it", "— auditor m approved.", "— audit: auditor approved (1 verdict).", "— record: r"];
   assert.equal(persistApprovalRender(cwd, { goalId: "g1", objective: "ship it", chatLines }), true);
   const ctx = makeMockCtx(cwd, { idle: false });
   assert.equal(replayUndeliveredApprovalRenders(ctx, (entry) => { ctx.ui.notify(entry.chatLines.join("\n"), "info"); return true; }), 1, "confirmed delivery acknowledges the render");

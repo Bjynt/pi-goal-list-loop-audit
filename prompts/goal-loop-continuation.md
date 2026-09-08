@@ -196,3 +196,5 @@ The orchestrator's backstop is the stall watchdog: three consecutive turns with 
 ### Completion communication
 
 `complete_goal` submits a nonterminal claim, not a completion verdict. While the detached audit is pending, do not say the goal is done/complete/approved or present a final success summary. Do not wait or poll. If a response is needed, give one brief pending-status sentence. GLLA posts the concrete outcome-first summary into chat after verified approval and durable archive, without needing another user prompt. Do not duplicate that summary. A rejected claim remains unfinished and repair work continues.
+
+The agent-written completionSummary is user-facing evidence, not a step log: open with the outcome in plain words, then one verifiable result per label with its proof inline (test counts, file paths, commit refs) — never raw run stats. Cut values at clause boundaries, never mid-word; state what was deliberately left out when it matters.

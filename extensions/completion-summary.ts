@@ -78,18 +78,33 @@ export function isUsefulCompletionSummary(text: string | undefined): boolean {
  * Missing labels are retained as `not recorded` so a compact notification
  * cannot accidentally imply evidence that the durable recap did not contain.
  */
-/** Cut a summary value at a word boundary, never mid-word (the
- * Screenshot_20260903_204003/204005 complaint: `0 o…`, `qu…`, `belo…`).
- * Falls back to a hard cut only when the head holds no space past the
- * halfway mark — a long token such as a commit hash must not eviscerate
- * the whole value. Short values pass through untouched (no `…`). */
+/** Cut a summary value at a clause boundary, never mid-word (field
+ * complaints 2026-09-03 `0 o…` and 2026-09-08 `playlist auto-add,…`:
+ * a word-boundary cut that strands dangling punctuation still reads as
+ * clipping, not summarizing). Prefer the last clause boundary
+ * (`, ; : · — – ( [`) past a floor so the cut reads intentional; fall
+ * back to the word break, then to a hard cut only when the head holds
+ * no space past the halfway mark — a long token such as a commit hash
+ * must not eviscerate the whole value. Trailing punctuation is stripped
+ * before the ellipsis. Short values pass through untouched (no `…`). */
 export function clipSummaryValue(value: string, limit: number): string {
   const clean = value.replace(/\s+/g, " ").trim();
   const capped = Number.isFinite(limit) ? Math.max(8, Math.floor(limit)) : 72;
   if (clean.length <= capped) return clean;
   const head = clean.slice(0, capped - 1);
+  const floor = Math.max(16, Math.floor((capped - 1) * 0.4));
+  let boundary = -1;
+  for (let i = 0; i < head.length; i++) {
+    if (/[,;:·—–(\[]/.test(head[i]!)) boundary = i;
+  }
+  if (boundary >= floor) {
+    const cut = head.slice(0, boundary).replace(/[,;:·—–(\[\s]+$/u, "");
+    if (cut.length >= Math.min(floor, 16)) return `${cut}…`;
+  }
   const space = head.lastIndexOf(" ");
-  const kept = (space > capped / 2 ? head.slice(0, space) : head).trimEnd();
+  const kept = (space > capped / 2 ? head.slice(0, space) : head)
+    .trimEnd()
+    .replace(/[,;:·—–(\[]$/u, "");
   return `${kept}…`;
 }
 
@@ -192,15 +207,12 @@ export function buildApprovalChatLines(notice: {
   ];
 }
 
-/** v0.38.25: the audit-goal counts line. Compact execution + audit proof
- * built ONLY from durable goal state — turns/file-writes/bash from
- * telemetry, verdict counts from auditHistory. Absent facts are named as
- * absent, never invented (the recorded-facts honesty rule). */
+/** v0.38.25: the audit-goal counts line — verdict proof ONLY, built from
+ * durable goal state. Raw run stats (turns/file-writes/bash calls) read as
+ * a machine receipt in user chat (field 2026-09-08 223522/223523); the
+ * full execution evidence stays in the six-label archive record. Absent
+ * facts are named as absent, never invented (recorded-facts honesty). */
 export function buildAuditCountsLine(goal: Goal, auditNote?: string): string {
-  const telemetry = goal.telemetry;
-  const run = telemetry
-    ? `${telemetry.turns} turns · ${telemetry.fileWrites} file writes · ${telemetry.bashCalls} bash calls`
-    : "no execution telemetry was recorded";
   const history = goal.auditHistory ?? [];
   const latest = history.length > 0 ? history[history.length - 1] : undefined;
   const audit = auditNote ?? (latest === undefined
@@ -209,7 +221,7 @@ export function buildAuditCountsLine(goal: Goal, auditNote?: string): string {
       const verdict = latest.approved ? "approved" : latest.impossible ? "impossible" : latest.disapproved ? "disapproved" : "no verdict";
       return `auditor ${verdict} (${history.length} verdict${history.length === 1 ? "" : "s"})`;
     })());
-  return `— run: ${run} · ${audit}.`;
+  return `— audit: ${audit}.`;
 }
 
 export interface TerminalApprovalRenderInput {

@@ -1876,7 +1876,7 @@ function registerAgentTools(pi: any): void {
         if (notifyFailure) current.ui.notify(`Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it.`, "warning");
       });
       return {
-        content: [{ type: "text", text: `AUDIT PENDING — nonterminal. Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The goal is not approved or complete. Do not claim completion or give a final success summary. Do not wait or poll: GLLA will post the concrete final summary after verified approval and durable archive; rejection resumes work.` }],
+        content: [{ type: "text", text: `AUDIT PENDING — nonterminal. The completion claim is stored and a detached auditor is settling it (model: ${via ?? "setting"}). The goal is not approved or complete yet. The final summary posts here after verified approval and durable archive; rejection resumes work automatically. Ending this turn now is correct — no waiting or polling needed.` }],
         details: { status: "audit-pending", terminal: false },
         // End this tool batch, not the goal; the detached worker owns settlement.
         terminate: true,
