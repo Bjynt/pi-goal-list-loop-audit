@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.38.32 — migrate-on-read backfill for pre-v0.38.21 audit histories (2026-09-08)
+
+### Fixed
+- Pre-v0.38.21 audit histories lack `superseded` flags, so one post-upgrade retry could argue already-settled objections as live (DECIDED 2026-09-08: migrate-on-read). `liveDisapproval` now replays the `appendAuditVerdict` scope rules over the stored array first (`backfillSupersededObjections`): a later verdict-bearing disapproval or clean approval retires older live rounds in place. Add-only (never clears a flag) and idempotent — post-v0.38.21 histories pass through untouched, and the flags ride the next normal state write to disk.
+- Regression coverage in `tests/migrate-on-read.test.ts` (5 pins: settled-by-approval, settled-by-later-disapproval, lone legacy stays live, error transparency, idempotence); existing `tests/objection-pinning.test.ts` green; `tsc` clean.
+
 ## 0.38.31 — overdue wait-pause stops promising imminent resume (2026-09-08)
 
 ### Fixed
