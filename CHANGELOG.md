@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.28 — close redundant provenance rows in the active goal card (2026-09-08)
+
+### Fixed
+- The active card no longer shows a duplicate `handled turn` row when it is the same model as the primary model. When provenance is the final detail block, its last row now closes with `└─` instead of a dangling `│`/`├─`, so the card no longer implies missing rows. Failover-handled turns remain visible. Added focused regression coverage; `tsc` and the focused display suite pass.
+
 ## 0.38.27 — selective port of PRs #45/#46: /loop pause + widget subtask count (2026-09-08)
 
 ### Added
