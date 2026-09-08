@@ -31,6 +31,10 @@ export interface PendingApprovalRender {
  * briefly for inspection; undelivered ones are never dropped by the cap. */
 const MAX_STORED_RENDERS = 20;
 const MAX_REPLAY_PER_CONTACT = 5;
+// v0.38.30 audit: bound the sidecar behind the "each is ~1KB" comment — a
+// long approval trailer used to grow the 20-entry file without bound.
+const MAX_RENDER_CHAT_LINES = 60;
+const MAX_RENDER_LINE_CHARS = 1000;
 
 export function approvalRenderStorePath(cwd: string): string {
   return path.join(piGlaDir(cwd), "pending-approval-renders.json");
@@ -63,10 +67,15 @@ function readRenders(cwd: string): PendingApprovalRender[] {
         dropped: parsed.length - valid.length,
         kept: valid.length,
       });
+      // v0.38.30 audit: repair the file after ledgering once — otherwise
+      // every user command re-appended the same ledger while the file
+      // stayed corrupt. Best-effort; a failed rewrite simply ledgers again.
+      writeRenders(cwd, valid);
     }
     return valid;
   } catch {
     appendLedger(cwd, "terminal_approval_render_store_invalid", { dropped: "all", kept: 0 });
+    writeRenders(cwd, []);
     return [];
   }
 }
@@ -94,8 +103,10 @@ export function persistApprovalRender(cwd: string, render: {
   const existing = readRenders(cwd);
   const entry: PendingApprovalRender = {
     goalId: render.goalId,
-    objective: render.objective.slice(0, 300),
-    chatLines: render.chatLines,
+    // v0.38.30 audit: code-point truncation (char slice split surrogate
+    // pairs) + bounded chat lines (the 20-entry cap never bound bytes).
+    objective: [...render.objective].slice(0, 300).join(""),
+    chatLines: render.chatLines.slice(0, MAX_RENDER_CHAT_LINES).map((line) => [...line].slice(0, MAX_RENDER_LINE_CHARS).join("")),
     createdAt: at,
     ...(render.delivered ? { deliveredAt: at } : {}),
   };
