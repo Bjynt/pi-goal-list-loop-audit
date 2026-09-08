@@ -99,7 +99,7 @@ test("idle-persisted render replays once on the next live contact", () => {
   const chatLines = ["✓ done — shipped it", "— auditor m approved.", "— run: 1 turns · 0 file writes · 0 bash calls · auditor approved (1 verdict).", "— record: r"];
   assert.equal(persistApprovalRender(cwd, { goalId: "g1", objective: "ship it", chatLines, delivered: false }), true);
   const ctx = makeMockCtx(cwd, { idle: false });
-  assert.equal(replayUndeliveredApprovalRenders(ctx), 1, "one undelivered render replays");
+  assert.equal(replayUndeliveredApprovalRenders(ctx, (entry) => { ctx.ui.notify(entry.chatLines.join("\n"), "info"); return true; }), 1, "confirmed delivery acknowledges the render");
   assert.equal(ctx.ui.notifies.length, 1, "exactly one notify goes out");
   assert.equal(ctx.ui.notifies[0]?.message, chatLines.join("\n"), "the persisted render arrives verbatim");
   assert.equal(replayUndeliveredApprovalRenders(ctx), 0, "fire-once: second contact replays nothing");
