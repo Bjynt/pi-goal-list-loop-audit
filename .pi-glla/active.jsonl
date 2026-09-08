@@ -2434,3 +2434,4 @@
 {"type":"terminal_approval_render_replayed","value":{"goalId":"20260908174234-3qukae","createdAt":"2026-09-08T18:19:59.181Z"},"at":"2026-09-08T22:10:01.319Z"}
 {"type":"terminal_approval_render_replayed","value":{"goalId":"20260908181959-3zhmz2","createdAt":"2026-09-08T18:40:59.441Z"},"at":"2026-09-08T22:10:01.319Z"}
 {"type":"model_fallback_select","value":{"scope":"drafter","fromRef":"opencode-go/muse-spark-1.3-contributor","reason":"exhausted"},"at":"2026-09-08T22:10:01.322Z"}
+{"type":"context_usage_sample","value":{"goalId":null,"provider":"opencode-go","model":"muse-spark-1.3-contributor","providerUsage":null,"contextUsage":{"tokens":90218,"contextWindow":200000,"percent":45.109}},"at":"2026-09-08T22:11:14.433Z"}
