@@ -87,6 +87,17 @@ function displayPauseReason(reason: string): string {
   return compactDisplayText(sanitizeProviderDisplayText(reason));
 }
 
+/** Objectives are stored verbatim, but the glance card is a plain-text
+ * surface. Remove the common Markdown emphasis/code wrappers that otherwise
+ * turn a long objective into noisy `**...**` and backtick litter. This is a
+ * display-only projection; prompts, archives, and state keep the original. */
+function displayObjective(objective: string): string {
+  return compactDisplayText(objective)
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/`([^`\n]*)`/g, "$1");
+}
+
 /** v0.33.1: painted strings measure by their terminal-cell width. */
 function visibleLen(s: string): number {
   return tuiVisibleWidth(s);
@@ -280,6 +291,53 @@ function modelSourceLabel(source: string): string {
   return source.trim();
 }
 
+function compactMainModelRecoveryLine(recovery: MainModelRecovery | undefined, configuredBackups: string[] = [], now = Date.now()): string | undefined {
+  if (!recovery || !recovery.primary.trim()) return undefined;
+  const primary = recovery.primary.trim();
+  const current = (recovery.active ?? primary).trim() || primary;
+  const backups = uniqueModelRefs(configuredBackups).slice(0, 10);
+  const chain = [primary, ...backups];
+  const currentIndex = chain.findIndex((ref) => ref.toLowerCase() === current.toLowerCase());
+  const selected = currentIndex === 0
+    ? "primary"
+    : currentIndex > 0
+      ? `backup ${currentIndex}/${backups.length}`
+      : "fallback";
+  const retryMs = recovery.retryAt ? Date.parse(recovery.retryAt) - now : Number.NaN;
+  const probeMs = recovery.primaryProbeAt ? Date.parse(recovery.primaryProbeAt) - now : Number.NaN;
+  const phase = recovery.manualResumeRequired
+    ? "manual hold"
+    : recovery.pendingModelSwitch
+      ? `switching → ${truncate(recovery.pendingModelSwitch, 48)}`
+      : Number.isFinite(retryMs)
+        ? retryMs <= 0 ? "retrying now" : `retrying in ${fmtElapsed(retryMs)}`
+        : recovery.primaryProbeInFlight
+          ? "primary probe pending"
+          : Number.isFinite(probeMs)
+            ? probeMs <= 0 ? "probing primary now" : `primary probe in ${fmtElapsed(probeMs)}`
+            : `${selected} selected`;
+  const attempted = recovery.attempted?.length ?? 0;
+  const skipped = recovery.skipped?.length ?? 0;
+  const hasEpisode = !!recovery.manualResumeRequired
+    || !!recovery.pendingModelSwitch
+    || Number.isFinite(retryMs)
+    || Number.isFinite(probeMs)
+    || !!recovery.primaryProbeInFlight
+    || recovery.attempts > 0
+    || attempted > 1
+    || skipped > 0
+    || currentIndex !== 0;
+  // A recovery object can briefly survive the successful primary selection.
+  // Do not label that normal state as an incident, but keep the selected model
+  // on the card when no separate provenance row is available.
+  if (!hasEpisode) return `model: ${truncate(current, 56)} · primary`;
+  const history = [
+    recovery.attempts > 0 ? `attempts ${recovery.attempts}` : "",
+    skipped > 0 ? `skipped ${skipped}` : "",
+  ].filter(Boolean);
+  return `recovery: ${phase} · ${selected} ${truncate(current, 48)}${history.length > 0 ? ` · ${history.join(" · ")}` : ""}`;
+}
+
 function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, width?: number): string[] {
   if (!provenance) return [];
   const budget = budgetFor(width, 3, 60);
@@ -328,9 +386,14 @@ export function buildDurableDeferDecisionLines(input: DurableDeferRecommendation
       // Reserve room for the recommendation marker and the outer tree prefix
       // so a normal 80-column production widget cannot truncate away the
       // fact that the durable plaque is the selected action.
+      // Recommendation bodies are durable facts, but the glance card is not
+      // the command's full report. A wide terminal used to turn these plaques
+      // into sentence-length banners and crowd out the actual work state;
+      // /goal status retains the complete text.
+      const bodyCap = plaque.kind === "durable" ? 96 : 72;
       const bodyBudget = width && width > 0
-        ? Math.max(8, width - WIDGET_HORIZONTAL_MARGIN - 3 - visibleLen(prefix) - visibleLen(marker))
-        : budgetFor(width, 3, 60);
+        ? Math.max(8, Math.min(bodyCap, width - WIDGET_HORIZONTAL_MARGIN - 3 - visibleLen(prefix) - visibleLen(marker)))
+        : Math.min(bodyCap, budgetFor(width, 3, 60));
       return `${prefix}${truncate(plaque.body, bodyBudget)}${marker}`;
     }),
     `selected: ${recommendation.choice}${recommendation.choice === "inline" ? " (durable fix)" : " (reversible workaround)"}`,
@@ -1163,21 +1226,21 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
   }
   if (g.status === "active") {
-    const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-    const withRecovery = (value: string): string => recoverySummary.length > 0
-      ? `${value} · ${recoverySummary.join(" · ")}`
-      : value;
+    // The footer is a glance/liveness surface. Recovery details belong to the
+    // card (and the full /goal status report), not a second horizontally
+    // concatenated copy here. This keeps exceptions readable without making
+    // a healthy WORKING line look like an incident.
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
     // It outranks any older operational note on the same state snapshot.
     if (g.interruptedAt) {
       const label = interruptedForNoStart(g)
         ? "⚠ turn start not observed — automatic retry held"
         : "⚠ interrupted — stale handle · /new (or a fresh session_start) rebinds";
-      return withRecovery(`glla: ${paint(theme, "error", label)}${heldSuffix}`);
+      return `glla: ${paint(theme, "error", label)}${heldSuffix}`;
     }
     const attention = activeAttention(g);
     if (attention) {
-      return withRecovery(`glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`);
+      return `glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`;
     }
     const activity = goalDisplayActivity(g, extras, now);
     // v0.34.97: while the post-compaction grace window is open, surface
@@ -1186,10 +1249,10 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const compactAgeMs = state.lastCompactionAt ? now - state.lastCompactionAt : Number.POSITIVE_INFINITY;
     const compacting = Number.isFinite(compactAgeMs) && compactAgeMs >= 0 && compactAgeMs < 180_000; // COMPACTION_GRACE_MS = 3 min
     if (compacting) {
-      return withRecovery(`glla: ${paint(theme, "warning", `⏳ compacting… (${fmtElapsed(compactAgeMs)} ago)`)}${heldSuffix}`);
+      return `glla: ${paint(theme, "warning", `⏳ compacting… (${fmtElapsed(compactAgeMs)} ago)`)}${heldSuffix}`;
     }
     if (activity === "awaiting-first-turn") {
-      return withRecovery(`glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`);
+      return `glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`;
     }
     if (activity === "idle") {
       // Audit 2026-09-07 (DECIDED: head owns liveness): the status keeps
@@ -1200,7 +1263,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
         goalTotalText(g, now),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
-      return withRecovery(`glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`);
+      return `glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`;
     }
     // v0.34.39: distinguish durable state from evidence of a live host turn.
     // A spinner is reserved for recent stream/tool evidence; BUSY without
@@ -1212,7 +1275,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
         g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
-      return withRecovery(`glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`);
+      return `glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`;
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -1258,7 +1321,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       monitoring ? "next check" : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
-    return withRecovery(`glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${recoverySuffix}${heldSuffix}`);
+    return `glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${recoverySuffix}${heldSuffix}`;
   }
   // v0.34.65: a terminal goal names its outcome + wall duration instead of
   // clearing the segment (note.md 2026-08-07: "this seems weak for a complete
