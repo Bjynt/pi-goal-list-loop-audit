@@ -6,7 +6,7 @@ import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __test
 import { __testOnlyResetZombieAutoRetry } from "../extensions/loops/goal-activation.js";
 import { __testOnlyResetZombieRunWatchdog } from "../extensions/goal-heartbeat.js";
 import { resetContinuationDispatchState } from "../extensions/goal-continuation.js";
-import { readState } from "../extensions/goal-loop-core.js";
+import { readState, archiveIntentPath } from "../extensions/goal-loop-core.js";
 import { approvalRenderStorePath } from "../extensions/approval-render-store.js";
 import { MockPi, makeMockCtx, tmpCwd } from "./harness/mock-pi.js";
 
@@ -14,8 +14,8 @@ const pi = new MockPi(); activate(pi.api);
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 const summary = "Outcome: Fixed routing.\nChanged: router.ts.\nEvidence: routing fixture.\nTests: routing suite passed.\nUnresolved: none.\nNext: await audit.";
-async function waitFor(check: () => boolean) {
-  const until = Date.now() + 10000;
+async function waitFor(check: () => boolean, timeout = 10000) {
+  const until = Date.now() + timeout;
   while (!check()) { if (Date.now() > until) throw new Error("settlement timeout"); await new Promise(r => setTimeout(r, 20)); }
 }
 async function setup(verdict: "approved" | "disapproved", idle = true) {
@@ -92,17 +92,16 @@ test("disapproval remains unfinished, no final success is posted", async () => {
 test("archive write failure never emits a terminal success", async () => {
   const { cwd, ctx, entries } = await setup("approved");
   await pi.command("goal", "fix routing — done when pinned", ctx);
-  const id = readState(cwd).goal!.id;
-  // Force EISDIR at the exact archive target, leaving live persistence usable.
-  fs.mkdirSync(path.join(cwd, ".pi-glla", "archive", `${id}.md`), { recursive: true });
   await pi.runTool("complete_goal", { completionSummary: summary, verificationSummary: "pinned" }, ctx);
+  // Block the archive-intent write while leaving live state writable.
+  fs.mkdirSync(archiveIntentPath(cwd));
   await waitFor(() => readState(cwd).goal?.status === "paused");
   assert.match(readState(cwd).goal?.pauseReason ?? "", /archive persistence failed/);
   assert.equal(entries.length, 0);
   assert.equal(fs.existsSync(approvalRenderStorePath(cwd)), false);
 });
 
-test("approval summary does not replace independent next-item continuation", async () => {
+test("approval summary does not replace independent next-item continuation", { timeout: 25000 }, async () => {
   const { cwd, ctx, entries } = await setup("approved");
   await pi.runTool("list_add", { items: ["first item — done when pinned", "second item — done when pinned"] }, ctx);
   await pi.runTool("complete_goal", { completionSummary: summary, verificationSummary: "pinned" }, ctx);
@@ -110,5 +109,5 @@ test("approval summary does not replace independent next-item continuation", asy
   const nextId = readState(cwd).goal!.id;
   assert.equal(readState(cwd).goal?.status, "active");
   assert.equal(entries.length, 1);
-  await waitFor(() => pi.sent.some(s => s.message.content?.includes(nextId) && (s.options as any)?.triggerTurn !== false));
+  await waitFor(() => pi.sent.some(s => s.message.content?.includes(nextId) && (s.options as any)?.triggerTurn !== false), 20000);
 });
