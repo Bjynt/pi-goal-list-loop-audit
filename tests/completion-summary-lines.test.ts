@@ -142,7 +142,8 @@ test("the ✓ done chat notifies use the line block; external keeps the single l
   // live turn (field 2026-09-07: record perfect, delivery silent).
   assert.match(hooks, /buildTerminalApprovalRender\(\{/);
   assert.match(hooks, /persistApprovalRender\(/);
-  assert.match(hooks, /isApprovalContextIdle\(/);
+  assert.match(hooks, /replayUndeliveredApprovalRenders\(/);
+  assert.doesNotMatch(hooks, /isApprovalContextIdle\(/);
   assert.match(hooks, /— auditor \$\{result\.model\} approved/);
   const brief = fs.readFileSync("extensions/completion-summary.ts", "utf8");
   assert.match(brief, /✓ done — \$\{notice\.outcome\}/);

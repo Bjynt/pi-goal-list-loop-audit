@@ -1878,6 +1878,8 @@ function registerAgentTools(pi: any): void {
       return {
         content: [{ type: "text", text: `AUDIT PENDING — nonterminal. Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The goal is not approved or complete. Do not claim completion or give a final success summary. Do not wait or poll: GLLA will post the concrete final summary after verified approval and durable archive; rejection resumes work.` }],
         details: { status: "audit-pending", terminal: false },
+        // End this tool batch, not the goal; the detached worker owns settlement.
+        terminate: true,
       };
     },
   }));

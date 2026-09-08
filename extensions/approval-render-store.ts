@@ -69,7 +69,14 @@ function readRenders(cwd: string): PendingApprovalRender[] {
 function writeRenders(cwd: string, renders: PendingApprovalRender[]): boolean {
   const landed = runPersistStep("persistApprovalRender", () => {
     ensureDirs(cwd);
-    fs.writeFileSync(approvalRenderStorePath(cwd), JSON.stringify(renders, null, 2), "utf-8");
+    const file = approvalRenderStorePath(cwd);
+    const tmp = `${file}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(renders, null, 2), "utf-8");
+      fs.renameSync(tmp, file);
+    } finally {
+      try { fs.unlinkSync(tmp); } catch { /* renamed or write failed */ }
+    }
     return true;
   });
   return landed === true;

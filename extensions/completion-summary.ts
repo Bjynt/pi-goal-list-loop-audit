@@ -169,7 +169,7 @@ export function withoutStaleNext(details: string[] | undefined): string[] {
   return (details ?? []).filter((d) => !/^\s*Next\s*:/i.test(d));
 }
 
-/** v0.38.20: the approval chat notify — outcome first, at most two
+/** v0.38.20: the approval chat notify — outcome first, all bounded
  * informing details (the full record lives in the archive and the
  * transcript notice), then the approval trailer and the record pointer.
  * Five 120-char label lines scan as soup, not a summary (field
@@ -185,7 +185,7 @@ export function buildApprovalChatLines(notice: {
 }): string[] {
   return [
     `✓ done — ${notice.outcome}`,
-    ...withoutStaleNext(notice.details).slice(0, 2),
+    ...withoutStaleNext(notice.details),
     notice.approval,
     ...(notice.counts ? [notice.counts] : []),
     notice.record,
@@ -231,7 +231,7 @@ export interface TerminalApprovalRenderInput {
 }
 
 export interface TerminalApprovalRender {
-  /** The human-sees chat lines: outcome + ≤2 details + approval + counts + record (+ extras). */
+  /** The human-sees chat lines: outcome + bounded details + approval + counts + record (+ extras). */
   chatLines: string[];
   /** Compact single line for external notifies (pager/sound safe). */
   recap: string;
