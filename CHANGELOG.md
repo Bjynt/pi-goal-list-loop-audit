@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.38.30 — fresh audit pass: nine low-severity fixes (2026-09-08)
+
+### Fixed
+- Approval-render replay no longer runs before the stale/ownership fence: wrappers skip replay on stale, worker, owner-denied, handoff, and rebind handles (`shouldSkipApprovalRenderReplay`), so a superseded session running stale-allowed `/loop status` cannot mark delivery into a dead session.
+- `countDone` counts all descendants of closed parents, matching the recursive `countTotal` (a closed parent with nested grandchildren no longer under-reads done).
+- Plain-text surfaces use the ANSI-free truncator: `completion-summary.ts` width budgets and the headless settings flat rows route through `truncateCells`; the painted TUI tables keep `truncateToWidth`.
+- Narrow-terminal budgets clamp to the available width instead of the floor, and the compact recovery line takes width-aware inner budgets — provenance/fallback chains truncate indoors instead of hard-cutting mid-token.
+- The display-only objective projection additionally strips `#` headers, `>` quotes, `[label](url)` links, and `*em*` emphasis. Stored objectives unchanged.
+- The approval-render sidecar repairs a corrupt file after ledgering once, truncates objectives by code points, and caps chat lines (60 lines × 1000 chars) behind the 20-entry spillway.
+- The goal card owns goal-kind recovery episodes only: `kind:loop` episodes keep the parked/standalone cards and no longer suppress the goal's provenance; blank-primary recovery falls back to provenance instead of leaving no model fact.
+- `topOpenAuditFinding` strips aligned/tabbed boxes with the same `[ \t]+` class as its matcher, so the reprieve note never carries checkbox markup.
+- `parseLoopStartArgs` consumes known keys only with valid values — junk like unquoted `time=out` stays in the target prose instead of vanishing while defaults silently apply (`done` still always teaches its removal; `measure` accepts any non-empty command).
+- Regression coverage in `tests/audit-2026-09-08.test.ts` (11 pins); `tsc` clean; focused display/loop-forever/approval suites green.
+
 ## 0.38.29 — compact active-card recovery and judgment details (2026-09-08)
 
 ### Fixed
