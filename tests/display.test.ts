@@ -1993,6 +1993,42 @@ const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
   assert.match(SRC, /noteToolResult\(event\); \/\/ v0\.33\.0/);
 });
 
+test("v0.38.27: widget task count — a closed parent covers its subtasks (ported from Bjynt's PR #45)", () => {
+  // Field symptom: a goal with 6 real tasks displayed "2/24" because two
+  // closed parents were counted but the denominator inflated with subtask
+  // totals. The widget now reports the actual closed-vs-total ratio.
+  const nested = goalOf({ taskList: { version: 1, tasks: [
+    { id: "p1", title: "parent a", status: "complete", subtasks: [
+      { id: "p1.1", title: "sub a1", status: "pending" },
+      { id: "p1.2", title: "sub a2", status: "pending" },
+      { id: "p1.3", title: "sub a3", status: "pending" },
+    ] },
+    { id: "p2", title: "parent b", status: "complete", subtasks: [
+      { id: "p2.1", title: "sub b1", status: "pending" },
+      { id: "p2.2", title: "sub b2", status: "pending" },
+    ] },
+    { id: "p3", title: "parent c", status: "pending", subtasks: [
+      { id: "p3.1", title: "sub c1", status: "pending" },
+    ] },
+    { id: "p4", title: "parent d", status: "pending" },
+    { id: "p5", title: "parent e", status: "pending" },
+    { id: "p6", title: "parent f", status: "pending" },
+  ] } });
+  const nestedLines = buildWidgetLines({ goal: nested, list: [] }, null, NOW, undefined, 120)!;
+  // 2 closed parents (1 + 3 subs + 1 + 2 subs) = 7 of 12, round(7/12*5)=3 cells filled
+  assert.match(nestedLines[0]!, /7\/12 ▰▰▰▱▱/);
+  // Mid-flight parent: its done subtasks count independently.
+  const mid = goalOf({ taskList: { version: 1, tasks: [
+    { id: "p1", title: "parent a", status: "in_progress", subtasks: [
+      { id: "p1.1", title: "sub a1", status: "complete" },
+      { id: "p1.2", title: "sub a2", status: "pending" },
+    ] },
+    { id: "p2", title: "parent b", status: "pending" },
+  ] } });
+  const midLines = buildWidgetLines({ goal: mid, list: [] }, null, NOW, undefined, 120)!;
+  assert.match(midLines[0]!, /1\/4 ▰▱▱▱▱/);
+});
+
 test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag lifecycle", () => {
   const SRC = readGoalRuntimeSource();
   const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
