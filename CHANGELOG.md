@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.38.33 — findings.md indent convention normalized (2026-09-08)
+
+### Fixed
+- Indented checkboxes now count and queue identically across all four findings.md readers (DECIDED 2026-09-08: normalize). The fan-out parser already queued indented boxes while `countOpenAuditFindings`, `topOpenAuditFinding`, and the `auditMeasureCmd` shell grep ignored them — metric, reprieve, and queue disagreed. All three counters accept optional leading indent, mirroring the fan-out shape; the reprieve strips the indent, never the text.
+- Regression coverage in `tests/loop-forever.test.ts` (four-reader agreement + indent-strip pins; the exact-string measure pin and closed-FIX count updated); `tsc` clean.
+
 ## 0.38.32 — migrate-on-read backfill for pre-v0.38.21 audit histories (2026-09-08)
 
 ### Fixed

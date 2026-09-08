@@ -813,10 +813,6 @@ test("v0.38.33: topOpenAuditFinding strips the indent, never the text", () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-  }
-});
 
 test("v0.35.4: parseLoopStartArgs keeps =-bearing text inside quotes and restores unknown keys", () => {
   const quoted = parseLoopStartArgs('"make a=b work" measure="echo 1" direction=min');
