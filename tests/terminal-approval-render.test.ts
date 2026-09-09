@@ -48,7 +48,7 @@ function richGoal(): Goal {
   }) as unknown as Goal;
 }
 
-test("canonical render keeps the outcome-first voice with counts before the record", () => {
+test("canonical render folds a lone approval with the verdict count, model-free", () => {
   const render = buildTerminalApprovalRender({
     goal: richGoal(),
     status: "complete",
@@ -61,16 +61,48 @@ test("canonical render keeps the outcome-first voice with counts before the reco
   // v0.38.39 (field 20260909_013733): the trailer rides as bullets — one
   // voice, no dangling `—` lines; the record pointer stays last.
   assert.ok(render.chatLines.every((l) => l.startsWith("✓ done — ") || l.startsWith("• ")), "uniform bullets, no dash-prefixed lines");
-  const approvalIdx = render.chatLines.findIndex((l) => l.startsWith("• auditor"));
-  const countsIdx = render.chatLines.findIndex((l) => l.startsWith("• audit:"));
+  // v0.38.42 (field 20260909_140404): a lone approval folds with the
+  // verdict count — no model ID, no redundant standalone audit bullet.
+  assert.ok(
+    render.chatLines.includes("• auditor approved on the provider retry (1 verdict)."),
+    "single approval folds with the count, via-retry news kept",
+  );
+  assert.ok(!render.chatLines.some((l) => l.startsWith("• audit:")), "no standalone audit bullet when it would repeat the approval");
+  assert.ok(!render.chatLines.some((l) => /auditor-model/.test(l)), "no model ID anywhere in the chat");
   const recordIdx = render.chatLines.findIndex((l) => l.startsWith("• record:"));
-  assert.ok(approvalIdx > 0 && countsIdx > approvalIdx && recordIdx > countsIdx, "approval, then counts, then the record pointer stays last");
   assert.equal(recordIdx, render.chatLines.length - 1, "record pointer is the final line");
   assert.ok(!render.chatLines.some((l) => /^\s*Next\s*:/i.test(l)), "stale pre-verdict Next never reaches the chat");
-  assert.ok(render.transcriptLines.includes("• auditor auditor-model approved on the provider retry."), "transcript keeps the approval trailer as a bullet too");
+  assert.ok(render.transcriptLines.includes("• auditor approved on the provider retry (1 verdict)."), "transcript carries the same canonical bullet, model-free");
+  assert.ok(!render.transcriptLines.some((l) => /auditor-model/.test(l)), "no model ID in the transcript either");
   assert.ok(!render.transcriptLines.some((l) => /^\s*Next\s*:/i.test(l)), "transcript strips the stale Next too");
+  assert.equal(render.approval, "— auditor auditor-model approved on the provider retry.", "the shared approval field keeps the full string for archive/persist consumers");
   assert.ok(render.recap.length > 0, "external single line still produced");
   assert.equal(render.outcome, (render.chatLines[0] ?? "").replace(/^✓ done — /, ""), "outcome matches the chat lead");
+});
+
+test("standalone audit bullet survives only with news", () => {
+  const base = {
+    status: "complete" as const,
+    stopReason: "auditor m approved (detached)",
+    archivePath: ".pi-glla/archive/20260907-approval-render.md",
+    approval: "— auditor m approved.",
+    record: "— record: .pi-glla/archive/20260907-approval-render.md",
+  };
+  // Two verdicts: the counts bullet carries news the approval lacks.
+  const two = richGoal();
+  two.auditHistory = [...(two.auditHistory ?? []), { at: "2026-09-07T01:00:00.000Z", approved: true, disapproved: false, model: "m2" }];
+  const multi = buildTerminalApprovalRender({ ...base, goal: two });
+  assert.ok(multi.chatLines.includes("• auditor approved."), "approval bullet still model-free");
+  assert.ok(multi.chatLines.includes("• audit: auditor approved (2 verdicts)."), "multi-verdict counts bullet survives");
+  // Lone disapproval: the counts bullet carries the disapproval news.
+  const dis = richGoal();
+  dis.auditHistory = [{ at: "2026-09-07T01:00:00.000Z", approved: false, disapproved: true, model: "m" }];
+  const disRender = buildTerminalApprovalRender({ ...base, goal: dis, approval: "— auditor m disapproved." });
+  assert.ok(disRender.chatLines.some((l) => l.startsWith("• audit: auditor disapproved")), "disapproval counts bullet survives");
+  // Archive record still carries the full model ID (v0.38.42 contract:
+  // the model leaves chat/transcript, never the record).
+  const hooks = fs.readFileSync(path.resolve("extensions/loops/goal-auditor-hooks.ts"), "utf-8");
+  assert.ok(hooks.includes("auditor ${result.model} approved (${origin})"), "archive reason still interpolates the full model ID");
 });
 
 test("counts line proofs the audit verdict from durable state only", () => {

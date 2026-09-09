@@ -375,7 +375,7 @@ export function buildTerminalApprovalRender(input: TerminalApprovalRenderInput):
       ...(foldCounts ? [] : [trailerBullet(countsLine)]),
       trailerBullet(input.record),
       ...(input.extras ?? []),
-    },
+    ],
     recap,
     transcriptLines: [...withoutStaleNext(brief.details).map((detail) => `• ${detail}`), approvalBullet],
     countsLine,
