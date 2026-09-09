@@ -146,16 +146,16 @@ test("fixture: repeated real continuation payloads grow context linearly and are
   assert.equal(twelve.failedErrorOnlyCount, 0);
   assert.deepEqual(twelve, {
     messageCount: 14,
-    serializedBytes: 293_607,
-    textChars: 287_560,
-    estimatedTokens: 71_890,
+    serializedBytes: 298_335,
+    textChars: 292_216,
+    estimatedTokens: 73_054,
     gllaMessageCount: 12,
-    gllaSerializedBytes: 293_424,
-    gllaTextChars: 287_508,
-    gllaEstimatedTokens: 71_877,
+    gllaSerializedBytes: 298_152,
+    gllaTextChars: 292_164,
+    gllaEstimatedTokens: 73_041,
     uniqueGllaPayloadCount: 1,
     repeatedGllaPayloadCount: 11,
-    repeatedGllaSerializedBytes: 268_972,
+    repeatedGllaSerializedBytes: 273_306,
     failedErrorOnlyCount: 0,
     unserializableMessageCount: 0,
     provider: {

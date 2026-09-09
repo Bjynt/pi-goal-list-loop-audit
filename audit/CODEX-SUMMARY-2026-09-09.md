@@ -58,6 +58,6 @@ always about verifiable-result bullets, not chrome.
   detail-tally split), `tests/completion-communication.test.ts`
   (one-voice post, record-last), `tests/behavioral-orchestrator.test.ts`
   (bulleted counts/record/no-audit trailer).
-- Full `TMPDIR=/var/tmp npm run release:check`: (see v0.38.39 log).
+- Full `TMPDIR=/var/tmp npm run release:check`: 2042 pass / 2 skip / 0 fail across 204 files (`/var/tmp/glla-codex-release-check2.log`, tarball `pi-goal-list-loop-audit-0.38.39.tgz`).
 - `npx tsc --noEmit` clean.
 - Field eyeball of the next real goal close is the owner's follow-up.
