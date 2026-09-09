@@ -30,10 +30,10 @@ test("v0.38.20 approval chat drops the stale pre-verdict Next line", () => {
   });
   assert.deepEqual(lines, [
     "✓ done — v0.38.19 answers the disapproval",
-    "Changed: sendContinuation bypass",
-    "Evidence: full gate 1917 pass",
-    "— auditor m approved on the provider retry.",
-    "— record: .pi-glla/archive/20260904162433-qm4iq0.md",
+    "• Changed: sendContinuation bypass",
+    "• Evidence: full gate 1917 pass",
+    "• auditor m approved on the provider retry.",
+    "• record: .pi-glla/archive/20260904162433-qm4iq0.md",
   ]);
 });
 
@@ -46,19 +46,25 @@ test("approval chat keeps every informing detail (Tests + meaningful Unresolved 
   });
   assert.deepEqual(lines, [
     "✓ done — done",
-    "Changed: a",
-    "Evidence: b",
-    "Tests: c",
-    "Unresolved: d",
-    "— auditor m approved.",
-    "— record: x.md",
+    "• Changed: a",
+    "• Evidence: b",
+    "• Tests: c",
+    "• Unresolved: d",
+    "• auditor m approved.",
+    "• record: x.md",
   ]);
 });
 
-test("v0.38.20 withoutStaleNext strips Next case-insensitively, keeps the rest", () => {
+test("v0.38.39 withoutStaleNext keeps one concrete next action, still strips stale ones", () => {
   assert.deepEqual(
     withoutStaleNext(["Changed: a", "  next: something pending.", "NEXT: more", "Next-step: hyphenated is not the label"]),
-    ["Changed: a", "Next-step: hyphenated is not the label"],
+    ["Changed: a", "  next: something pending.", "Next-step: hyphenated is not the label"],
+    "first concrete Next survives; the second is capped",
+  );
+  assert.deepEqual(
+    withoutStaleNext(["Changed: a", "Next: detached auditor verdict decides.", "Next: awaiting approval.", "Next: reload the extension"]),
+    ["Changed: a", "Next: reload the extension"],
+    "self-referential audit/process lines drop, the concrete action survives",
   );
   assert.deepEqual(withoutStaleNext(undefined), []);
   assert.deepEqual(withoutStaleNext([]), []);

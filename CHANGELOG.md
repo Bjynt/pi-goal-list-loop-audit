@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.38.39 — Codex-like terminal summary (2026-09-09)
+
+### Fixed
+
+- **Terminal `[goal-event]` summary was not Codex-like (field 20260909_013733):** `•` detail bullets followed by dangling `—` trailer lines, every bullet trailing into `…`, a raw `/var/tmp/…` log path in chat, and no next action. The render is now one voice: uniform `•` bullets (approval/counts/record ride as bullets, record stays last), machine paths (`/tmp/…`, `/var/tmp/…`, `*.tgz`, receipt-only paren groups) stripped from chat bullets (archive keeps the full text), `+` joins the clause-boundary cut set, and `withoutStaleNext` is selective — audit-self-referential Next lines still drop but the first concrete next action survives as the closing bullet ahead of the non-do.
+- **Claim-side guidance:** continuation prompt budgets each label value to ~90 chars, bans machine paths from the recap, and asks for one concrete `Next:` or none.
+
+### Verification
+
+- New pins: uniform-voice, machine-path strip, `+`-boundary cut, next-action ordering, record-last; full `release:check` 0 failures; `tsc --noEmit` clean.
+- Evidence: `audit/CODEX-SUMMARY-2026-09-09.md`. Archive format and delivery/replay mechanics unchanged.
+
+## 0.38.38 — elapsed-time duplication cut + PR #47 closed (2026-09-09)
+
+### Fixed
+
+- **Elapsed time in two places (field 20260909_002132):** the `setStatus` one-liner no longer carries `total …` on the idle/busy/working branches — other sessions' tab strips showed `glla: [WORKING] total …` under a card already reading it. The card head keeps the timer unconditionally; state + task/queue counts stay on the status line. (`Chrome Bridge`/`(indefinite)` framing is pi core, not GLLA — only our timer text was cut.)
+- **PR #47 triage:** KV-cache checkpoint complaint verified real on main but the strip shape is unsafe as-is (post-compaction blindness, no compensating pointer) — replied per-piece, gave the contributor a merge-based re-sync command, closed without merging per the #45/#46 precedent (live `active.jsonl`, 39-behind divergence, bundled features). Per-task audits stay held pending cost review.
+
+### Verification
+
+- New pins: status-without-timer + card-keeps-timer; full `release:check` 0 failures; `tsc --noEmit` clean.
+- Evidence: `audit/ELAPSED-DUPLICATION-PR47-2026-09-09.md`. No open PRs.
+
+## 0.38.37 — bullets + deliberate non-do (2026-09-09)
+
+### Fixed
+
+- **Auditor disapproval of v0.38.36 answered:** the posted summary now carries one `•` bullet per informing detail on both posted surfaces (chat + transcript); new optional `complete_goal` `leftOut` parameter renders as the closing `• Left out:` bullet on all three approval sites (fresh, detached-retry, Esc-anyway). Absent stays absent — never invented, filler drops. Recap/archive format unchanged.
+- **Stale pins updated deliberately:** approval-chat `deepEqual` expectations now bullet-prefixed.
+
+### Verification
+
+- New pins: bullet count/evidence + present/absent/filler non-do (render unit), end-to-end `leftOut` claim → posted bullet (MockPi).
+- Full `release:check`: 2040 pass / 2 skip / 0 fail across 204 files (`/var/tmp/glla-bullets-release-check2.log`, tarball `pi-goal-list-loop-audit-0.38.37.tgz`); `tsc --noEmit` clean.
+- Evidence: `audit/HUMAN-VOICE-SUMMARY-2026-09-08.md`.
+
+## 0.38.36 — human-voice terminal summaries (2026-09-08)
+
+### Fixed
+
+- **Summaries read as machine receipts (field 20260908_223522/223523):** `clipSummaryValue` now cuts at clause boundaries and strips stranded punctuation (`…append/replace Apply…`, never `…playlist auto-add,…`); the counts line is verdict-only (`— audit: auditor approved (1 verdict).`, raw run stats stay in the archive); the AUDIT PENDING notice states facts instead of agent imperatives. Agent-written summaries get Codex-shape guidance in the continuation prompt (outcome-first, verifiable bullets, clause cuts). Researched from real Codex transcripts + agy binary strings; user chose Codex-style chat shape.
+- **Stale pins updated deliberately:** `— run:` telemetry assertions, `/detached auditor queued/` wordings, continuation-payload byte fixtures (+344/payload, growth exactly linear).
+
+### Verification
+
+- Full `release:check`: 2038 pass / 2 skip / 0 fail across 204 files; `tsc --noEmit` clean.
+- Evidence: `audit/HUMAN-VOICE-SUMMARY-2026-09-08.md`.
+
 ## 0.38.35 — closed card + smart summary (2026-09-08)
 
 ### Fixed

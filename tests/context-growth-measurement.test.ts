@@ -94,19 +94,25 @@ test("fixture: repeated real continuation payloads grow context linearly and are
   // intentional prompt change rather than hiding the drift.
   // Completion-communication guidance: pending claims are nonterminal and
   // the approved summary is posted after verify — +543 bytes per payload
-  // (+539 chars template, +4 serialization). Linear growth is preserved:
+  // (+539 chars template, +4 serialization). User-voice summary-shape
+  // guidance (Codex-style outcome-first, clause-boundary cuts) — +344 bytes
+  // per payload (+340 chars, +2 multibyte). Deliberate-non-do guidance
+  // (complete_goal leftOut + closing-bullet voice) — +87 bytes per payload
+  // (+85 chars, +2 multibyte from the em-dash). Codex-close claim guidance
+  // (90-char values, human proof only, one concrete Next) — +388 bytes per
+  // payload (+388 chars, +4 multibyte: … and — ×2). Linear growth is preserved:
   // repeated bytes stay an exact multiple of the single-payload bytes.
-  assert.equal(payload.length, 23_534);
-  assert.equal(new TextEncoder().encode(payload).byteLength, 23_642);
+  assert.equal(payload.length, 24_347);
+  assert.equal(new TextEncoder().encode(payload).byteLength, 24_463);
   assert.deepEqual(one, {
     messageCount: 3,
-    serializedBytes: 24_204,
-    textChars: 23_586,
-    estimatedTokens: 5_897,
+    serializedBytes: 25_029,
+    textChars: 24_399,
+    estimatedTokens: 6_100,
     gllaMessageCount: 1,
-    gllaSerializedBytes: 24_021,
-    gllaTextChars: 23_534,
-    gllaEstimatedTokens: 5_884,
+    gllaSerializedBytes: 24_846,
+    gllaTextChars: 24_347,
+    gllaEstimatedTokens: 6_087,
     uniqueGllaPayloadCount: 1,
     repeatedGllaPayloadCount: 0,
     repeatedGllaSerializedBytes: 0,
@@ -140,16 +146,16 @@ test("fixture: repeated real continuation payloads grow context linearly and are
   assert.equal(twelve.failedErrorOnlyCount, 0);
   assert.deepEqual(twelve, {
     messageCount: 14,
-    serializedBytes: 288_435,
-    textChars: 282_460,
-    estimatedTokens: 70_615,
+    serializedBytes: 298_335,
+    textChars: 292_216,
+    estimatedTokens: 73_054,
     gllaMessageCount: 12,
-    gllaSerializedBytes: 288_252,
-    gllaTextChars: 282_408,
-    gllaEstimatedTokens: 70_602,
+    gllaSerializedBytes: 298_152,
+    gllaTextChars: 292_164,
+    gllaEstimatedTokens: 73_041,
     uniqueGllaPayloadCount: 1,
     repeatedGllaPayloadCount: 11,
-    repeatedGllaSerializedBytes: 264_231,
+    repeatedGllaSerializedBytes: 273_306,
     failedErrorOnlyCount: 0,
     unserializableMessageCount: 0,
     provider: {
@@ -245,13 +251,13 @@ test("reported checkpoint shape stays pinned across all probe sizes", () => {
     {
       continuations: 1,
       messageCount: 3,
-      serializedBytes: 24_204,
-      textChars: 23_586,
-      estimatedTokens: 5_897,
+      serializedBytes: 25_029,
+      textChars: 24_399,
+      estimatedTokens: 6_100,
       gllaMessageCount: 1,
-      gllaSerializedBytes: 24_021,
-      gllaTextChars: 23_534,
-      gllaEstimatedTokens: 5_884,
+      gllaSerializedBytes: 24_846,
+      gllaTextChars: 24_347,
+      gllaEstimatedTokens: 6_087,
       repeatedGllaPayloadCount: 0,
       repeatedGllaSerializedBytes: 0,
       provider: {
@@ -270,15 +276,15 @@ test("reported checkpoint shape stays pinned across all probe sizes", () => {
     {
       continuations: 5,
       messageCount: 7,
-      serializedBytes: 120_288,
-      textChars: 117_722,
-      estimatedTokens: 29_431,
+      serializedBytes: 124_413,
+      textChars: 121_787,
+      estimatedTokens: 30_447,
       gllaMessageCount: 5,
-      gllaSerializedBytes: 120_105,
-      gllaTextChars: 117_670,
-      gllaEstimatedTokens: 29_418,
+      gllaSerializedBytes: 124_230,
+      gllaTextChars: 121_735,
+      gllaEstimatedTokens: 30_434,
       repeatedGllaPayloadCount: 4,
-      repeatedGllaSerializedBytes: 96_084,
+      repeatedGllaSerializedBytes: 99_384,
       provider: {
         sampleCount: 5,
         inputTokens: 60_000,
@@ -295,15 +301,15 @@ test("reported checkpoint shape stays pinned across all probe sizes", () => {
     {
       continuations: 12,
       messageCount: 14,
-      serializedBytes: 288_435,
-      textChars: 282_460,
-      estimatedTokens: 70_615,
+      serializedBytes: 298_335,
+      textChars: 292_216,
+      estimatedTokens: 73_054,
       gllaMessageCount: 12,
-      gllaSerializedBytes: 288_252,
-      gllaTextChars: 282_408,
-      gllaEstimatedTokens: 70_602,
+      gllaSerializedBytes: 298_152,
+      gllaTextChars: 292_164,
+      gllaEstimatedTokens: 73_041,
       repeatedGllaPayloadCount: 11,
-      repeatedGllaSerializedBytes: 264_231,
+      repeatedGllaSerializedBytes: 273_306,
       provider: {
         sampleCount: 12,
         inputTokens: 228_000,
@@ -320,15 +326,15 @@ test("reported checkpoint shape stays pinned across all probe sizes", () => {
     {
       continuations: 25,
       messageCount: 27,
-      serializedBytes: 600_708,
-      textChars: 588_402,
-      estimatedTokens: 147_101,
+      serializedBytes: 621_333,
+      textChars: 608_727,
+      estimatedTokens: 152_182,
       gllaMessageCount: 25,
-      gllaSerializedBytes: 600_525,
-      gllaTextChars: 588_350,
-      gllaEstimatedTokens: 147_088,
+      gllaSerializedBytes: 621_150,
+      gllaTextChars: 608_675,
+      gllaEstimatedTokens: 152_169,
       repeatedGllaPayloadCount: 24,
-      repeatedGllaSerializedBytes: 576_504,
+      repeatedGllaSerializedBytes: 596_304,
       provider: {
         sampleCount: 25,
         inputTokens: 800_000,

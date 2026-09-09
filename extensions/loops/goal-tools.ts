@@ -569,6 +569,13 @@ function registerAgentTools(pi: any): void {
           "and cross-checks the verification claim against real artifacts (see audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md).",
       })),
       newObjective: Type.Optional(Type.String({ description: "v0.25.0 (contract item 15): when the work has legitimately shifted, pass the new objective here — it atomically replaces the goal objective AND the audit proceeds against the NEW objective in this same call. Do not use to dodge a legitimate disapproval; the auditor sees the change." })),
+      leftOut: Type.Optional(Type.String({
+        maxLength: 500,
+        description:
+          "v0.38.37: what this turn deliberately left out (scope cut, deferred item + why, in plain words). " +
+          "Renders as the closing `• Left out:` bullet in the user-facing terminal summary. " +
+          "Omit when nothing was deliberately left out — absent stays absent, never invented.",
+      })),
     }),
     async execute(_id, params, signal, _onUpdate, execCtx) {
       const foreign0 = foreignToolGuard(execCtx);
@@ -592,7 +599,7 @@ function registerAgentTools(pi: any): void {
         }
         return { content: [{ type: "text", text: `No active goal — it is ${state.goal.status}.` }], details: {} };
       }
-      const p = params as { completionSummary?: string; verificationSummary?: string; newObjective?: string };
+      const p = params as { completionSummary?: string; verificationSummary?: string; newObjective?: string; leftOut?: string };
       if (state.goal.repairTarget) {
         return {
           content: [{ type: "text", text: `This repair card cannot be completed yet. Redraft the original target as a confirmed task list with propose_task_list (include objective: ${state.goal.repairTarget.objective.slice(0, 180)}), then continue the real work.` }],
@@ -792,6 +799,9 @@ function registerAgentTools(pi: any): void {
       const completionClaim = beginCompletionAudit(ctx, {
         completionSummary: finalSummary,
         verificationSummary: p.verificationSummary,
+        // v0.38.37: the deliberate non-do rides the pending claim into
+        // the terminal render — the only source the summary may cite.
+        ...(p.leftOut?.trim() ? { leftOut: p.leftOut.trim().slice(0, 500) } : {}),
         at: nowIso(),
       }, "complete-goal");
       if (!completionClaim) {
@@ -1244,6 +1254,9 @@ function registerAgentTools(pi: any): void {
       // Escape hatch: the user aborted the audit (Esc). Offer the explicit
       // choice — complete WITHOUT audit, or keep working. (pi-goal-x parity.)
       if (result.error === "Auditor aborted.") {
+        // v0.38.37: capture the agent-claimed non-do before the claim is
+        // cleared below — the Esc-complete path renders the same voice.
+        const escLeftOut = state.goal.pendingCompletion?.leftOut;
         updateGoal({ status: "active", auditHistory: history, pendingCompletion: undefined, pauseReason: "audit aborted by user (Esc)" }, ctx);
         const abortConfirmCtx = freshCtxForGeneration(auditGeneration);
         if (!abortConfirmCtx) return staleToolResult();
@@ -1282,6 +1295,9 @@ function registerAgentTools(pi: any): void {
             approval: `— completed without audit (your choice).`,
             record: `— record: ${escArchivePath}`,
             auditNote: "completed without audit (your choice)",
+            // v0.38.37: the claim was cleared pre-confirm; the non-do was
+            // captured from it above.
+            ...(escLeftOut ? { leftOut: escLeftOut } : {}),
           });
           if (!archiveCurrentGoal(ctx, "complete", terminalReason)) {
             return {
@@ -1336,6 +1352,8 @@ function registerAgentTools(pi: any): void {
           completionSummary: state.goal.completionSummary,
           approval: `— auditor ${result.model} approved.`,
           record: manualArchiveRecord,
+          // v0.38.37: the deliberate non-do rides the durable claim.
+          ...(durableCompletionClaim.leftOut ? { leftOut: durableCompletionClaim.leftOut } : {}),
           extras: inspectionSessionPath
             ? [`Auditor session kept for review: pi --session ${inspectionSessionPath} (or pi --fork ${inspectionSessionPath}).`]
             : [],
@@ -1926,7 +1944,7 @@ function registerAgentTools(pi: any): void {
         if (notifyFailure) current.ui.notify(`Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it.`, "warning");
       });
       return {
-        content: [{ type: "text", text: `AUDIT PENDING — nonterminal. Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The goal is not approved or complete. Do not claim completion or give a final success summary. Do not wait or poll: GLLA will post the concrete final summary after verified approval and durable archive; rejection resumes work.` }],
+        content: [{ type: "text", text: `AUDIT PENDING — nonterminal. The completion claim is stored and a detached auditor is settling it (model: ${via ?? "setting"}). The goal is not approved or complete yet. The final summary posts here after verified approval and durable archive; rejection resumes work automatically. Ending this turn now is correct — no waiting or polling needed.` }],
         details: { status: "audit-pending", terminal: false },
         // End this tool batch, not the goal; the detached worker owns settlement.
         terminate: true,

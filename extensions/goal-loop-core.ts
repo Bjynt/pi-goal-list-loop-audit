@@ -281,6 +281,12 @@ export interface PendingCompletion {
   /** Durable per-episode notice fence; display projections must consult it. */
   recoveryNoticeKeys?: string[];
   /**
+   * v0.38.37: what the agent deliberately left out of this turn's work
+   * (complete_goal leftOut). Renders as the closing non-do bullet in the
+   * terminal user summary; absent means nothing was deliberately left out.
+   */
+  leftOut?: string;
+  /**
    * Durable one-shot recovery fence. A parked claim may receive one
    * automatic retry after a validated healthy lifecycle/recovery event;
    * manual /goal resume remains available after that attempt. Missing on

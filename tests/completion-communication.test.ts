@@ -61,6 +61,8 @@ for (const idle of [true, false]) test(`pending is nonterminal; approval deliver
   await pi.command("goal", "fix routing — done when pinned", ctx);
   const result = await pi.runTool("complete_goal", { completionSummary: summary, verificationSummary: "pinned" }, ctx) as any;
   assert.match(result.content[0].text, /AUDIT PENDING — nonterminal/);
+  assert.doesNotMatch(result.content[0].text, /Do not (claim|give|wait)/, "pending states facts, never agent imperatives (field 2026-09-08)");
+  assert.match(result.content[0].text, /Ending this turn now is correct/, "pending names the correct next step");
   assert.deepEqual(result.details, { status: "audit-pending", terminal: false });
   assert.equal(result.terminate, true, "stop the acknowledgement-only batch, not the goal");
   assert.equal(readState(cwd).goal?.status, "auditing");
@@ -77,6 +79,20 @@ for (const idle of [true, false]) test(`pending is nonterminal; approval deliver
   await pi.fire("agent_settled", {}, ctx);
   await pi.command("goal", "status", ctx);
   assert.equal(entries.length, 1, "settle and contact do not duplicate summary");
+});
+
+test("complete_goal leftOut renders the deliberate-non-do bullet end to end", async () => {
+  const { ctx, entries } = await setup("approved");
+  await pi.command("goal", "fix routing — done when pinned", ctx);
+  await pi.runTool("complete_goal", { completionSummary: summary, verificationSummary: "pinned", leftOut: "the walkthrough artifact surface" }, ctx);
+  await waitFor(() => entries.length === 1);
+  assert.equal(entries.length, 1);
+  assert.match(entries[0].content, /• Left out: the walkthrough artifact surface/);
+  const lines = entries[0].content.split("\n");
+  assert.ok(lines.every((l: string) => l.startsWith("✓ done — ") || l.startsWith("• ")), "posted summary is one voice: outcome + bullets, no dash lines");
+  const detailBullets = lines.filter((l: string) => l.startsWith("• ") && !/^(• auditor |• audit:|• record:)/.test(l));
+  assert.ok(detailBullets.length >= 1 && detailBullets.length <= 6, `posted summary carries 4-6 informing bullets plus the trailer, got ${detailBullets.length}`);
+  assert.ok(lines[lines.length - 1]!.startsWith("• record:"), "record pointer stays last");
 });
 
 test("disapproval remains unfinished, no final success is posted", async () => {

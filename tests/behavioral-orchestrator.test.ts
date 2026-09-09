@@ -487,7 +487,7 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
     const notice = briefings[0].content as string;
     assert.equal(confirmationTitle, "Audit aborted", "the explicit audit-abort choice was presented");
     assert.match(notice, /^✓ done — Objective "complete without audit target/, "the briefing leads with the archived objective");
-    assert.match(notice, /— completed without audit \(your choice\)\./, "the no-audit trailer closes the briefing");
+    assert.match(notice, /• completed without audit \(your choice\)\./, "the no-audit trailer closes the briefing as a bullet (v0.38.39 uniform voice)");
     assert.doesNotMatch(notice, /not recorded/, "system placeholders never reach the briefing");
     assert.ok(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length > 0, "archive landed before success was reported");
   } finally {
@@ -3191,7 +3191,7 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
     const replacement = ownerCtx(cwd);
     await pi.fire("session_start", { reason: "reload" }, replacement);
     const result = await audit;
-    assert.match(result.content[0]!.text, /detached auditor queued|verdict will be applied asynchronously/i, "complete_goal returns without waiting on the old generation");
+    assert.match(result.content[0]!.text, /AUDIT PENDING — nonterminal/, "complete_goal returns without waiting on the old generation");
 
     const after = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string; phase?: string } };
     assert.ok(["auditing", "paused"].includes(after.status), "the replacement keeps the audit lifecycle recoverable");
@@ -3259,7 +3259,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
       verificationSummary: "The fake auditor will inspect the pinned artifact.",
     }, ctx);
     const elapsed = Date.now() - started;
-    assert.match(result.content[0]!.text, /detached auditor queued/i);
+    assert.match(result.content[0]!.text, /detached auditor is settling/i, "pending names the settling auditor in plain voice");
     assert.ok(elapsed < 300, `complete_goal waited ${elapsed}ms for the worker`);
     const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string } };
     assert.equal(claimed.status, "auditing", "claim is durable before the detached result");
@@ -3556,15 +3556,16 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     // summary — field 2026-09-04). Substance lives in the transcript
     // notice + archive; the chat stays glanceable but never boilerplate.
     for (const label of ["Changed:", "Evidence:", "Tests:"]) {
-      assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `approved briefing keeps informing label ${label}`);
+      // v0.38.37: informing details arrive as verifiable-result bullets.
+      assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.replace(/^• /, "").startsWith(label)), `approved briefing keeps informing label ${label}`);
     }
     assert.ok(recapNotifs[0]!.message.split("\n").length <= 8, "summary keeps bounded evidence, tests, and unresolved facts");
-    assert.match(recapNotifs[0]!.message, /— run: .* · .*\./, "chat notify carries the audit-goal counts line");
-    assert.match(recapNotifs[0]!.message, /— record: \.pi-glla\/archive\/.*\.md/, "chat notify points at the archived record");
+    assert.match(recapNotifs[0]!.message, /• audit: auditor .* \(.*verdicts?\)\./, "chat notify carries the verdict-only counts line");
+    assert.match(recapNotifs[0]!.message, /• record: \.pi-glla\/archive\/.*\.md/, "chat notify points at the archived record");
     for (const label of ["Unresolved:", "Next:"]) {
       assert.ok(!recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `filler ${label} none is dropped from the briefing`);
     }
-    assert.doesNotMatch(recapNotifs[0]!.message.split("\n").filter((line: string) => !line.startsWith("— run:")).join("\n"), / · /, "approved briefing is lines, not the single-line mash (the counts line alone carries · separators)");
+    assert.doesNotMatch(recapNotifs[0]!.message.split("\n").filter((line: string) => !line.startsWith("• audit:")).join("\n"), / · /, "approved briefing is lines, not the single-line mash (the counts bullet alone could carry · separators)");
     assert.match(recapNotifs[0]!.message, /…/, "long approved recap values are bounded");
     assert.doesNotMatch(recapNotifs[0]!.message, new RegExp(`(${"durable-proof-marker "}){20}`), "approved notification does not flatten the full long recap");
     assert.doesNotMatch(recapNotifs.join("\n"), /^Goal complete — auditor /, "the old process-only line is gone");

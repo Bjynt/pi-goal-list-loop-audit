@@ -80,9 +80,11 @@ test("empty state → undefined (segment cleared)", () => {
   assert.equal(buildStatusText({ goal: null, list: [] }, null, NOW), undefined);
 });
 
-test("active goal shows a compact state capsule + elapsed", () => {
+test("active goal shows a compact state capsule (elapsed lives on the card)", () => {
   const s = buildStatusText({ goal: goalOf(), list: [] }, null, NOW)!;
-  assert.match(s, /glla: \[ACTIVE\] total 3m/);
+  // v0.38.38 (field 20260909_002132): `total …` moved to the card head —
+  // the status line (and other sessions' tab strips) no longer repeats it.
+  assert.match(s, /glla: \[ACTIVE\]$/);
   assert.doesNotMatch(s, /glla: goal/, 'v0.34.1: the status line drops the policy word — the widget owns type naming');
 });
 
@@ -165,18 +167,19 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   // Audit 2026-09-07 (DECIDED: head owns liveness): the status is a static
   // state badge + counts. The animated capsule + `last stream` tail moved
   // to the card-head `stream {age}` readout — one surface owns liveness.
-  assert.match(status, /^glla: \[WORKING\] total 1m 00s · 3 queued$/);
+  assert.match(status, /^glla: \[WORKING\] 3 queued$/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
   assert.match(lines[0]!, /^● /);
   assert.match(lines[0]!, /· active ·/);
+  assert.match(lines[0]!, /total 1m 00s/, "the card head keeps the elapsed timer the status line dropped (field 20260909_002132)");
   assert.doesNotMatch(lines.join("\n"), /LIVE WORK|last stream 11s ago/);
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
-  assert.match(busy, /glla: \[BUSY\] total 1m 00s · 3 queued/);
+  assert.match(busy, /glla: \[BUSY\] 3 queued/);
   assert.doesNotMatch(busy, /WORKING/);
 
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /glla: \[⏳ QUEUED\] total 1m 00s · 3 queued/);
+  assert.match(queued, /glla: \[⏳ QUEUED\] 3 queued/);
   assert.doesNotMatch(queued, /WORKING/);
 
   // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch.
@@ -184,10 +187,10 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   // `stream {age}` readout per the 2026-09-07 liveness decision; note.md
   // 221249's ticking-timer complaint is answered there, not here.)
   const queuedPending = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true, lastActivityAt: NOW - 180_000 })!;
-  assert.match(queuedPending, /\[⏳ QUEUED\] total 1m 00s · awaiting pi turn · 3 queued/);
+  assert.match(queuedPending, /\[⏳ QUEUED\] awaiting pi turn · 3 queued/);
   // turnPending WITHOUT a known last-activity epoch still names the pending turn.
   const queuedPendingNoAge = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true })!;
-  assert.match(queuedPendingNoAge, /\[⏳ QUEUED\] total 1m 00s · awaiting pi turn · 3 queued/);
+  assert.match(queuedPendingNoAge, /\[⏳ QUEUED\] awaiting pi turn · 3 queued/);
   // No turnPending (scheduled-but-not-yet-sent) stays the plain QUEUED line.
   const queuedScheduled = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
   assert.doesNotMatch(queuedScheduled, /awaiting pi turn/);
@@ -198,7 +201,7 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   assert.equal(
     buildStatusText(goldenQueued, null, NOW, undefined, { activity: "queued" }),
-    "glla: [⏳ QUEUED] total 40s · 18 queued",
+    "glla: [⏳ QUEUED] 18 queued",
   );
 });
 
@@ -242,7 +245,7 @@ test("v0.34.95: queued WITHOUT a parked recovery does NOT show quota text (no fa
     list: [{ id: "queued-0", objective: "queued", addedAt: "z" }],
   };
   const status = buildStatusText(queuedNoRecovery, null, NOW, undefined, { activity: "queued" })!;
-  assert.equal(status, "glla: [⏳ QUEUED] total 40s · 1 queued");
+  assert.equal(status, "glla: [⏳ QUEUED] 1 queued");
   assert.doesNotMatch(status, /quota/);
 });
 
@@ -487,7 +490,7 @@ test("list policy footer: queued count, no duplicated 'list'", () => {
   // counter both said "list".
   assert.match(s, /^glla: /);
   assert.doesNotMatch(s, /^glla: list /, 'v0.34.1: policy word dropped — no list/list-item doubling with the widget chip');
-  assert.match(s, /· 1 queued$/);
+  assert.match(s, / 1 queued$/);
   assert.ok(!/list .+ list /.test(s), `no duplicated 'list … list': ${s}`);
 });
 
@@ -499,7 +502,7 @@ test("goal policy footer says 'N queued' (v0.28.11 U10 — was the cryptic 'list
   )!;
   assert.match(s, /^glla: /);
   assert.doesNotMatch(s, /^glla: goal /, 'v0.34.1: policy word dropped');
-  assert.match(s, /· 1 queued$/);
+  assert.match(s, / 1 queued$/);
 });
 
 test("widget names a list item as such and points at /list, not /goal", () => {

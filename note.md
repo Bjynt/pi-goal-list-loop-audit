@@ -1,16 +1,19 @@
 # Now
 
+##
+we likely dont need to be in 2 place we can cut the bottom one and if we would miss anything we can put it in the one below the chat
+/home/dracon/Pictures/Screenshots/Screenshot_20260909_002132.png 
+
+
+
 # Next
 
+##
+
+explain option first for questions 
 
 ##
 
-
-##
-
-what want better summaries written for the user 
-/home/dracon/Pictures/Screenshots/Screenshot_20260908_223523.png
-/home/dracon/Pictures/Screenshots/Screenshot_20260908_223522.png 
 
 # Later
 
