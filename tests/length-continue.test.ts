@@ -48,6 +48,52 @@ test("v0.34.19: tiny-output length at a nearly full context is context starvatio
   assert.equal(isContextStarvedLengthStop({ stopReason: "stop", usage: { output: 1 } }, { percent: 99.1 }), false);
 });
 
+test("v0.38.36: explicit provider context-overflow errors (stopReason=error) are context starvation when context usage >= 90%", () => {
+  const baseUsage = { tokens: 185_000, contextWindow: 200_000, percent: 92.5 };
+  const lowUsage = { tokens: 100_000, contextWindow: 200_000, percent: 50 };
+  const missingUsage = { percent: null };
+  const errorBase = { stopReason: "error", errorMessage: "exceed_context_size_error" };
+
+  // All known context-overflow error patterns should be detected
+  // These match the patterns in isContextStarvedLengthStop implementation
+  const patterns = [
+    "exceed_context_size_error",
+    "exceeds the available context size",
+    "exceeds the context window",
+    "exceeds the model's maximum context length",
+    "exceeds the model context length",  // "exceeds the model" + "context"
+    "context window exceeded",           // "context window" + "exceed"
+    "context window exceed",             // "context window" + "exceed"
+    "exceeds the available context",     // "exceeds the available context"
+    // Note: "exceeds the context limit" doesn't match current implementation
+    // (needs "exceeds the model" + "context" or "context window" + "exceed")
+  ];
+  for (const pattern of patterns) {
+    const msg = { stopReason: "error", errorMessage: pattern };
+    assert.equal(isContextStarvedLengthStop(msg, baseUsage), true, `detects: ${pattern}`);
+    // Case-insensitive detection
+    const msgUpper = { stopReason: "error", errorMessage: pattern.toUpperCase() };
+    assert.equal(isContextStarvedLengthStop(msgUpper, baseUsage), true, `detects uppercase: ${pattern}`);
+    // errorType field also works
+    const msgType = { stopReason: "error", errorType: pattern };
+    assert.equal(isContextStarvedLengthStop(msgType, baseUsage), true, `detects via errorType: ${pattern}`);
+  }
+  // Must NOT detect non-context errors
+  assert.equal(isContextStarvedLengthStop({ stopReason: "error", errorMessage: "rate limit exceeded" }, baseUsage), false, "rate limit is not context overflow");
+  assert.equal(isContextStarvedLengthStop({ stopReason: "error", errorMessage: "authentication failed" }, baseUsage), false, "auth error is not context overflow");
+  assert.equal(isContextStarvedLengthStop({ stopReason: "error", errorMessage: "server error 500" }, baseUsage), false, "server error is not context overflow");
+  assert.equal(isContextStarvedLengthStop({ stopReason: "error", errorMessage: "network error" }, baseUsage), false, "network error is not context overflow");
+  // Must NOT detect when context usage < 90%
+  for (const pattern of ["exceed_context_size_error", "exceeds the available context size"]) {
+    const msg = { stopReason: "error", errorMessage: pattern };
+    assert.equal(isContextStarvedLengthStop(msg, lowUsage), false, `below 90% not starvation: ${pattern}`);
+    assert.equal(isContextStarvedLengthStop(msg, missingUsage), false, `missing usage not starvation: ${pattern}`);
+  }
+  // Must NOT detect when stopReason is not error
+  assert.equal(isContextStarvedLengthStop({ stopReason: "length", usage: { output: 1 } }, baseUsage), true, "length with tiny output still works (Case 1)");
+  assert.equal(isContextStarvedLengthStop({ stopReason: "stop", errorMessage: "exceed_context_size_error" }, baseUsage), false, "stopReason=stop not starvation");
+});
+
 const SRC = readGoalRuntimeSource();
 const ACT = fs.readFileSync("extensions/loops/goal-activation.ts", "utf-8");
 const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
