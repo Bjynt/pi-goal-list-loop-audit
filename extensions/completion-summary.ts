@@ -262,7 +262,15 @@ export function buildApprovalChatLines(notice: {
 /** v0.38.39 (field 20260909_013733): the trailer rides as bullets too —
  * the Codex close is uniform `•` lines (`• Changed:` … `• record:`),
  * never a `•` block followed by dangling `—` lines. The `— ` sigil is
- * stripped at render; the input strings keep it for non-chat surfaces. */
+ * stripped at render; the input strings keep it for non-chat surfaces.
+ * v0.38.42 (field 20260909_140404): the chat/transcript approval bullet
+ * carries no model ID — the `provider/model` slug is machine trivia
+ * outside an audit (the full model ID stays in the archive record).
+ * The `auditor <model> approved` shape collapses to `auditor approved`;
+ * any other approval voice passes through untouched. */
+function stripApprovalModel(line: string): string {
+  return line.replace(/auditor\s+\S+\s+approved/, "auditor approved");
+}
 function trailerBullet(line: string): string {
   return `• ${line.replace(/^—\s*/, "")}`;
 }
@@ -343,19 +351,38 @@ export function buildTerminalApprovalRender(input: TerminalApprovalRenderInput):
     ? { ...baseBrief, details: [...baseBrief.details, `Left out: ${clipSummaryValue(leftOutContent, 120)}`] }
     : baseBrief;
   const countsLine = input.countsLine ?? buildAuditCountsLine(input.goal, input.auditNote);
+  // v0.38.42 (field 20260909_140404): one canonical approval bullet in
+  // chat and transcript — no model ID in either, via-retry news kept. A
+  // lone approval says the same thing as the counts line, so they fold
+  // into one bullet carrying the verdict count; the standalone audit
+  // bullet survives only with news (multiple, disapproved, or impossible
+  // verdicts). The returned `approval` field keeps the full input string
+  // for archive/persist consumers — the model ID leaves chat/transcript,
+  // never the record.
+  const history = input.goal.auditHistory ?? [];
+  const chatApproval = stripApprovalModel(input.approval);
+  const foldCounts = history.length === 1
+    && history[0]?.approved === true
+    && /approved/.test(chatApproval);
+  const approvalBullet = foldCounts
+    ? `• ${chatApproval.replace(/^—\s*/, "").replace(/\.\s*$/, "")} (${history.length} verdict).`
+    : trailerBullet(chatApproval);
   return {
     chatLines: [
       ...buildApprovalChatLines({
         outcome: brief.outcome,
         details: brief.details,
-        approval: input.approval,
+        approval: chatApproval,
         record: input.record,
-        counts: countsLine,
-      }),
+        counts: foldCounts ? undefined : countsLine,
+      }).map((line, i, lines) =>
+        // The shared chat-line builder still emits the unfolded trailer;
+        // swap in the canonical (possibly folded) approval bullet.
+        i === lines.length - (foldCounts ? 2 : 3) ? approvalBullet : line),
       ...(input.extras ?? []),
-    ],
+    },
     recap,
-    transcriptLines: [...withoutStaleNext(brief.details).map((detail) => `• ${detail}`), trailerBullet(input.approval)],
+    transcriptLines: [...withoutStaleNext(brief.details).map((detail) => `• ${detail}`), approvalBullet],
     countsLine,
     outcome: brief.outcome,
     approval: input.approval,
