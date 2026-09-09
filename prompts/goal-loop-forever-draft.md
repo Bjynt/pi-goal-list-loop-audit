@@ -56,6 +56,15 @@ stops it.
      genuinely endless (an ever-improving spec, continuous hardening).
 3. Clarify the **direction**: is lower better (min) or higher better (max)?
    (Skip this for a metricless loop — there is no direction without a metric.)
+   **Questionnaire discipline — roadmap, then stages:** batch independent
+   questions upfront in one `ask_user_question` call; when a later question
+   depends on an earlier answer (bounds depend on the metric, metricless
+   depends on no-number), state the full roadmap first, then ask
+   stage-by-stage so every option makes sense when answered. Every option
+   description states its concrete consequence, plus a preview pane wherever
+   what the option produces matters — two honest options beat four padded
+   guesses. Close every batch by inviting correction: if any of this is off,
+   Esc and say what's wrong, and you re-ask.
 4. Optional tuning: `window` (plateau stop after N non-improving iterations,
    default 5 — meaningless for metricless), `max` (iteration cap: default 50
    for METRIC loops; default UNBOUNDED (`max=0`) for metricless loops,

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.38.41 — grilling standard codified (2026-09-09)
+
+### Fixed
+
+- **Questionnaire discipline is now GLLA behavior, not an agreement:** all three drafting prompts (`goal-loop-draft.md`, `goal-loop-forever-draft.md`, `goal-loop-plan.md`) carry the roadmap-then-stages rule (batch independent questions, sequence dependent ones with the roadmap stated first), the rich-option standard (concrete-consequence descriptions + preview pane where end-states matter, never padded to four), and the explicit Esc-correction invitation.
+- **Pin test:** `tests/drafting-questionnaire.test.ts` (9 pins) fails if any prompt drops any part of the rule.
+
+### Verification
+
+- New pin test green; full `release:check` 0 failures; `tsc --noEmit` clean.
+
+## 0.38.40 — provider overflow errors count as starvation (2026-09-09)
+
+### Fixed
+
+- **PR #48 (Bjynt, merged):** `isContextStarvedLengthStop` now detects explicit provider context-overflow errors (`exceed_context_size_error`, `exceeds the available context size`, `context window exceeded`, …) arriving as `stopReason="error"`, firing the starvation ladder + emergency compactor (≥90% usage gate kept). Case 1 refactor is behavior-identical. Wiring confirmed live via the raw session message's `errorMessage`.
+- Follow-up noted on the PR: OpenAI-style `maximum context length` wording still falls through the matcher set.
+
+### Verification
+
+- Contributor's Case 2 tests + full `release:check` 0 failures; `tsc --noEmit` clean.
+
 ## 0.38.39 — Codex-like terminal summary (2026-09-09)
 
 ### Fixed
