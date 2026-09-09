@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.38.41 — grilling standard codified (2026-09-09)
+
+### Fixed
+
+- **Questionnaire discipline is now GLLA behavior, not an agreement:** all three drafting prompts (`goal-loop-draft.md`, `goal-loop-forever-draft.md`, `goal-loop-plan.md`) carry the roadmap-then-stages rule (batch independent questions, sequence dependent ones with the roadmap stated first), the rich-option standard (concrete-consequence descriptions + preview pane where end-states matter, never padded to four), and the explicit Esc-correction invitation.
+- **Pin test:** `tests/drafting-questionnaire.test.ts` (9 pins) fails if any prompt drops any part of the rule.
+
+### Verification
+
+- New pin test green; full `release:check` 0 failures; `tsc --noEmit` clean.
+
 ## 0.38.40 — provider overflow errors count as starvation (2026-09-09)
 
 ### Fixed
