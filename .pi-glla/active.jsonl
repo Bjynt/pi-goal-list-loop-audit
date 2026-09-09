@@ -2545,3 +2545,7 @@
 {"type":"context_checkpoint_projection","value":{"goalId":"20260909000714-4bc6lq","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2358,"generation":450},"at":"2026-09-09T00:16:41.676Z"}
 {"type":"context_checkpoint_projection","value":{"goalId":"20260909000714-4bc6lq","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2358,"generation":450},"at":"2026-09-09T00:16:59.333Z"}
 {"type":"context_checkpoint_projection","value":{"goalId":"20260909000714-4bc6lq","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2358,"generation":450},"at":"2026-09-09T00:17:03.474Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909000714-4bc6lq","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2358,"generation":450},"at":"2026-09-09T00:17:13.267Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909000714-4bc6lq","removedPayloads":1,"retainedPayloads":1,"checkpointChars":2358,"generation":450},"at":"2026-09-09T00:17:18.934Z"}
+{"type":"send_rearm_storm","value":{"kind":"continuation","streak":35,"minutes":10},"at":"2026-09-09T00:17:40.175Z"}
+{"type":"rearm_no_turn_started","value":{"streak":35,"minutes":10,"turnOpen":true,"turnOpenMinutes":1},"at":"2026-09-09T00:17:40.175Z"}

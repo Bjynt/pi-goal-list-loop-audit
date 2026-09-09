@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.38.38 — elapsed-time duplication cut + PR #47 closed (2026-09-09)
+
+### Fixed
+
+- **Elapsed time in two places (field 20260909_002132):** the `setStatus` one-liner no longer carries `total …` on the idle/busy/working branches — other sessions' tab strips showed `glla: [WORKING] total …` under a card already reading it. The card head keeps the timer unconditionally; state + task/queue counts stay on the status line. (`Chrome Bridge`/`(indefinite)` framing is pi core, not GLLA — only our timer text was cut.)
+- **PR #47 triage:** KV-cache checkpoint complaint verified real on main but the strip shape is unsafe as-is (post-compaction blindness, no compensating pointer) — replied per-piece, gave the contributor a merge-based re-sync command, closed without merging per the #45/#46 precedent (live `active.jsonl`, 39-behind divergence, bundled features). Per-task audits stay held pending cost review.
+
+### Verification
+
+- New pins: status-without-timer + card-keeps-timer; full `release:check` 0 failures; `tsc --noEmit` clean.
+- Evidence: `audit/ELAPSED-DUPLICATION-PR47-2026-09-09.md`. No open PRs.
+
 ## 0.38.37 — bullets + deliberate non-do (2026-09-09)
 
 ### Fixed

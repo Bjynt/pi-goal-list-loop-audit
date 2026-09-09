@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-09-09):**
+- `ELAPSED-DUPLICATION-PR47-2026-09-09.md` — v0.38.38: setStatus timer cut (card keeps it), PR #47 closed with per-piece verdicts + re-sync command; no open PRs
 - `HUMAN-VOICE-SUMMARY-2026-09-08.md` — v0.38.36/v0.38.37: Codex-style terminal summaries (field 20260908_223522/223523) — clause-boundary cuts, verdict-only counts, plain-voice pending, then bullets + `leftOut` non-do after the 2026-09-08 disapproval; gate 2040 pass / 0 fail
 - `UI-CARD-CLOSED-2026-09-08.md` — v0.38.35: closed card + smart summary (field 20260908_220808) — clause-boundary objective cut, steady-state inherited model row dropped, every tail closes with `└─`; gate 2037 pass / 0 fail
 - `COMPLETION-COMMUNICATION-2026-09-08.md` — v0.38.34: queued audit claims are explicitly nonterminal; verified approval posts one outcome-first summary into durable chat without an LLM wake; fair replay rotation; five stale assertions refreshed; gate 2034 pass / 0 fail
