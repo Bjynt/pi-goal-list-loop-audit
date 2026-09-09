@@ -159,8 +159,20 @@ export interface HumanCompletionBrief {
  * the durable archive keeps the full text. Falls back to the original
  * when stripping would empty the value. */
 export function chatSafeDetailValue(value: string): string {
-  const stripped = value
+  const withoutGroups = value.replace(/\([^()]*\)/g, (group) => {
+    // A parenthesized group that carries nothing but stripped tokens and
+    // receipt words is machine packaging — drop the whole group so no
+    // `( tarball )` husk survives. Groups with real words stay verbatim.
+    const inner = group
+      .slice(1, -1)
+      .replace(/(?:\/var)?\/tmp\/\S+/g, "")
+      .replace(/\S+\.tgz\b/g, "")
+      .replace(/\btarballs?\b|\blogs?\b/gi, "");
+    return /[a-z]/i.test(inner) ? group : "";
+  });
+  const stripped = withoutGroups
     .replace(/(?:\/var)?\/tmp\/\S+/g, "")
+    .replace(/\btarballs?\s+\S+\.tgz\b/gi, "")
     .replace(/\S+\.tgz\b/g, "")
     .replace(/\(\s*\)/g, "")
     .replace(/\s{2,}/g, " ")

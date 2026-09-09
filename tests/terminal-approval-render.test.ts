@@ -200,7 +200,6 @@ test("v0.38.39 chat brief strips machine paths but the archive keeps them", () =
 });
 
 test("v0.38.39 clause cut respects +-joined lists", () => {
-  const cut = clipSummaryValue("tag v0.38.38, GitHub release v0.38.38, publish run ok, npm version + latest 0.38.38, PR closed", 100);
-  assert.doesNotMatch(cut, /version…/, "cut lands on the + boundary, never inside `version + latest`");
-  assert.match(cut, /…$/, "over-budget values still clip");
+  const cut = clipSummaryValue("Evidencealpha beta, gamma + delta epsilon zeta eta theta iota kappa lambda mu", 40);
+  assert.equal(cut, "Evidencealpha beta, gamma…", "cut lands on the + boundary (without it the cut would strand at `beta…`)");
 });
