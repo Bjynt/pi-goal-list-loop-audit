@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.38.42 — trailer cleanup: model-free folded approval (2026-09-09)
+
+### Fixed
+
+- **One canonical approval bullet in chat and transcript (field 20260909_140404):** the `provider/model` slug leaves both surfaces — chat shows `auditor approved on the provider retry (1 verdict).`, via-retry news kept. A lone approval folds with the verdict count; the standalone audit bullet survives only with news (multiple, disapproved, or impossible verdicts). The full model ID stays in the archive record; machine-path layering (chat stripped, transcript full) unchanged.
+
+### Verification
+
+- Render-unit pins both ways (fold + survive) and both surfaces (no model ID) plus an archive-keeps-model source pin; full `release:check` 0 failures; `tsc --noEmit` clean.
+
 ## 0.38.41 — grilling standard codified (2026-09-09)
 
 ### Fixed

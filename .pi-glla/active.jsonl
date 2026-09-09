@@ -2757,3 +2757,9 @@
 {"type":"send_rearm_storm","value":{"kind":"continuation","streak":35,"minutes":10},"at":"2026-09-09T20:50:15.449Z"}
 {"type":"rearm_no_turn_started","value":{"streak":35,"minutes":10,"turnOpen":true,"turnOpenMinutes":1},"at":"2026-09-09T20:50:15.449Z"}
 {"type":"context_checkpoint_projection","value":{"goalId":"20260909203950-mdap17","removedPayloads":3,"retainedPayloads":1,"checkpointChars":1820,"generation":459},"at":"2026-09-09T20:50:31.133Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909203950-mdap17","removedPayloads":3,"retainedPayloads":1,"checkpointChars":1820,"generation":459},"at":"2026-09-09T20:51:57.497Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909203950-mdap17","removedPayloads":3,"retainedPayloads":1,"checkpointChars":1820,"generation":459},"at":"2026-09-09T20:52:00.642Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909203950-mdap17","removedPayloads":3,"retainedPayloads":1,"checkpointChars":1820,"generation":459},"at":"2026-09-09T20:52:03.641Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909203950-mdap17","removedPayloads":3,"retainedPayloads":1,"checkpointChars":1820,"generation":459},"at":"2026-09-09T20:52:06.161Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909203950-mdap17","removedPayloads":3,"retainedPayloads":1,"checkpointChars":1820,"generation":459},"at":"2026-09-09T20:52:15.473Z"}
+{"type":"context_checkpoint_projection","value":{"goalId":"20260909203950-mdap17","removedPayloads":3,"retainedPayloads":1,"checkpointChars":1820,"generation":459},"at":"2026-09-09T20:52:20.253Z"}

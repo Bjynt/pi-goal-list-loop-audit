@@ -237,7 +237,10 @@ export function withoutStaleNext(details: string[] | undefined): string[] {
  * Five 120-char label lines scan as soup, not a summary (field
  * 2026-09-04); the stale Next never reaches the chat.
  * v0.38.25: optional `counts` audit-goal counts line rides between the
- * approval trailer and the record pointer (the pointer stays last). */
+ * approval trailer and the record pointer (the pointer stays last).
+ * v0.38.42: retained for backward compatibility + direct unit tests —
+ * buildTerminalApprovalRender constructs chat lines inline because the
+ * fold changes trailer arity, which this fixed-shape helper cannot express. */
 export function buildApprovalChatLines(notice: {
   outcome: string;
   details: string[] | undefined;

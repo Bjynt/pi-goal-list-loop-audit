@@ -3560,7 +3560,10 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
       assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.replace(/^• /, "").startsWith(label)), `approved briefing keeps informing label ${label}`);
     }
     assert.ok(recapNotifs[0]!.message.split("\n").length <= 8, "summary keeps bounded evidence, tests, and unresolved facts");
-    assert.match(recapNotifs[0]!.message, /• audit: auditor .* \(.*verdicts?\)\./, "chat notify carries the verdict-only counts line");
+    // v0.38.42 (field 20260909_140404): a lone approval folds with the
+    // verdict count — one canonical bullet, no model ID, no redundant
+    // standalone audit bullet.
+    assert.match(recapNotifs[0]!.message, /• auditor approved \(1 verdict\)\./, "chat notify carries the folded approval-with-count bullet");
     assert.match(recapNotifs[0]!.message, /• record: \.pi-glla\/archive\/.*\.md/, "chat notify points at the archived record");
     for (const label of ["Unresolved:", "Next:"]) {
       assert.ok(!recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `filler ${label} none is dropped from the briefing`);
