@@ -204,6 +204,9 @@ function buildOverflowCheckpoint(
     goal
       ? `Verification contract: ${safeBlock(goal.verificationContract, OVERFLOW_CONTRACT_CHARS) || "(none recorded)"}`
       : "Verification contract: (none — metric/loop bounds above are authoritative)",
+    goal
+      ? `Dynamic state (task state / pending completion / auditor TODOs / latest audit): see .pi-glla/active.jsonl — read before acting`
+      : `Dynamic state (loop progress): see .pi-glla/active.jsonl — read before acting`,
     loop
       ? "Lifecycle fence: continue only for this active loop target, current loop state, and session owner; if a goal is present, preserve its id/revision as paused context. Use durable state and artifacts as the authority after compaction, restart, or session replacement."
       : "Lifecycle fence: continue only for this goal id and current revision/session owner; use durable state and artifacts as the authority after compaction, restart, or session replacement.",
@@ -287,6 +290,9 @@ export function buildAuthoritativeContextCheckpoint(input: AuthoritativeCheckpoi
     goal
       ? `Auto-continuation: ${goal.autoContinue === true ? "enabled" : "disabled/unknown"}`
       : `Auto-continuation: ${loop?.active === true ? "loop active" : "loop inactive"}`,
+    goal
+      ? `Dynamic state (task state / pending completion / auditor TODOs / latest audit): see .pi-glla/active.jsonl — read before acting`
+      : `Dynamic state (loop progress): see .pi-glla/active.jsonl — read before acting`,
     `Repair/replan target:\n${repairTarget}`,
     loop
       ? "Lifecycle fence: continue only for this active loop target, current loop state, and session owner; if a goal is present, preserve its id/revision as paused context. Use durable state and artifacts as the authority after compaction, restart, or session replacement."

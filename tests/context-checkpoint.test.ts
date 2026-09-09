@@ -152,12 +152,12 @@ test("real continuation payload growth is bounded after checkpoint projection", 
   // Cardinality pins (messageCount 4, one checkpoint, removed == count - 1) are the
   // real bounded-growth invariant — bytes name the current template.
   // Template changes add bytes uniformly; my fix subtracts dynamic fields bytes.
-  const expectedBytes = 26525;  // upstream 27181 minus ~1480 dynamic fields bytes = 25701, but template growth varies
+  const expectedBytes = 26655;  // upstream 27181 minus ~1480 dynamic fields bytes = 25701, but template growth varies
   // Use upstream baseline since my dynamic-field removal is now part of this branch
   assert.deepEqual(bounded, [
-    { count: 5, messageCount: 4, serializedBytes: 26525, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
-    { count: 12, messageCount: 4, serializedBytes: 26525, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
-    { count: 25, messageCount: 4, serializedBytes: 26525, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
+    { count: 5, messageCount: 4, serializedBytes: 26655, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
+    { count: 12, messageCount: 4, serializedBytes: 26655, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
+    { count: 25, messageCount: 4, serializedBytes: 26655, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
   ]);
   // Serialized bytes consistent across counts (bounded by checkpoint + 1 payload)
   const b0 = bounded[0]!;
