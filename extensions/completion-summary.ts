@@ -369,16 +369,11 @@ export function buildTerminalApprovalRender(input: TerminalApprovalRenderInput):
     : trailerBullet(chatApproval);
   return {
     chatLines: [
-      ...buildApprovalChatLines({
-        outcome: brief.outcome,
-        details: brief.details,
-        approval: chatApproval,
-        record: input.record,
-        counts: foldCounts ? undefined : countsLine,
-      }).map((line, i, lines) =>
-        // The shared chat-line builder still emits the unfolded trailer;
-        // swap in the canonical (possibly folded) approval bullet.
-        i === lines.length - (foldCounts ? 2 : 3) ? approvalBullet : line),
+      `✓ done — ${brief.outcome}`,
+      ...withoutStaleNext(brief.details).map((detail) => `• ${detail}`),
+      approvalBullet,
+      ...(foldCounts ? [] : [trailerBullet(countsLine)]),
+      trailerBullet(input.record),
       ...(input.extras ?? []),
     },
     recap,
