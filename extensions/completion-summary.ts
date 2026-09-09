@@ -86,7 +86,7 @@ export function isUsefulCompletionSummary(text: string | undefined): boolean {
  * back to the word break, then to a hard cut only when the head holds
  * no space past the halfway mark — a long token such as a commit hash
  * must not eviscerate the whole value. Trailing punctuation is stripped
- * before the ellipsis. Short values pass through untouched (no `…`). */
+ * `npm version…+ latest` cut inside a `+`-joined list). */
 export function clipSummaryValue(value: string, limit: number): string {
   const clean = value.replace(/\s+/g, " ").trim();
   const capped = Number.isFinite(limit) ? Math.max(8, Math.floor(limit)) : 72;
@@ -95,16 +95,16 @@ export function clipSummaryValue(value: string, limit: number): string {
   const floor = Math.max(16, Math.floor((capped - 1) * 0.4));
   let boundary = -1;
   for (let i = 0; i < head.length; i++) {
-    if (/[,;:·—–(\[]/.test(head[i]!)) boundary = i;
+    if (/[,;:·—–(+[\[]/.test(head[i]!)) boundary = i;
   }
   if (boundary >= floor) {
-    const cut = head.slice(0, boundary).replace(/[,;:·—–(\[\s]+$/u, "");
+    const cut = head.slice(0, boundary).replace(/[,;:·—–(+[\[\s]+$/u, "");
     if (cut.length >= Math.min(floor, 16)) return `${cut}…`;
   }
   const space = head.lastIndexOf(" ");
   const kept = (space > capped / 2 ? head.slice(0, space) : head)
     .trimEnd()
-    .replace(/[,;:·—–(\[]$/u, "");
+    .replace(/[,;:·—–(+\[]$/u, "");
   return `${kept}…`;
 }
 
@@ -152,6 +152,22 @@ export interface HumanCompletionBrief {
   details: string[];
 }
 
+/** v0.38.39 (field 20260909_013733): absolute machine paths read as a
+ * machine receipt in user chat (`Tests: … (/var/tmp/glla-….log…`). The
+ * chat brief strips `/tmp/…`, `/var/tmp/…`, and `*.tgz` tokens so bullets
+ * carry human-readable proof (counts, versions, repo-relative paths);
+ * the durable archive keeps the full text. Falls back to the original
+ * when stripping would empty the value. */
+export function chatSafeDetailValue(value: string): string {
+  const stripped = value
+    .replace(/(?:\/var)?\/tmp\/\S+/g, "")
+    .replace(/\S+\.tgz\b/g, "")
+    .replace(/\(\s*\)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return stripped || value;
+}
+
 /** The human briefing: outcome first in its own words, then only the
  * labels that carry real content (filler like `Unresolved: none` or
  * `Changed: not recorded` is dropped, never shown). The durable archive
@@ -170,7 +186,9 @@ export function humanCompletionBrief(
     const separator = line.indexOf(":");
     if (separator < 0) continue;
     const content = briefValueContent(line.slice(separator + 1));
-    if (content) details.push(`${line.slice(0, separator)}: ${clipSummaryValue(content, valueBudget)}`);
+    // v0.38.39: machine paths are archive evidence, not chat evidence —
+    // strip before clipping so the budget applies to the human text.
+    if (content) details.push(`${line.slice(0, separator)}: ${clipSummaryValue(chatSafeDetailValue(content), valueBudget)}`);
   }
   return { outcome, details };
 }
@@ -178,10 +196,27 @@ export function humanCompletionBrief(
 /** v0.38.20: the agent's `Next:` recap line goes stale the moment the
  * verdict lands — reprinting it next to the approval trailer reads as
  * complete-before-verify (field 2026-09-04: `Next: detached auditor
- * verdict decides.` printed above `— auditor … approved.`). Every approval
- * surface strips it; the full six-label record stays in the archive. */
+ * verdict decides.` printed above `— auditor … approved.`).
+ * v0.38.39 (field 20260909_013733): the Codex close wants at most ONE
+ * concrete next action, so the filter is now selective instead of total:
+ * self-referential audit/process lines (`verdict decides`, `awaiting
+ * approval`, …) still drop, but the first concrete action survives as
+ * the closing bullet. The full six-label record stays in the archive. */
+const STALE_NEXT_PATTERN = /auditor|verdict|approv|audit|settl|review/i;
 export function withoutStaleNext(details: string[] | undefined): string[] {
-  return (details ?? []).filter((d) => !/^\s*Next\s*:/i.test(d));
+  const kept: string[] = [];
+  let actionKept = false;
+  for (const detail of details ?? []) {
+    if (!/^\s*Next\s*:/i.test(detail)) {
+      kept.push(detail);
+      continue;
+    }
+    if (STALE_NEXT_PATTERN.test(detail)) continue;
+    if (actionKept) continue;
+    actionKept = true;
+    kept.push(detail);
+  }
+  return kept;
 }
 
 /** v0.38.20: the approval chat notify — outcome first, all bounded
@@ -202,11 +237,22 @@ export function buildApprovalChatLines(notice: {
     `✓ done — ${notice.outcome}`,
     // v0.38.37 (audit 2026-09-08): one verifiable-result bullet per
     // informing detail — the Codex closing shape.
+    // v0.38.39: the approval/counts/record trailer rides as bullets too
+    // (field 20260909_013733 — the `—` tail read as a second voice); the
+    // record pointer stays last.
     ...withoutStaleNext(notice.details).map((detail) => `• ${detail}`),
-    notice.approval,
-    ...(notice.counts ? [notice.counts] : []),
-    notice.record,
+    trailerBullet(notice.approval),
+    ...(notice.counts ? [trailerBullet(notice.counts)] : []),
+    trailerBullet(notice.record),
   ];
+}
+
+/** v0.38.39 (field 20260909_013733): the trailer rides as bullets too —
+ * the Codex close is uniform `•` lines (`• Changed:` … `• record:`),
+ * never a `•` block followed by dangling `—` lines. The `— ` sigil is
+ * stripped at render; the input strings keep it for non-chat surfaces. */
+function trailerBullet(line: string): string {
+  return `• ${line.replace(/^—\s*/, "")}`;
 }
 
 /** v0.38.25: the audit-goal counts line — verdict proof ONLY, built from
@@ -297,7 +343,7 @@ export function buildTerminalApprovalRender(input: TerminalApprovalRenderInput):
       ...(input.extras ?? []),
     ],
     recap,
-    transcriptLines: [...withoutStaleNext(brief.details).map((detail) => `• ${detail}`), input.approval],
+    transcriptLines: [...withoutStaleNext(brief.details).map((detail) => `• ${detail}`), trailerBullet(input.approval)],
     countsLine,
     outcome: brief.outcome,
     approval: input.approval,
