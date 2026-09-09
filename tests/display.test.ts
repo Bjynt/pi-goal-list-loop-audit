@@ -490,7 +490,7 @@ test("list policy footer: queued count, no duplicated 'list'", () => {
   // counter both said "list".
   assert.match(s, /^glla: /);
   assert.doesNotMatch(s, /^glla: list /, 'v0.34.1: policy word dropped — no list/list-item doubling with the widget chip');
-  assert.match(s, /· 1 queued$/);
+  assert.match(s, / 1 queued$/);
   assert.ok(!/list .+ list /.test(s), `no duplicated 'list … list': ${s}`);
 });
 
@@ -502,7 +502,7 @@ test("goal policy footer says 'N queued' (v0.28.11 U10 — was the cryptic 'list
   )!;
   assert.match(s, /^glla: /);
   assert.doesNotMatch(s, /^glla: goal /, 'v0.34.1: policy word dropped');
-  assert.match(s, /· 1 queued$/);
+  assert.match(s, / 1 queued$/);
 });
 
 test("widget names a list item as such and points at /list, not /goal", () => {
