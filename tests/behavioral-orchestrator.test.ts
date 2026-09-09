@@ -487,7 +487,7 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
     const notice = briefings[0].content as string;
     assert.equal(confirmationTitle, "Audit aborted", "the explicit audit-abort choice was presented");
     assert.match(notice, /^✓ done — Objective "complete without audit target/, "the briefing leads with the archived objective");
-    assert.match(notice, /— completed without audit \(your choice\)\./, "the no-audit trailer closes the briefing");
+    assert.match(notice, /• completed without audit \(your choice\)\./, "the no-audit trailer closes the briefing as a bullet (v0.38.39 uniform voice)");
     assert.doesNotMatch(notice, /not recorded/, "system placeholders never reach the briefing");
     assert.ok(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length > 0, "archive landed before success was reported");
   } finally {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.38.39 — Codex-like terminal summary (2026-09-09)
+
+### Fixed
+
+- **Terminal `[goal-event]` summary was not Codex-like (field 20260909_013733):** `•` detail bullets followed by dangling `—` trailer lines, every bullet trailing into `…`, a raw `/var/tmp/…` log path in chat, and no next action. The render is now one voice: uniform `•` bullets (approval/counts/record ride as bullets, record stays last), machine paths (`/tmp/…`, `/var/tmp/…`, `*.tgz`, receipt-only paren groups) stripped from chat bullets (archive keeps the full text), `+` joins the clause-boundary cut set, and `withoutStaleNext` is selective — audit-self-referential Next lines still drop but the first concrete next action survives as the closing bullet ahead of the non-do.
+- **Claim-side guidance:** continuation prompt budgets each label value to ~90 chars, bans machine paths from the recap, and asks for one concrete `Next:` or none.
+
+### Verification
+
+- New pins: uniform-voice, machine-path strip, `+`-boundary cut, next-action ordering, record-last; full `release:check` 0 failures; `tsc --noEmit` clean.
+- Evidence: `audit/CODEX-SUMMARY-2026-09-09.md`. Archive format and delivery/replay mechanics unchanged.
+
 ## 0.38.38 — elapsed-time duplication cut + PR #47 closed (2026-09-09)
 
 ### Fixed
