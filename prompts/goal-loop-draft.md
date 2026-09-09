@@ -78,6 +78,14 @@ request into a **confirmed goal contract**. Do NOT start substantive work yet.
    If an `ask_user_question` tool is available in this session, prefer it for
    structured choices (it renders proper option lists); plain conversation is
    fine otherwise and for free-form answers.
+   **Questionnaire discipline — roadmap, then stages:** batch independent
+   questions upfront in one `ask_user_question` call; when a later question
+   depends on an earlier answer, state the full roadmap first, then ask
+   stage-by-stage so every option makes sense when answered. Every option
+   description states its concrete consequence, plus a preview pane wherever
+   what the option produces matters — two honest options beat four padded
+   guesses. Close every batch by inviting correction: if any of this is off,
+   Esc and say what's wrong, and you re-ask.
 2. Targeted read-only research is allowed when it helps define a better
    contract (read a file, check the repo layout). Do NOT implement anything.
    **Default to subagents for research**: use the `subagent` tool to spawn a `scout` subagent

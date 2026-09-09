@@ -27,7 +27,14 @@ confirms.
    - **Verification strategy** — how each milestone proves itself done.
    Ask one focused question at a time within a round; offer a recommended
    default with each question so the user can answer "yes". Prefer
-   `ask_user_question` for structured choices when available.
+   `ask_user_question` for structured choices when available. The rounds
+   ARE the stages: state the full round roadmap first, then work it
+   round-by-round (later rounds depend on earlier answers — never batch a
+   later round's questions upfront). Every option description states its
+   concrete consequence, plus a preview pane wherever what the option
+   produces matters — two honest options beat four padded guesses. Close
+   every round by inviting correction: if any of this is off, Esc and say
+   what's wrong, and you re-ask.
 3. **The proposal is a structured expanded objective.** Use this shape
    inside the objective text:
    - **Current state** — what exists today, with file/module references.
