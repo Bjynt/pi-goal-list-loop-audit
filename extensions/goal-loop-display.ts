@@ -1323,8 +1323,11 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       // state + counts only. Freshness tails (`last host activity`,
       // `last stream`) duplicated the card-head `stream {age}` readout —
       // one surface owns liveness so the two can never disagree.
+      // v0.38.38 (field 20260909_002132): the elapsed `total …` duplicated
+      // the card head too (other sessions' tab strips showed
+      // `glla: [WORKING] total …` under a card already reading it) — the
+      // card owns the timer now; the status line keeps state + counts.
       const idleDetails = [
-        goalTotalText(g, now),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
       return `glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`;
@@ -1335,7 +1338,6 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     // like progress. Queued work is neither idle nor currently executing.
     if (activity === "busy") {
       const busyDetails = [
-        goalTotalText(g, now),
         g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
@@ -1370,11 +1372,11 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const recovery = state.mainModelRecovery;
     const blockedByRecovery = queued && recovery && recovery.retryAt;
     const recoverySuffix = blockedByRecovery ? ` · parked on provider recovery` : "";
-    // Keep the screenshot-proven order: state, elapsed, freshness, then
-    // queue/task context. It scans like a compact instrument readout and
-    // remains useful when the above-editor card is hidden or scrolled away.
+    // Keep the screenshot-proven order: state, then queue/task context.
+    // It scans like a compact instrument readout and remains useful when
+    // the above-editor card is hidden or scrolled away. Elapsed `total …`
+    // lives on the card head only (v0.38.38, field 20260909_002132).
     const details = [
-      goalTotalText(g, now),
       g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
       // v0.34.124: the QUEUED "why" — an accepted dispatch that pi has not
       // started. (The last-activity age that used to ride here moved to the
