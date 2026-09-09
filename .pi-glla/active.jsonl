@@ -2626,3 +2626,10 @@
 {"type":"terminal_approval_render_persisted","value":{"goalId":"20260909075920-87etlq","delivered":false,"lines":8},"at":"2026-09-09T08:41:15.836Z"}
 {"type":"terminal_completion_notice_sent","value":{"goalId":"20260909075920-87etlq","payloadChars":589},"at":"2026-09-09T08:41:15.842Z"}
 {"type":"terminal_approval_render_replayed","value":{"goalId":"20260909075920-87etlq","createdAt":"2026-09-09T08:41:15.835Z"},"at":"2026-09-09T08:41:15.842Z"}
+{"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-09-09T10:35:22.860Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-09-09T10:35:26.006Z"}
+{"type":"id_invalidation","value":{"oldId":"01a054a9-e07f-705b-87a1-9421f9b906dc","newId":"01a085bc-9436-7415-b6d6-09d41eef840d","reason":"session_shutdown","shutdownReason":"quit","at":"2026-09-09T10:35:26.013Z"},"at":"2026-09-09T10:35:26.013Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-09-09T10:35:26.014Z"}
+{"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-09-09T10:35:29.337Z"}
+{"type":"session_rebound","value":{"reason":"resume"},"at":"2026-09-09T10:35:30.176Z"}
+{"type":"id_invalidation","value":{"oldId":"01a085bc-9436-7415-b6d6-09d41eef840d","newId":"01a054a9-e07f-705b-87a1-9421f9b906dc","reason":"session_shutdown","shutdownReason":"resume","at":"2026-09-09T10:35:30.179Z"},"at":"2026-09-09T10:35:30.179Z"}
