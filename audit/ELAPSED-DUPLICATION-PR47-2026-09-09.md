@@ -68,6 +68,6 @@ pointer lines, pin with stability + recovery tests, gate green."
 
 - `tests/display.test.ts`: status-without-timer pins + card-keeps-timer
   pin; `tests/goal-loop-display.test.ts` green.
-- Full `TMPDIR=/var/tmp npm run release:check`: (see v0.38.38 log).
+- Full `TMPDIR=/var/tmp npm run release:check`: 2040 pass / 2 skip / 0 fail across 204 files (`/var/tmp/glla-elapsed-release-check.log`, tarball `pi-goal-list-loop-audit-0.38.38.tgz`).
 - `npx tsc --noEmit` clean.
 - No open PRs (`gh pr list` empty after #47 close).
