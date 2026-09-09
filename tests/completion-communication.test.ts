@@ -88,8 +88,11 @@ test("complete_goal leftOut renders the deliberate-non-do bullet end to end", as
   await waitFor(() => entries.length === 1);
   assert.equal(entries.length, 1);
   assert.match(entries[0].content, /• Left out: the walkthrough artifact surface/);
-  const bullets = entries[0].content.split("\n").filter((l: string) => l.startsWith("• "));
-  assert.ok(bullets.length >= 1 && bullets.length <= 6, `posted summary carries 4-6 bullets, got ${bullets.length}`);
+  const lines = entries[0].content.split("\n");
+  assert.ok(lines.every((l: string) => l.startsWith("✓ done — ") || l.startsWith("• ")), "posted summary is one voice: outcome + bullets, no dash lines");
+  const detailBullets = lines.filter((l: string) => l.startsWith("• ") && !/^(• auditor |• audit:|• record:)/.test(l));
+  assert.ok(detailBullets.length >= 1 && detailBullets.length <= 6, `posted summary carries 4-6 informing bullets plus the trailer, got ${detailBullets.length}`);
+  assert.ok(lines[lines.length - 1]!.startsWith("• record:"), "record pointer stays last");
 });
 
 test("disapproval remains unfinished, no final success is posted", async () => {

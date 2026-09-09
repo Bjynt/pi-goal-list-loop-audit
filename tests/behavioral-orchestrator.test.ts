@@ -3560,12 +3560,12 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
       assert.ok(recapNotifs[0]!.message.split("\n").some((line: string) => line.replace(/^• /, "").startsWith(label)), `approved briefing keeps informing label ${label}`);
     }
     assert.ok(recapNotifs[0]!.message.split("\n").length <= 8, "summary keeps bounded evidence, tests, and unresolved facts");
-    assert.match(recapNotifs[0]!.message, /— audit: auditor .* \(.*verdicts?\)\./, "chat notify carries the verdict-only counts line");
-    assert.match(recapNotifs[0]!.message, /— record: \.pi-glla\/archive\/.*\.md/, "chat notify points at the archived record");
+    assert.match(recapNotifs[0]!.message, /• audit: auditor .* \(.*verdicts?\)\./, "chat notify carries the verdict-only counts line");
+    assert.match(recapNotifs[0]!.message, /• record: \.pi-glla\/archive\/.*\.md/, "chat notify points at the archived record");
     for (const label of ["Unresolved:", "Next:"]) {
       assert.ok(!recapNotifs[0]!.message.split("\n").some((line: string) => line.startsWith(label)), `filler ${label} none is dropped from the briefing`);
     }
-    assert.doesNotMatch(recapNotifs[0]!.message.split("\n").filter((line: string) => !line.startsWith("— audit:")).join("\n"), / · /, "approved briefing is lines, not the single-line mash (the counts line alone carries · separators)");
+    assert.doesNotMatch(recapNotifs[0]!.message.split("\n").filter((line: string) => !line.startsWith("• audit:")).join("\n"), / · /, "approved briefing is lines, not the single-line mash (the counts bullet alone could carry · separators)");
     assert.match(recapNotifs[0]!.message, /…/, "long approved recap values are bounded");
     assert.doesNotMatch(recapNotifs[0]!.message, new RegExp(`(${"durable-proof-marker "}){20}`), "approved notification does not flatten the full long recap");
     assert.doesNotMatch(recapNotifs.join("\n"), /^Goal complete — auditor /, "the old process-only line is gone");
