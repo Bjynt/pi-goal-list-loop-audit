@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.38.40 — provider overflow errors count as starvation (2026-09-09)
+
+### Fixed
+
+- **PR #48 (Bjynt, merged):** `isContextStarvedLengthStop` now detects explicit provider context-overflow errors (`exceed_context_size_error`, `exceeds the available context size`, `context window exceeded`, …) arriving as `stopReason="error"`, firing the starvation ladder + emergency compactor (≥90% usage gate kept). Case 1 refactor is behavior-identical. Wiring confirmed live via the raw session message's `errorMessage`.
+- Follow-up noted on the PR: OpenAI-style `maximum context length` wording still falls through the matcher set.
+
+### Verification
+
+- Contributor's Case 2 tests + full `release:check` 0 failures; `tsc --noEmit` clean.
+
 ## 0.38.39 — Codex-like terminal summary (2026-09-09)
 
 ### Fixed
