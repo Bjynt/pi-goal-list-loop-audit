@@ -17,6 +17,8 @@ import {
   buildApprovalChatLines,
   buildAuditCountsLine,
   buildTerminalApprovalRender,
+  chatSafeDetailValue,
+  clipSummaryValue,
 } from "../extensions/completion-summary.js";
 import {
   approvalRenderStorePath,
@@ -56,12 +58,16 @@ test("canonical render keeps the outcome-first voice with counts before the reco
     record: "— record: .pi-glla/archive/20260907-approval-render.md",
   });
   assert.ok((render.chatLines[0] ?? "").startsWith("✓ done — "), "chat opens with the outcome");
-  const approvalIdx = render.chatLines.findIndex((l) => l.startsWith("— auditor"));
-  const countsIdx = render.chatLines.findIndex((l) => l.startsWith("— audit:"));
-  const recordIdx = render.chatLines.findIndex((l) => l.startsWith("— record:"));
+  // v0.38.39 (field 20260909_013733): the trailer rides as bullets — one
+  // voice, no dangling `—` lines; the record pointer stays last.
+  assert.ok(render.chatLines.every((l) => l.startsWith("✓ done — ") || l.startsWith("• ")), "uniform bullets, no dash-prefixed lines");
+  const approvalIdx = render.chatLines.findIndex((l) => l.startsWith("• auditor"));
+  const countsIdx = render.chatLines.findIndex((l) => l.startsWith("• audit:"));
+  const recordIdx = render.chatLines.findIndex((l) => l.startsWith("• record:"));
   assert.ok(approvalIdx > 0 && countsIdx > approvalIdx && recordIdx > countsIdx, "approval, then counts, then the record pointer stays last");
+  assert.equal(recordIdx, render.chatLines.length - 1, "record pointer is the final line");
   assert.ok(!render.chatLines.some((l) => /^\s*Next\s*:/i.test(l)), "stale pre-verdict Next never reaches the chat");
-  assert.ok(render.transcriptLines.includes("— auditor auditor-model approved on the provider retry."), "transcript keeps the approval trailer");
+  assert.ok(render.transcriptLines.includes("• auditor auditor-model approved on the provider retry."), "transcript keeps the approval trailer as a bullet too");
   assert.ok(!render.transcriptLines.some((l) => /^\s*Next\s*:/i.test(l)), "transcript strips the stale Next too");
   assert.ok(render.recap.length > 0, "external single line still produced");
   assert.equal(render.outcome, (render.chatLines[0] ?? "").replace(/^✓ done — /, ""), "outcome matches the chat lead");
@@ -95,7 +101,7 @@ test("counts line proofs the audit verdict from durable state only", () => {
 
 test("buildApprovalChatLines stays backward compatible without counts", () => {
   const lines = buildApprovalChatLines({ outcome: "did it", details: ["Changed: x"], approval: "— approved.", record: "— record: p" });
-  assert.deepEqual(lines, ["✓ done — did it", "• Changed: x", "— approved.", "— record: p"]);
+  assert.deepEqual(lines, ["✓ done — did it", "• Changed: x", "• approved.", "• record: p"]);
 });
 
 test("v0.38.37 posted summary carries verifiable-result bullets plus the deliberate non-do", () => {
@@ -109,8 +115,15 @@ test("v0.38.37 posted summary carries verifiable-result bullets plus the deliber
   };
   const withLeftOut = buildTerminalApprovalRender({ ...base, leftOut: "the walkthrough artifact surface" });
   const bullets = withLeftOut.chatLines.filter((l) => l.startsWith("• "));
-  assert.ok(bullets.length >= 1 && bullets.length <= 6, `4-6 verifiable-result bullets, got ${bullets.length}`);
+  const detailBullets = bullets.filter((l) => !/^(• auditor |• audit:|• record:)/.test(l));
+  assert.ok(detailBullets.length >= 1 && detailBullets.length <= 6, `4-6 verifiable-result bullets, got ${detailBullets.length}`);
   assert.ok(bullets.some((l) => /Changed: extensions\/completion-summary\.ts/.test(l)), "each bullet carries its evidence inline");
+  // v0.38.39: SIX's concrete `Next: replay on next contact` survives as
+  // the closing action bullet, ahead of the non-do and the trailer.
+  const nextIdx = withLeftOut.chatLines.findIndex((l) => l.startsWith("• Next:"));
+  const leftOutIdx = withLeftOut.chatLines.findIndex((l) => l.startsWith("• Left out:"));
+  const recordIdx = withLeftOut.chatLines.findIndex((l) => l.startsWith("• record:"));
+  assert.ok(nextIdx > 0 && leftOutIdx > nextIdx && recordIdx === withLeftOut.chatLines.length - 1, "next action, then non-do, then the record pointer last");
   assert.ok(withLeftOut.chatLines.some((l) => l === "• Left out: the walkthrough artifact surface"), "agent-claimed non-do closes the bullets");
   assert.ok(withLeftOut.transcriptLines.some((l) => l === "• Left out: the walkthrough artifact surface"), "transcript surface carries the non-do too");
   const without = buildTerminalApprovalRender(base);
@@ -156,3 +169,38 @@ test("corrupt store degrades to zero replays, never throws", () => {
   assert.match(ledger, /terminal_approval_render_store_invalid/, "corruption is ledgered, not thrown");
 });
 
+
+test("v0.38.39 chat brief strips machine paths but the archive keeps them", () => {
+  assert.equal(
+    chatSafeDetailValue("full gate 2040 pass across 204 files (/var/tmp/glla-elapsed-release-check.log, tarball pi-goal-list-loop-audit-0.38.38.tgz)"),
+    "full gate 2040 pass across 204 files",
+    "absolute log path + tarball token drop, human proof stays",
+  );
+  assert.equal(
+    chatSafeDetailValue("tag v0.38.38, npm version 0.38.38, PR #47 closed"),
+    "tag v0.38.38, npm version 0.38.38, PR #47 closed",
+    "human evidence passes through untouched",
+  );
+  const render = buildTerminalApprovalRender({
+    goal: richGoal(),
+    status: "complete",
+    approval: "— auditor m approved.",
+    record: "— record: .pi-glla/archive/x.md",
+    completionSummary: [
+      "Outcome: cut the duplication",
+      "Changed: extensions/completion-summary.ts",
+      "Evidence: tag v0.38.38",
+      "Tests: full gate 2040 pass (/var/tmp/glla-elapsed-release-check.log)",
+      "Unresolved: none",
+      "Next: none",
+    ].join("\n"),
+  });
+  assert.ok(!render.chatLines.some((l) => l.includes("/var/tmp/")), "no machine path reaches the chat lines");
+  assert.ok(render.chatLines.some((l) => l.startsWith("• Tests: full gate 2040 pass")), "the human proof survives the strip");
+});
+
+test("v0.38.39 clause cut respects +-joined lists", () => {
+  const cut = clipSummaryValue("tag v0.38.38, GitHub release v0.38.38, publish run ok, npm version + latest 0.38.38, PR closed", 100);
+  assert.doesNotMatch(cut, /version…/, "cut lands on the + boundary, never inside `version + latest`");
+  assert.match(cut, /…$/, "over-budget values still clip");
+});
