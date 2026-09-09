@@ -145,13 +145,14 @@ test("real continuation payload growth is bounded after checkpoint projection", 
   // added +543 bytes per payload and the user-voice summary-shape guidance
   // +344 more (the newest payload survives projection, so every probe size
   // grows by exactly that) and the deliberate-non-do leftOut guidance +87
-  // more. Cardinality pins above (messageCount 4, one
+  // more, and the Codex-close claim guidance +388 more (+388 chars, +4
+  // multibyte). Cardinality pins above (messageCount 4, one
   // checkpoint, removed == count - 1) are the real bounded-growth
   // invariant — bytes only name the current template.
   assert.deepEqual(bounded, [
-    { count: 5, messageCount: 4, serializedBytes: 26787, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
-    { count: 12, messageCount: 4, serializedBytes: 26787, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
-    { count: 25, messageCount: 4, serializedBytes: 26787, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
+    { count: 5, messageCount: 4, serializedBytes: 27181, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
+    { count: 12, messageCount: 4, serializedBytes: 27181, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
+    { count: 25, messageCount: 4, serializedBytes: 27181, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
   ]);
 });
 
