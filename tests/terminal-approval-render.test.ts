@@ -236,3 +236,20 @@ test("v0.38.39 clause cut respects +-joined lists", () => {
   const cut = clipSummaryValue("Evidencealpha beta, gamma + delta epsilon zeta eta theta iota kappa lambda mu", 40);
   assert.equal(cut, "Evidencealpha beta, gamma…", "cut lands on the + boundary (without it the cut would strand at `beta…`)");
 });
+
+test("second approval for the same goal after delivery queues a fresh render", () => {
+  // v0.38.45 audit: goalId dedup matched delivered history too, so an
+  // archive-failure retry (same goalId re-approved) silently dropped its
+  // chat summary while the caller believed it queued.
+  const cwd = tmpCwd();
+  const ctx = makeMockCtx(cwd, { idle: false });
+  assert.equal(persistApprovalRender(cwd, { goalId: "g9", objective: "retry me", chatLines: ["✓ done — first"] }), true);
+  assert.equal(replayUndeliveredApprovalRenders(ctx, () => true), 1, "first render delivers");
+  assert.equal(
+    persistApprovalRender(cwd, { goalId: "g9", objective: "retry me", chatLines: ["✓ done — second"] }),
+    true,
+    "re-approval after delivery queues instead of deduping against history",
+  );
+  assert.equal(replayUndeliveredApprovalRenders(ctx, () => true), 1, "the fresh render replays");
+  assert.equal(ctx.ui.notifies.length, 0, "confirmed deliveries stay silent");
+});

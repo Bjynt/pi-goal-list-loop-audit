@@ -2278,3 +2278,11 @@ test("audit-2026-09-06: truncate/wrap are cell-aware (CJK/emoji + surrogate-safe
   const lines = wrap("日本語 テストです ok", 8, 5);
   for (const line of lines) assert.ok(visibleWidth(line) <= 8, `wrap line fits 8 cells: ${line}`);
 });
+
+test("version tail rides the paused branch too, not just active", () => {
+  // v0.38.45 audit: the tail pins covered one branch while every branch
+  // attaches versionTail the same way.
+  const paused = { ...goalOf(), state: "paused" as const, pausedAt: new Date(NOW).toISOString() };
+  const tailed = buildStatusText({ goal: paused, list: [] }, null, NOW, undefined, { versionTail: "· v0.38.44" })!;
+  assert.match(tailed, /· v0\.38\.44$/, "paused status carries the running version");
+});

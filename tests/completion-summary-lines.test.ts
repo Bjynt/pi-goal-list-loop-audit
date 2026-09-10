@@ -13,12 +13,14 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import {
   briefValueContent,
+  chatSafeDetailValue,
   clipSummaryValue,
   compactCompletionSummary,
   completionSummaryLines,
   humanCompletionBrief,
   terminalCompletionSummaryLines,
   terminalHumanBrief,
+  withoutStaleNext,
 } from "../extensions/completion-summary.js";
 import { seedGoal } from "./harness/mock-pi.js";
 
@@ -170,4 +172,40 @@ test("audit-2026-09-06: completionSummaryLines honors the optional line-width bu
   const narrow = completionSummaryLines(text, 240, 40);
   assert.ok(wide.some((l) => visibleWidth(l) > 40), "default lines can exceed 40 cells");
   for (const line of narrow) assert.ok(visibleWidth(line) <= 40, `budgeted line fits 40 cells: ${line.slice(0, 60)}`);
+});
+
+test("recorded-facts fallback Next survives the stale-Next filter", () => {
+  const kept = withoutStaleNext([
+    "Evidence: commit abc",
+    "Next: review the durable record at .pi-glla/archive/g.md",
+    "Next: awaiting auditor verdict on the claim",
+  ]);
+  assert.ok(
+    kept.some((l) => /review the durable record/.test(l)),
+    "the concrete record pointer is a real next action, not self-reference",
+  );
+  assert.ok(!kept.some((l) => /awaiting auditor verdict/.test(l)), "self-referential Next still drops");
+});
+
+test("machine-path strip converges on nested groups, leaves no husk", () => {
+  const out = chatSafeDetailValue("shipped (log (/tmp/glla-x/build.log)) clean");
+  assert.ok(!/\(\s*\)/.test(out), `no empty-paren husk survives, got: ${out}`);
+  assert.ok(!/tmp/.test(out), "the machine path is gone at every depth");
+});
+
+test("clip never splits a surrogate pair", () => {
+  const out = clipSummaryValue(`aaaaaaaaaa ${"😀".repeat(6)} tail here`, 16);
+  assert.ok(!/\uFFFD/.test(out), "no replacement char from a split pair");
+  assert.ok(out.endsWith("…"), "still clause-capped");
+  for (const ch of out) assert.ok(ch !== "\uD83D" && ch !== "\uDE00", "no lone surrogate halves");
+});
+
+test("label named inside a value does not steal later segmentation", () => {
+  const compacted = compactCompletionSummary(
+    ["Outcome: fixed the retry path", "Changed: x.ts", "Evidence: c1", "Tests: 5 pass", "Unresolved: none", "Next: n/a"].join("\n"),
+    72,
+  );
+  assert.match(compacted, /Outcome: fixed the retry path/, "Outcome keeps its full value");
+  const restated = compactCompletionSummary("Outcome: see Tests: x. Tests: 5 pass", 72);
+  assert.match(restated, /Tests: 5 pass/, "the last restatement of a label wins");
 });
