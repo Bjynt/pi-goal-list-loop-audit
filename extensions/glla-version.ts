@@ -76,9 +76,6 @@ export function readUpdateCheck(cwd: string): UpdateCheckCache | null {
 export function isVersionLike(token: string): boolean {
   return /^v?\d+\.\d+\.\d+([\-+][\w.]+)?$/.test(token.trim());
 }
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../package.json",
-);
 
 export interface GllaVersionInfo {
   name: string;
