@@ -17,6 +17,8 @@ so we want to embrace the codex style fully
 /home/dracon/Pictures/Screenshots/Screenshot_20260909_161057.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260909_161050.png 
 
+## stale session showed old voice with no version — SHIPPED v0.38.44 (status line carries `· vX` on every branch + `· update vY available` nudge from a daily cached npm check; `/glla version` names staleness with the update command; INSTALL.md Updating section; same 161057 session that exposed the old voice)
+
 
 # Later
 
