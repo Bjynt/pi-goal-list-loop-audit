@@ -29,6 +29,26 @@ GLLA loads into new pi sessions. If pi is already open, reload that session:
 /reload
 ```
 
+## Updating
+
+The status line always shows the running version (`glla: … · v0.38.44`).
+When the npm registry is ahead, it also nudges:
+
+```text
+glla: … · v0.38.43 · update v0.38.44 available
+```
+
+The nudge comes from a daily sidecar check (`.pi-glla/update-check.json`),
+refreshed on command contact and never blocking a turn. To update:
+
+```bash
+pi install npm:pi-goal-list-loop-audit@latest
+```
+
+Then `/reload` every open pi session — a session keeps running the
+version it loaded with until reloaded. `/glla version` says whether the
+current session is stale and repeats the update command.
+
 ### Recommended companions
 
 The structured-question companion is recommended for the intended drafting

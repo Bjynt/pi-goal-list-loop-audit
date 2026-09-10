@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.38.44 — stale-version surfacing: running version in the status line (2026-09-10)
+
+### Fixed
+
+- **Stale-session visibility (field 20260909_161057):** a live session rendered the pre-0.38.39 summary voice while the repo shipped 0.38.42 with nothing visible saying so. The status line now always carries the running version (`glla: … · v0.38.44`) on every branch; when the registry is ahead it nudges (`· update vX available`).
+- **Cached staleness check:** new `extensions/glla-update-check.ts` — the render reads the `.pi-glla/update-check.json` sidecar only and never touches the network; a throttled (24h TTL) fire-and-forget `npm view` refresh rides the command/lifecycle contact gate and fails silently offline.
+- **`/glla version` names staleness:** appends `Registry latest` plus the concrete update path (`pi install npm:pi-goal-list-loop-audit@latest` then `/reload`) when the sidecar proves the session stale; legacy three lines unchanged with no cache.
+- **INSTALL.md `Updating` section:** documents the nudge, the update command, and the `/reload`-every-session requirement. Pure version/compare helpers live in `glla-version.ts` (no import cycle); the display module keeps zero runtime imports via a precomputed `versionTail` extra.
+
+### Verification
+
+- Full `release:check` 0 failures; `tsc --noEmit` clean.
+
 ## 0.38.43 — ship merged PR #50, drop orphaned helpers (2026-09-10)
 
 ### Fixed
