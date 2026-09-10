@@ -210,6 +210,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "auditorModelFallbacks",
     "auditorSilent",
     "auditorInspection",
+    "auditLoop",
     "auditCap",
     "auditFeedbackChars",
     "wedgeAlertMinutes",
@@ -425,6 +426,7 @@ test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list",
   assert.match(fallback, /auditorModelFallbacks:/, "headless fallback must show the ordered auditor chain");
   assert.match(fallback, /mainAgent:.*\[runtime\]/, "headless fallback must show the current main agent");
   assert.match(fallback, /formatSettingValue\(p\.value\)/, "headless fallback must serialize structured settings values");
+  assert.match(fallback, /auditLoop:/, "headless fallback must show the loop-audit cadence");
 
   for (const key of [
     "stateRoot",

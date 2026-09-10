@@ -30,7 +30,7 @@ copies are ignored (the recovery runtime reads the global file):
 `autoResume`, `drafterModel`, `drafterThinkingLevel`,
 `drafterModelFallbacks`, `compactorModel`, `compactorModelFallbacks`,
 `auditorModelFallbacks`, `auditorToolTimeoutMs`, `auditorStallMs`,
-`auditJobRetentionMs`, `auditorInspection`.
+`auditJobRetentionMs`, `auditorInspection`, `auditLoop`.
 
 ## Keys
 
@@ -58,6 +58,7 @@ copies are ignored (the recovery runtime reads the global file):
 | `auditorStallMs` | `600000` | Base silence budget for the detached auditor (1m–24h). Global-only. |
 | `auditJobRetentionMs` | `900000` | How long proven-dead audit job dirs are kept (0–7d, 0 = reap now). Global-only. |
 | `auditorInspection` | `false` | Auditor runs as a persistent session you can tail/resume. Global-only. |
+| `auditLoop` | `0` | Loop-audit cadence: a detached auditor (same infrastructure as goal audits) semantically verifies loop progress every N iterations; `0` = off. Global-only. |
 | `notifyCmd` | unset | Shell command on goal complete / pause / loop stop; message is `$1`. |
 | `tokenLimit` | unset (off) | Per-goal token budget; crossing it pauses. `0` = off. |
 | `wedgeAlertMinutes` | unset (30, or off while aggressive mode is on — the default) | Busy-but-silent minutes before the wedge alert; `0` = off. The menu shows the effective value. |

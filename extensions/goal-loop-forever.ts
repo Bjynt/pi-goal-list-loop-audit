@@ -163,6 +163,24 @@ export interface LoopState {
    * the next iteration's prompt. */
   lastHypothesis?: string;
   hypothesisFeedback?: string;
+  /** v0.38.43: loop auditor — iteration at which the last detached loop
+   * audit was triggered (display / ledger correlation). */
+  lastLoopAuditIteration?: number;
+  /** v0.38.43: loop auditor — consecutive loop-audit disapprovals for THIS
+   * run; resets on an approval. Reaching 2 requests a stop via
+   * loopAuditStopRequested (consumed by the tick's standard stop path). */
+  consecutiveLoopAuditDisapprovals?: number;
+  /** v0.38.43: loop auditor — one-shot corrective directive from a
+   * disapproved audit, carried by the NEXT iteration's prompt; cleared on
+   * use. */
+  loopAuditNote?: string;
+  /** v0.38.43: loop auditor — a detached audit requested the stop (two
+   * consecutive disapprovals); the running tick consumes this through the
+   * same stop machinery as every other stop route. */
+  loopAuditStopRequested?: boolean;
+  /** v0.38.43: loop auditor — user-facing reason for a requested stop
+   * (consecutive disapprovals / impossible target), consumed by the tick. */
+  loopAuditStopReason?: string;
   /** v0.33.2: /loop refine <text> — the operator's respec suggestion rides
    * the next iteration's prompt; the agent proposes via propose_loop_refine. */
   refineHint?: string;

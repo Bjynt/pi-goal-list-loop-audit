@@ -465,6 +465,15 @@ export function buildSettingsRows(
         "on: the auditor's pi runs as a normal persistent session (--session <jobDir>/session.jsonl) you can tail -f live or resume after the audit · off: the original --no-session spawn (default)",
     },
     {
+      id: "auditLoop",
+      section: "auditor",
+      label: "Loop auditor cadence",
+      valueText: typeof settings.auditLoop === "number" && settings.auditLoop > 0 ? `every ${settings.auditLoop}` : "off",
+      sourceText: src("auditLoop"),
+      description:
+        "every N loop iterations a DETACHED auditor (same infrastructure as goal audits) semantically verifies the loop makes real progress toward its target · 0/off = never (default) · with inspection on, loop audits of the same run RESUME their prior session",
+    },
+    {
       id: "auditCap",
       section: "auditor",
       label: "Audit cap",

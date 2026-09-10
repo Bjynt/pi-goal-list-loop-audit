@@ -581,3 +581,41 @@ test("audit 2026-09-07 (LOW, finding 400): typing the displayed `auto` in the no
   await handleSettingChoice("notifyCmd", ctx as unknown as ExtensionContext);
   assert.equal(loadSettings(cwd).notifyCmd, "my-notify $1", "a real command still saves");
 });
+
+test("T4: input editor — auditLoop saves the cadence (N = every N iterations, 0/empty = off, junk rejected)", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.inputImpl = async () => "5";
+    await handleSettingChoice("auditLoop", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoop, 5, "a positive integer arms the cadence");
+
+    ctx.ui.inputImpl = async () => "0";
+    await handleSettingChoice("auditLoop", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoop, 0, "0 is an explicit off");
+
+    ctx.ui.inputImpl = async () => "";
+    await handleSettingChoice("auditLoop", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoop, 0, "empty clears to off");
+
+    ctx.ui.inputImpl = async () => "not-a-number";
+    await handleSettingChoice("auditLoop", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoop, 0, "junk is rejected, previous value kept");
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("auditLoop is global-only like the other auditor settings", () => {
+  try {
+    const cwd = tmpCwd();
+    fs.mkdirSync(path.dirname(projectSettingsPath(cwd)), { recursive: true });
+    fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ auditLoop: 3 }));
+    fs.writeFileSync(GLOBAL_FILE, JSON.stringify({ auditLoop: 7 }));
+    assert.equal(loadSettings(cwd).auditLoop, 7, "global wins; a hand-written project copy is ignored");
+    saveSettings("project", cwd, { notifyCmd: "notify-send" });
+    const projectAfterUnrelatedSave = JSON.parse(fs.readFileSync(projectSettingsPath(cwd), "utf8"));
+    assert.equal(projectAfterUnrelatedSave.auditLoop, undefined, "project saves strip global-only keys");
+  } finally {
+    restoreGlobal();
+  }
+});
