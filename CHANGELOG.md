@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.38.45 — full-project audit pass: 16 fixes across version, summary, and approval paths (2026-09-10)
+
+### Fixed
+
+- **Update-check spawn hardening (HIGH):** `refreshUpdateCheck` now subscribes to async `error` (a missing/broken npm crashed the host unhandled), detaches via `unref`, ignores stderr/stdin, and caches only version-shaped stdout tokens — registry noise can no longer poison the sidecar.
+- **`/glla version` honesty (HIGH):** no staleness claim when the running version is unreadable (previously printed a false "up to date"); both surfaces share one strict sidecar reader so the status tail and the command cannot disagree.
+- **Recorded-facts Next survives (HIGH):** `withoutStaleNext` exempts the concrete "review the durable record at …" fallback Next that the `/review/i` clause ate, leaving fallback approval chats actionless.
+- **No per-contact spawn storm:** the TTL skip uses the raw sidecar read, so a future-dated cache (clock skew) suppresses the spawn instead of causing one per command contact.
+- **Approval re-render after delivery:** delivered history dedups exact duplicates only (repeated settlements never double-notify); a genuine re-approval with new verdict lines queues fresh — content, not goalId, decides.
+- **SessionDir-aware sidecar path:** `updateCheckPath` resolves via `resolveGllaStateDir` instead of hardcoding `cwd/.pi-glla`.
+- **String-safety:** `clipSummaryValue` is code-point-safe (no more split surrogate pairs); `chatSafeDetailValue` converges nested machine-path groups to a fixpoint; label segmentation uses last-occurrence search so a label named inside a value no longer steals later segments.
+- **Verdict tally uses its clock:** `auditorVerdictTally(now)` suppresses future `lastAt` instead of printing "0s ago"; dead `void now` and dead `readUpdateCheck` import removed; `recovery-resume.json` documented as a reserved hook with no current producer.
+- **Pins:** spawn-error swallow, token validation, future-cache skip, prerelease compare, unknown-version silence, recorded-facts survival, nested-husk convergence, surrogate safety, last-restatement-wins, delivery-then-reapproval, paused-branch tail, future-verdict silence.
+
 ## 0.38.44 — stale-version surfacing: running version in the status line (2026-09-10)
 
 ### Fixed
