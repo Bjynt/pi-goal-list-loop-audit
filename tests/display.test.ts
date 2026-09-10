@@ -88,6 +88,23 @@ test("active goal shows a compact state capsule (elapsed lives on the card)", ()
   assert.doesNotMatch(s, /glla: goal/, 'v0.34.1: the status line drops the policy word — the widget owns type naming');
 });
 
+test("version tail rides the status on every branch (field 20260909_161057)", () => {
+  // v0.38.44: the running version is visible at a glance so a stale
+  // session is obvious; headless callers without extras see no change.
+  const bare = buildStatusText({ goal: goalOf(), list: [] }, null, NOW)!;
+  assert.match(bare, /\[ACTIVE\]$/);
+  const tailed = buildStatusText({ goal: goalOf(), list: [] }, null, NOW, undefined, { versionTail: "· v0.38.44" })!;
+  assert.match(tailed, /\[ACTIVE\] · v0\.38\.44$/);
+  const nudged = buildStatusText(
+    { goal: goalOf(), list: [] },
+    null,
+    NOW,
+    undefined,
+    { versionTail: "· v0.38.43 · update v0.38.44 available" },
+  )!;
+  assert.match(nudged, /update v0\.38\.44 available$/);
+});
+
 test("monitor goals use the eye icon and do not masquerade as a stuck queue", () => {
   const daemon = goalOf({ objective: "Keep the book-daemon health monitor running" });
   const longRunning = goalOf({

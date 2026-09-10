@@ -84,21 +84,6 @@ export function refreshUpdateCheck(
   }
 }
 
-/** Numeric semver-ish compare: 1 when a > b, -1 when a < b, 0 when equal or unparseable. */
-export function compareVersions(a: string, b: string): number {
-  const pa = a.trim().replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10));
-  const pb = b.trim().replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10));
-  if (pa.some((n) => !Number.isFinite(n)) || pb.some((n) => !Number.isFinite(n))) return 0;
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const x = pa[i] ?? 0;
-    const y = pb[i] ?? 0;
-    if (x > y) return 1;
-    if (x < y) return -1;
-  }
-  return 0;
-}
-
 /**
  * The status-tail segment: `· v<running>` always (so the running
  * version is visible on every branch), plus `· update v<latest>
