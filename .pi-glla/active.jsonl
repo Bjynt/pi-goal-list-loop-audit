@@ -3484,3 +3484,10 @@
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6634900},"at":"2026-09-10T23:12:58.522Z"}
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6649928},"at":"2026-09-10T23:13:13.550Z"}
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6664935},"at":"2026-09-10T23:13:28.556Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6679939},"at":"2026-09-10T23:13:43.561Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6694944},"at":"2026-09-10T23:13:58.566Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6709952},"at":"2026-09-10T23:14:13.573Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6724956},"at":"2026-09-10T23:14:28.577Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6739965},"at":"2026-09-10T23:14:43.587Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6754968},"at":"2026-09-10T23:14:58.589Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":6769971},"at":"2026-09-10T23:15:13.592Z"}
