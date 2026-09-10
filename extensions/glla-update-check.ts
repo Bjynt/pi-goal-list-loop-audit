@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { GLLA_PACKAGE_NAME } from "./glla-version.js";
+import { compareVersions, GLLA_PACKAGE_NAME, updateCheckPath as updateCheckPathFromVersion } from "./glla-version.js";
+
+export { compareVersions };
 
 /**
  * v0.38.44 (field 20260909_161057): a live session rendered the
@@ -25,7 +27,7 @@ export interface UpdateCheckCache {
 }
 
 export function updateCheckPath(cwd: string): string {
-  return path.join(cwd, ".pi-glla", "update-check.json");
+  return updateCheckPathFromVersion(cwd);
 }
 
 /** Read the cache; null when missing, unreadable, malformed, or future-dated. */

@@ -72,11 +72,14 @@ export function formatGllaVersion(cwd?: string, info: GllaVersionInfo = readGlla
   // three lines — absence of evidence is not evidence of freshness.
   if (cwd) {
     try {
-      const cached = readUpdateCheckLocal(cwd);
-      if (cached) {
-        lines.push(`Registry latest: v${cached.latest}.`);
+      const parsed: unknown = JSON.parse(fs.readFileSync(updateCheckPath(cwd), "utf8"));
+      const latest = typeof parsed === "object" && parsed !== null
+        ? (parsed as Record<string, unknown>).latest
+        : undefined;
+      if (typeof latest === "string" && latest.trim()) {
+        lines.push(`Registry latest: v${latest.trim()}.`);
         lines.push(
-          compareLocal(cached.latest, info.version) > 0
+          compareVersions(latest, info.version) > 0
             ? `This session is stale — update: pi install npm:${info.name}@latest then /reload.`
             : "This session is up to date.",
         );
