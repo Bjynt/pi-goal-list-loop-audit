@@ -86,7 +86,8 @@ test("refreshUpdateCheck shells npm view when stale and caches the latest", () =
   const hooks: {
     close: ((code: number | null) => void) | null;
     data: ((chunk: Buffer) => void) | null;
-  } = { close: null, data: null };
+    errors: ((err: unknown) => void)[];
+  } = { close: null, data: null, errors: [] };
   const fakeSpawn = (
     command: string,
     args: string[],
@@ -95,10 +96,11 @@ test("refreshUpdateCheck shells npm view when stale and caches the latest", () =
     assert.equal(command, "npm");
     assert.deepEqual(args, ["view", "pi-goal-list-loop-audit", "version"]);
     return {
-      on: (event: "close", listener: (code: number | null) => void) => {
-        assert.equal(event, "close");
-        hooks.close = listener;
+      on: (event: "close" | "error", listener: (arg: never) => void) => {
+        if (event === "close") hooks.close = listener as (code: number | null) => void;
+        else hooks.errors.push(listener as (err: unknown) => void);
       },
+      unref: () => {},
       stdout: {
         on: (event: "data", listener: (chunk: Buffer) => void) => {
           assert.equal(event, "data");
@@ -127,9 +129,10 @@ test("refreshUpdateCheck never throws and never writes on registry failure", () 
     cwd,
     Date.now(),
     ((..._args: unknown[]) => ({
-      on: (_e: string, l: (code: number | null) => void) => {
-        box.close = l;
+      on: (_e: string, l: (arg: never) => void) => {
+        if (_e === "close") box.close = l as (code: number | null) => void;
       },
+      unref: () => {},
       stdout: { on: () => {} },
     })) as never,
   );
