@@ -86,7 +86,7 @@ function gllaPayload(index: number): Record<string, unknown> {
   };
 }
 
-test("authoritative checkpoint carries state, audit evidence, and lifecycle fences", () => {
+test("authoritative checkpoint carries stable state only — no dynamic fields", () => {
   const checkpoint = buildAuthoritativeContextCheckpoint({
     goal: goalFixture(),
     sessionGeneration: 12,
@@ -100,11 +100,20 @@ test("authoritative checkpoint carries state, audit evidence, and lifecycle fenc
   assert.match(checkpoint, /revision=7/);
   assert.match(checkpoint, /sessionGeneration=12/);
   assert.match(checkpoint, /ownerSession=session-owner-12/);
-  assert.match(checkpoint, /label=disapproved/);
-  assert.match(checkpoint, /Required fixes/);
-  assert.match(checkpoint, /recovery-pending/);
-  assert.match(checkpoint, /Implement checkpoint/);
-  assert.match(checkpoint, /Add lifecycle regression coverage/);
+  // Dynamic fields moved to newest retained payload (suffix), not checkpoint (prefix)
+  assert.ok(!/label=disapproved/.test(checkpoint), "audit label is dynamic — must not be in checkpoint");
+  assert.ok(!/Required fixes/.test(checkpoint), "audit report content is dynamic — must not be in checkpoint");
+  assert.ok(!/recovery-pending/.test(checkpoint), "pending completion is dynamic — must not be in checkpoint");
+  assert.ok(!/Implement checkpoint/.test(checkpoint), "task state is dynamic — must not be in checkpoint");
+  assert.ok(!/Add lifecycle regression coverage/.test(checkpoint), "pending TODOs are dynamic — must not be in checkpoint");
+  // Stable fields that must remain
+  assert.match(checkpoint, /Lifecycle: status=active/);
+  assert.match(checkpoint, /policy=goal/);
+  assert.match(checkpoint, /Auto-continuation: enabled/);
+  assert.match(checkpoint, /Repair\/replan target/);
+  assert.match(checkpoint, /Lifecycle fence/);
+  // Byte-stable pointer guides model to read durable state
+  assert.match(checkpoint, /Dynamic state.*see \.pi-glla\/active\.jsonl/s);
 });
 
 test("real continuation payload growth is bounded after checkpoint projection", () => {
@@ -141,19 +150,20 @@ test("real continuation payload growth is bounded after checkpoint projection", 
   });
 
   // Deterministic post-projection bytes. Refresh deliberately when the
-  // continuation template changes: the completion-communication guidance
-  // added +543 bytes per payload and the user-voice summary-shape guidance
-  // +344 more (the newest payload survives projection, so every probe size
-  // grows by exactly that) and the deliberate-non-do leftOut guidance +87
-  // more, and the Codex-close claim guidance +388 more (+388 chars, +4
-  // multibyte). Cardinality pins above (messageCount 4, one
+  // continuation template changes. Cardinality pins (messageCount 4, one
   // checkpoint, removed == count - 1) are the real bounded-growth
   // invariant — bytes only name the current template.
   assert.deepEqual(bounded, [
-    { count: 5, messageCount: 4, serializedBytes: 27181, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
-    { count: 12, messageCount: 4, serializedBytes: 27181, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
-    { count: 25, messageCount: 4, serializedBytes: 27181, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
+    { count: 5, messageCount: 4, serializedBytes: 26655, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
+    { count: 12, messageCount: 4, serializedBytes: 26655, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
+    { count: 25, messageCount: 4, serializedBytes: 26655, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
   ]);
+  // Serialized bytes consistent across counts (bounded by checkpoint + 1 payload)
+  const b0 = bounded[0]!;
+  const b1 = bounded[1]!;
+  const b2 = bounded[2]!;
+  assert.equal(b0.serializedBytes, b1.serializedBytes);
+  assert.equal(b1.serializedBytes, b2.serializedBytes);
 });
 
 test("projection removes old goal events, inserts one checkpoint, and keeps newest payload", () => {
@@ -397,7 +407,8 @@ test("oversized paused goal plus active loop reserves required checkpoint fields
   assert.ok(checkpoint.length <= MAX_AUTHORITATIVE_CHECKPOINT_CHARS);
   assert.match(checkpoint, /Objective: O{100}/);
   assert.match(checkpoint, /Verification contract: C{100}/);
-  assert.match(checkpoint, /Latest audit .*label=disapproved/s);
+  // Dynamic fields excluded from checkpoint (cache-stability invariant)
+  assert.ok(!/label=disapproved/.test(checkpoint), "audit label is dynamic — must not be in checkpoint");
   assert.match(checkpoint, /Active loop authority/);
   assert.match(checkpoint, /Loop target: L{100}/);
   assert.match(checkpoint, /status=paused/);
