@@ -112,6 +112,10 @@ export function buildVersionTail(running: string, latest: string | null): string
   const nudge = latest ? staleUpdateNudge(running, { latest, checkedAt: 0 }) : null;
   return `· v${running}${nudge ? ` · ${nudge}` : ""}`;
 }
+
+/** The nudge proper: null when there is nothing to say (no cache yet,
+ * unparseable versions, or already current). "unknown" running versions
+ * never nudge — a damaged manifest must not cry wolf. */
 export function staleUpdateNudge(running: string, cached: UpdateCheckCache | null): string | null {
   if (!cached || running === "unknown") return null;
   if (compareVersions(cached.latest, running) > 0) return `update v${cached.latest} available`;

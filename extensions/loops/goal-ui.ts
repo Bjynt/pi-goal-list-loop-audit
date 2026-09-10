@@ -826,6 +826,10 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
       modelProvenance,
       ...(durableDeferRecommendation ? { durableDeferRecommendation } : {}),
       ...(lastAuditorQuietStretch ? { auditorQuietStretch: lastAuditorQuietStretch } : {}),
+      // v0.38.44 (field 20260909_161057): precomputed version tail for
+      // the status line — package.json running version + update-sidecar
+      // latest. Render never touches the network; the sidecar refresh
+      // rides the command-contact gate.
     };
     const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras, width);
     const widgetLines = buildWidgetLines(state, latestAuditProgress, now, theme, width, extras);

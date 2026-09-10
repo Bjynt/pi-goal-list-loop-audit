@@ -216,6 +216,12 @@ export interface WidgetExtras {
   auditorProgressSignals?: boolean;
   /** Effective global main-model backup order for truthful recovery HUDs. */
   mainModelFallbacks?: string[];
+  /** v0.38.44 (field 20260909_161057): precomputed status-tail version
+   * segment (`· v<running>` plus the update nudge when the cache proves
+   * the registry is ahead). Resolved at render contact by the caller —
+   * this module keeps zero runtime imports, so the pure compare/nudge
+   * logic lives in glla-update-check.ts. */
+  versionTail?: string;
   /** Truthful model-selection provenance for the active goal card/footer. */
   modelProvenance?: ModelProvenanceDisplay;
   /** Deterministic durable-vs-defer decision surface. Kept optional so the
@@ -1137,8 +1143,15 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   const withAgentSummary = base && extras?.agents?.line
     ? `${base} · ${extras.agents.line.replace(/^●\s*/, "")}`
     : base;
-  if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return truncateStatusToWidth(withAgentSummary, width);
-  return truncateStatusToWidth(withAgentSummary.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`), width);
+  // v0.38.44 (field 20260909_161057): the running version rides the tail
+  // of EVERY branch — a stale session must be visible at a glance, not
+  // discoverable via a command. The update nudge appears only when the
+  // sidecar cache proves the registry is ahead; render never touches the
+  // network (refresh rides the command-contact gate).
+  const versionTail = extras?.versionTail ? ` ${extras.versionTail}` : "";
+  const withVersion = withAgentSummary && versionTail ? `${withAgentSummary}${versionTail}` : withAgentSummary;
+  if (!withVersion || typeof state.supervisorPausedAt !== "number") return truncateStatusToWidth(withVersion, width);
+  return truncateStatusToWidth(withVersion.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`), width);
 }
 
 /** Status-line width budget — the auditing/paused/loop branches concatenate
