@@ -3161,3 +3161,6 @@
 {"type":"continuation_start_acknowledged","value":{"id":"2970331:1789072872337:466:20260910210542-f4r77v","kind":"goal","goalId":"20260910204321-suiaxh","generation":466,"ownerSessionId":"01a054a9-e07f-705b-87a1-9421f9b906dc","marker":"[GOAL CHECKPOINT goalId=20260910204321-suiaxh]","sentAt":1789074342535,"phase":"started","timeoutMs":30000,"acknowledgement":"accepted","startProofSource":"turn_start","settlement":"started","startedAt":1789074371413,"settledAt":1789074371413},"at":"2026-09-10T21:06:11.415Z"}
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":1803831},"at":"2026-09-10T21:52:27.454Z"}
 {"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":1818836},"at":"2026-09-10T21:52:42.457Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":1833839},"at":"2026-09-10T21:52:57.461Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":1848842},"at":"2026-09-10T21:53:12.463Z"}
+{"type":"zombie_run_stood_down_user_input","value":{"streamSilentMs":1863848},"at":"2026-09-10T21:53:27.469Z"}
