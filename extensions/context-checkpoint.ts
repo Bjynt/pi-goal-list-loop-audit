@@ -49,14 +49,6 @@ function boundedText(value: unknown, maxChars: number): string {
   return normalized.slice(0, Math.max(0, maxChars - suffix.length)) + suffix;
 }
 
-function boundedTail(value: unknown, maxChars: number): string {
-  if (typeof value !== "string") return "";
-  const normalized = value.replace(/\r\n?/g, "\n").replace(/\u0000/g, "");
-  if (normalized.length <= maxChars) return normalized;
-  const prefix = "[head truncated; full audit evidence remains in durable state]\n…";
-  return prefix + normalized.slice(-Math.max(0, maxChars - prefix.length));
-}
-
 function safeInline(value: unknown, maxChars: number): string {
   return boundedText(value, maxChars)
     .replace(/\n+/g, " ")
@@ -103,38 +95,6 @@ function loopCheckpointLines(loop: LoopState): string[] {
   ];
 }
 
-function auditLabel(audit: { approved?: unknown; disapproved?: unknown; impossible?: unknown; error?: unknown; regressionShieldPassed?: unknown }): string {
-  if (audit.approved === true && audit.regressionShieldPassed === false) return "shield-blocked";
-  if (audit.approved === true) return "approved";
-  if (audit.impossible === true) return "impossible";
-  if (audit.disapproved === true) return "disapproved";
-  if (audit.error) return "infrastructure failure";
-  return "no verdict";
-}
-
-function taskState(goal: Goal): string {
-  const tasks = goal.taskList?.tasks ?? [];
-  if (tasks.length === 0) return "(no task list)";
-  const lines = tasks.slice(0, 40).map((task) =>
-    `${safeInline(task.id, 40)} [${safeInline(task.status, 30) || "unknown"}] ${safeInline(task.title, 180)}`,
-  );
-  if (tasks.length > lines.length) lines.push(`[…${tasks.length - lines.length} task(s) omitted; re-read durable task state]`);
-  return lines.join("\n");
-}
-
-function pendingCompletionState(goal: Goal): string {
-  const pending = goal.pendingCompletion;
-  if (!pending) return "(none)";
-  return [
-    `phase=${safeInline(pending.phase, 40) || "legacy/recovery-pending"}`,
-    `attemptId=${safeInline(pending.attemptId, 100) || "(none)"}`,
-    `recoveryReason=${safeInline(pending.recoveryReason, 180) || "(none)"}`,
-    `failureClass=${safeInline(pending.auditorFailureClass, 40) || "(none)"}`,
-    `failureCount=${typeof pending.auditorFailureCount === "number" ? pending.auditorFailureCount : "(none)"}`,
-    `fallbackExhausted=${pending.auditorFallbackExhausted === true ? "true" : "false"}`,
-  ].join("; ");
-}
-
 // The ordinary checkpoint keeps the complete bounded representation for
 // readable, normal-sized state. Once that representation exceeds the hard
 // cap, these are explicit reservations for the fields that must survive a
@@ -144,7 +104,6 @@ const OVERFLOW_OBJECTIVE_CHARS = 1_400;
 const OVERFLOW_CONTRACT_CHARS = 1_400;
 const OVERFLOW_LOOP_TARGET_CHARS = 1_100;
 const OVERFLOW_LOOP_MEASURE_CHARS = 360;
-const OVERFLOW_AUDIT_CHARS = 1_100;
 const OVERFLOW_EMERGENCY_LINE_CHARS = 500;
 
 function compactLoopCheckpointLines(loop: LoopState): string[] {
@@ -156,29 +115,6 @@ function compactLoopCheckpointLines(loop: LoopState): string[] {
     `Loop bounds: maxIterations=${loopNumber(loop.maxIterations)}; plateauWindow=${loopNumber(loop.plateauWindow)}; timeLimitHours=${loopNumber(loop.timeLimitHours)}; tokenBudget=${loopNumber(loop.tokenBudget)}; specFile=${safeInline(loop.specFile, 160) || "(none)"}`,
     "Loop progress: live counters omitted by design — see the newest retained loop prompt and .pi-glla/active.jsonl (keeps this checkpoint byte-stable for prefix-cache stability).",
   ];
-}
-
-function compactAuditEvidence(
-  latestAudit: { approved?: unknown; disapproved?: unknown; impossible?: unknown; error?: unknown; regressionShieldPassed?: unknown; at?: unknown; model?: unknown; revision?: unknown; report?: unknown } | undefined,
-  maxChars: number,
-): string {
-  if (!latestAudit) return "(no audits captured)";
-  const metadata = [
-    `label=${auditLabel(latestAudit)}`,
-    `at=${safeInline(latestAudit.at, 80) || "(unknown)"}`,
-    `model=${safeInline(latestAudit.model, 100) || "(unknown)"}`,
-    `revision=${typeof latestAudit.revision === "number" ? latestAudit.revision : "legacy/unspecified"}`,
-    `shield=${latestAudit.regressionShieldPassed === false ? "failed" : latestAudit.regressionShieldPassed === true ? "passed" : "unspecified"}`,
-  ].join("\n");
-  const opening = "<audit-evidence>";
-  const closing = "</audit-evidence>";
-  const reportBudget = maxChars - metadata.length - opening.length - closing.length - 2;
-  if (reportBudget <= 0) return boundedText(metadata, maxChars);
-  const report = safeBlock(
-    boundedTail(latestAudit.report || "(no report captured)", reportBudget),
-    reportBudget,
-  );
-  return `${metadata}\n${opening}\n${report}\n${closing}`;
 }
 
 function buildOverflowCheckpoint(
