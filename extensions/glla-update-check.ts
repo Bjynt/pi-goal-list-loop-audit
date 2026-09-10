@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compareVersions, GLLA_PACKAGE_NAME, updateCheckPath as updateCheckPathFromVersion } from "./glla-version.js";
+import { compareVersions, GLLA_PACKAGE_NAME, updateCheckPath } from "./glla-version.js";
 
-export { compareVersions };
+export { compareVersions, updateCheckPath };
 
 /**
  * v0.38.44 (field 20260909_161057): a live session rendered the
@@ -24,10 +24,6 @@ export const UPDATE_CHECK_TIMEOUT_MS = 15_000;
 export interface UpdateCheckCache {
   latest: string;
   checkedAt: number;
-}
-
-export function updateCheckPath(cwd: string): string {
-  return updateCheckPathFromVersion(cwd);
 }
 
 /** Read the cache; null when missing, unreadable, malformed, or future-dated. */
