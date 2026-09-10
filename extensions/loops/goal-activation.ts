@@ -125,6 +125,7 @@ isGoalRevisionCurrent,
   type ListItem,
 } from "../goal-loop-core.js";
 import { replayUndeliveredApprovalRenders } from "../approval-render-store.js";
+import { refreshUpdateCheck } from "../glla-update-check.js"; // v0.38.44 stale-version nudge
 import {
   createContinuationDispatch,
   dispatchMatchesOwner,

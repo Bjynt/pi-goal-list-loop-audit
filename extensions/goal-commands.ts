@@ -36,6 +36,7 @@ import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
+import { readUpdateCheck } from "./glla-update-check.js";
 import { cmdGllaOwner, cmdGllaTakeover } from "./state-root-owner.js";
 import { AUDIT_JOB_CLEANUP_MIN_AGE_MS, cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
@@ -2385,7 +2386,7 @@ function cmdAudits(args: string, ctx: ExtensionContext): void {
 // version lookup next to the command surface makes an installed extension
 // identify itself even when its host session is stale or no live goal exists.
 function cmdGllaVersion(ctx: ExtensionContext): void {
-  ctx.ui.notify(formatGllaVersion(), "info");
+  ctx.ui.notify(formatGllaVersion(ctx.cwd), "info");
 }
 
 // v0.35.72: /glla bug — lightweight failure capture that never touches
