@@ -52,7 +52,11 @@ const RECOVERY_RESUME_FRESH_MS = 300_000;
 
 /** v0.34.13: consume the sidecar marker on session restore. Single-use,
  * freshness-bounded — a stale marker from an abandoned recovery must not
- * surprise-resume a later session. */
+ * surprise-resume a later session.
+ * v0.38.45 audit: no production writer plants this marker today (repo-wide
+ * grep: only tests do) — the restore-gate disjuncts below read it as a
+ * reserved hook, always false live. Do not remove the reads: an older or
+ * foreign producer dropping this file must still consent a resume. */
 export function consumeRecoveryResume(cwd: string): boolean {
   try {
     const p = path.join(piGlaDir(cwd), RECOVERY_RESUME_MARKER);
