@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.38.43 — ship merged PR #50, drop orphaned helpers (2026-09-10)
+
+### Fixed
+
+- **PR #50 (Bjynt, merged):** authoritative + overflow checkpoints replace dynamic fields (task state, pending completion, auditor TODOs, latest audit, stopReason/pauseKind) with the byte-stable `see .pi-glla/active.jsonl` pointer, so tool calls stop invalidating the provider KV-cache prefix. Tests pin dynamic absence, pointer presence, and smaller byte fixtures.
+- **Follow-up cleanup:** removed the now-callerless `taskState`, `pendingCompletionState`, `compactAuditEvidence`, `auditLabel`, `boundedTail`, and the orphaned `OVERFLOW_AUDIT_CHARS`.
+
+### Verification
+
+- Full `release:check` 0 failures; `tsc --noEmit` clean.
+
 ## 0.38.42 — trailer cleanup: model-free folded approval (2026-09-09)
 
 ### Fixed
