@@ -83,8 +83,10 @@ test("refreshUpdateCheck shells npm view when stale and caches the latest", () =
     path.join(cwd, ".pi-glla", "update-check.json"),
     JSON.stringify({ latest: "0.1.0", checkedAt: Date.now() - UPDATE_CHECK_TTL_MS - 1 }),
   );
-  let closeListener: ((code: number | null) => void) | null = null;
-  let dataListener: ((chunk: Buffer) => void) | null = null;
+  const hooks: {
+    close: ((code: number | null) => void) | null;
+    data: ((chunk: Buffer) => void) | null;
+  } = { close: null, data: null };
   const fakeSpawn = (
     command: string,
     args: string[],
@@ -95,20 +97,20 @@ test("refreshUpdateCheck shells npm view when stale and caches the latest", () =
     return {
       on: (event: "close", listener: (code: number | null) => void) => {
         assert.equal(event, "close");
-        closeListener = listener;
+        hooks.close = listener;
       },
       stdout: {
         on: (event: "data", listener: (chunk: Buffer) => void) => {
           assert.equal(event, "data");
-          dataListener = listener;
+          hooks.data = listener;
         },
       },
     };
   };
   refreshUpdateCheck(cwd, Date.now(), fakeSpawn as never);
-  assert.ok(closeListener && dataListener, "refresh subscribes before returning");
-  dataListener!(Buffer.from("0.38.44\n"));
-  closeListener!(0);
+  assert.ok(hooks.close && hooks.data, "refresh subscribes before returning");
+  (hooks.data as (chunk: Buffer) => void)(Buffer.from("0.38.44\n"));
+  (hooks.close as (code: number | null) => void)(0);
   assert.deepEqual(readUpdateCheck(cwd)?.latest, "0.38.44");
 });
 
@@ -120,17 +122,17 @@ test("refreshUpdateCheck never throws and never writes on registry failure", () 
     }) as never),
   );
   assert.equal(readUpdateCheck(cwd), null);
-  let closeListener: ((code: number | null) => void) | null = null;
+  const box: { close: ((code: number | null) => void) | null } = { close: null };
   refreshUpdateCheck(
     cwd,
     Date.now(),
     ((..._args: unknown[]) => ({
       on: (_e: string, l: (code: number | null) => void) => {
-        closeListener = l;
+        box.close = l;
       },
       stdout: { on: () => {} },
     })) as never,
   );
-  closeListener!(1);
+  (box.close as (code: number | null) => void)(1);
   assert.equal(readUpdateCheck(cwd), null);
 });
