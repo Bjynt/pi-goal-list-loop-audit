@@ -7,6 +7,7 @@ import { test } from "node:test";
 
 import {
   findResumableInspectionSession,
+  requestHash,
   runDetachedGoalCompletionAuditor,
   type AuditorModel,
   type GoalAuditorResult,
@@ -293,6 +294,35 @@ test("prompt-only dispatch (loop audits) works and carries its auditSubject", as
     const request = await readRequest(cwd, "attempt-loop");
     assert.equal(request.auditSubject, "loop:run-1");
     assert.equal(request.prompt, "AUDIT THE LOOP");
+  } finally {
+    await cleanupRoot(root);
+  }
+});
+
+test("on-disk request.json self-verifies for goal AND prompt-only dispatches (worker identity/hash)", async () => {
+  // Regression: a request field that is present-undefined in memory
+  // (stableJson hashes it via Object.keys) but dropped by JSON.stringify
+  // on disk makes the stored hash unverifiable — the worker then dies
+  // with "auditor request hash mismatch" before any pi spawn.
+  const root = await mkdtemp(path.join(tmpdir(), "glla-selfverify-"));
+  const workerPath = path.join(root, "fake-worker.mjs");
+  await writeFile(workerPath, workerSource);
+  const cwd = path.join(root, "repo");
+  await mkdir(cwd, { recursive: true });
+  try {
+    for (const [attemptId, extra] of [
+      ["attempt-goal-shape", {}],
+      ["attempt-prompt-shape", { prompt: "LOOP AUDIT PREAMBLE", inspection: true, auditSubject: "loop:selftest" }],
+    ] as const) {
+      await runDispatch(cwd, workerPath, attemptId, extra as any);
+      const raw = await readFile(
+        path.join(cwd, ".pi-glla", "audit-jobs", attemptId, "request.json"),
+        "utf8",
+      );
+      const parsed = JSON.parse(raw) as Record<string, unknown> & { requestHash: string };
+      const { requestHash: stored, ...rest } = parsed;
+      assert.equal(stored, requestHash(rest as Parameters<typeof requestHash>[0]), `${attemptId}: stored hash must verify against the on-disk bytes`);
+    }
   } finally {
     await cleanupRoot(root);
   }

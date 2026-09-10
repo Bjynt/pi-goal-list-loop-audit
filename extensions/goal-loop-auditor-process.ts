@@ -1495,8 +1495,12 @@ export async function runDetachedGoalCompletionAuditor(args: {
       // v0.34.59: capture the focus revision token at dispatch. The
       // worker echoes it in result.json; the parent re-validates before
       // applying the verdict. A stale-handle ghost can no longer silently
-      // overwrite a goal that moved on.
-      goalRevision: capturedRevisionToken,
+      // overwrite a goal that moved on. Only present when known: an
+      // explicit `goalRevision: undefined` key is hashed by stableJson
+      // (Object.keys includes it) but dropped by JSON.stringify on disk,
+      // so a prompt-only (loop) dispatch would hand the worker a request
+      // whose stored hash can never verify.
+      ...(capturedRevisionToken ? { goalRevision: capturedRevisionToken } : {}),
       // v0.36.0: only present when non-empty so historical requests hash
       // byte-identically to pre-feature workers.
       ...(allowedExtensions.length ? { allowedExtensions } : {}),
