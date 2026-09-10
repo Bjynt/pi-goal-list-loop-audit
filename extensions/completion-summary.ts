@@ -159,7 +159,11 @@ export interface HumanCompletionBrief {
  * the durable archive keeps the full text. Falls back to the original
  * when stripping would empty the value. */
 export function chatSafeDetailValue(value: string): string {
-  const withoutGroups = value.replace(/\([^()]*\)/g, (group) => {
+  // v0.38.45 audit: loop the innermost-group strip to a fixpoint
+  // (bounded) — a single pass left nested husks like "(log )" behind.
+  let withoutGroups = value;
+  for (let pass = 0; pass < 5; pass++) {
+    const next = withoutGroups.replace(/\([^()]*\)/g, (group) => {
     // A parenthesized group that carries nothing but stripped tokens and
     // receipt words is machine packaging — drop the whole group so no
     // `( tarball )` husk survives. Groups with real words stay verbatim.
@@ -169,7 +173,10 @@ export function chatSafeDetailValue(value: string): string {
       .replace(/\S+\.tgz\b/g, "")
       .replace(/\btarballs?\b|\blogs?\b/gi, "");
     return /[a-z]/i.test(inner) ? group : "";
-  });
+    });
+    if (next === withoutGroups) break;
+    withoutGroups = next;
+  }
   const stripped = withoutGroups
     .replace(/(?:\/var)?\/tmp\/\S+/g, "")
     .replace(/\btarballs?\s+\S+\.tgz\b/gi, "")
@@ -215,11 +222,21 @@ export function humanCompletionBrief(
  * approval`, …) still drop, but the first concrete action survives as
  * the closing bullet. The full six-label record stays in the archive. */
 const STALE_NEXT_PATTERN = /auditor|verdict|approv|audit|settl|review/i;
+/** The recorded-facts fallback Next is concrete (`review the durable
+ * record at …`) and must survive the stale-Next filter (v0.38.45 audit:
+ * /review/i ate it, leaving fallback approval chats with no next action). */
+const RECORDED_FACTS_NEXT_PATTERN = /review the durable/i;
 export function withoutStaleNext(details: string[] | undefined): string[] {
   const kept: string[] = [];
   let actionKept = false;
   for (const detail of details ?? []) {
     if (!/^\s*Next\s*:/i.test(detail)) {
+      kept.push(detail);
+      continue;
+    }
+    if (RECORDED_FACTS_NEXT_PATTERN.test(detail)) {
+      if (actionKept) continue;
+      actionKept = true;
       kept.push(detail);
       continue;
     }

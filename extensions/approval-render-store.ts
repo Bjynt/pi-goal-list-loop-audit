@@ -90,7 +90,12 @@ export function persistApprovalRender(cwd: string, render: {
 }): boolean {
   const at = nowIso();
   const existing = readRenders(cwd);
-  if (existing.some((entry) => entry.goalId === render.goalId)) return true;
+  // v0.38.45 audit: dedup against UNDELIVERED entries only. Delivered
+  // renders are retained as capped history, so matching them too
+  // silently dropped a legitimate second render for the same goal — e.g.
+  // an archive-failure retry re-approves the same goalId and its chat
+  // summary never queued while the caller believed it did.
+  if (existing.some((entry) => !entry.deliveredAt && entry.goalId === render.goalId)) return true;
   const entry: PendingApprovalRender = {
     goalId: render.goalId,
     // v0.38.30 audit: code-point truncation (char slice split surrogate

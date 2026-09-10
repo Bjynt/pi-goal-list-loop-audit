@@ -1,9 +1,18 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { compareVersions, GLLA_PACKAGE_NAME, updateCheckPath } from "./glla-version.js";
+import {
+  compareVersions,
+  GLLA_PACKAGE_NAME,
+  isVersionLike,
+  readUpdateCheck,
+  readUpdateCheckRaw,
+  updateCheckPath,
+  type UpdateCheckCache,
+} from "./glla-version.js";
 
-export { compareVersions, updateCheckPath };
+export { compareVersions, readUpdateCheck, updateCheckPath };
+export type { UpdateCheckCache };
 
 /**
  * v0.38.44 (field 20260909_161057): a live session rendered the
@@ -21,37 +30,30 @@ export { compareVersions, updateCheckPath };
 export const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1_000;
 export const UPDATE_CHECK_TIMEOUT_MS = 15_000;
 
-export interface UpdateCheckCache {
-  latest: string;
-  checkedAt: number;
-}
-
-/** Read the cache; null when missing, unreadable, malformed, or future-dated. */
-export function readUpdateCheck(cwd: string): UpdateCheckCache | null {
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(updateCheckPath(cwd), "utf8"));
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const record = parsed as Record<string, unknown>;
-    if (typeof record.latest !== "string" || !record.latest.trim()) return null;
-    if (typeof record.checkedAt !== "number" || !Number.isFinite(record.checkedAt)) return null;
-    if (record.checkedAt > Date.now() + 60_000) return null;
-    return { latest: record.latest.trim(), checkedAt: record.checkedAt };
-  } catch {
-    return null;
-  }
+export interface SpawnedRefreshChild {
+  on(event: "close", listener: (code: number | null) => void): void;
+  on(event: "error", listener: (err: unknown) => void): void;
+  unref?: () => void;
+  stdout: { on(event: "data", listener: (chunk: Buffer) => void): void };
 }
 
 export type SpawnFn = (
   command: string,
   args: string[],
-  options: { timeout: number },
-) => { on(event: "close", listener: (code: number | null) => void): void; stdout: { on(event: "data", listener: (chunk: Buffer) => void): void } };
+  options: { timeout: number; stdio?: Array<"ignore" | "pipe"> },
+) => SpawnedRefreshChild;
 
 /**
  * Throttled fire-and-forget refresh: returns immediately in every case.
  * Skips when the cache is within TTL; otherwise shells `npm view` with a
  * bounded timeout and rewrites the cache on success. Never throws — an
  * offline session simply keeps rendering without a nudge.
+ * v0.38.45 audit: the spawned child carries an `error` listener (a
+ * missing/broken npm emits async `error`, which the outer try/catch
+ * cannot catch and which crashes the host unhandled), detaches via
+ * unref, and ignores stderr/stdin; only version-shaped stdout tokens
+ * are cached. The TTL skip uses the RAW read so a future-dated cache
+ * (clock skew) suppresses the spawn instead of causing one per contact.
  */
 export function refreshUpdateCheck(
   cwd: string,
@@ -59,9 +61,18 @@ export function refreshUpdateCheck(
   spawnFn: SpawnFn = spawn as unknown as SpawnFn,
 ): void {
   try {
-    const cached = readUpdateCheck(cwd);
+    const cached = readUpdateCheckRaw(cwd);
     if (cached && now - cached.checkedAt < UPDATE_CHECK_TTL_MS) return;
-    const child = spawnFn("npm", ["view", GLLA_PACKAGE_NAME, "version"], { timeout: UPDATE_CHECK_TIMEOUT_MS });
+    const child = spawnFn("npm", ["view", GLLA_PACKAGE_NAME, "version"], {
+      timeout: UPDATE_CHECK_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    // A missing/broken npm emits async `error`, not a sync throw and
+    // not a nonzero close — without this listener the host crashes.
+    child.on("error", () => {
+      // Fail-silent by design: keep rendering without a nudge.
+    });
+    if (typeof child.unref === "function") child.unref();
     let out = "";
     child.stdout.on("data", (chunk) => {
       out += chunk.toString();
@@ -71,10 +82,10 @@ export function refreshUpdateCheck(
       try {
         if (code !== 0) return;
         const latest = out.trim().split(/\s+/).pop() ?? "";
-        if (!latest) return;
+        if (!isVersionLike(latest)) return;
         const dir = path.dirname(updateCheckPath(cwd));
         fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(updateCheckPath(cwd), JSON.stringify({ latest, checkedAt: Date.now() }));
+        fs.writeFileSync(updateCheckPath(cwd), JSON.stringify({ latest: latest.trim(), checkedAt: Date.now() }));
       } catch {
         // Cache write failure is invisible by design.
       }
