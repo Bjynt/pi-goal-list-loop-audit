@@ -609,7 +609,6 @@ export interface AuditorVerdictTally {
   lastLabel: string | null;
 }
 export function auditorVerdictTally(history: Goal["auditHistory"], now = Date.now()): AuditorVerdictTally {
-  void now;
   const entries = Array.isArray(history) ? history : [];
   let approvals = 0;
   let disapprovals = 0;
@@ -620,11 +619,15 @@ export function auditorVerdictTally(history: Goal["auditHistory"], now = Date.no
   }
   const last = entries[entries.length - 1];
   const lastMs = last ? Date.parse(last.at) : Number.NaN;
+  // v0.38.45 audit: `now` earns its parameter slot — a future lastAt
+  // (clock skew) suppresses the age instead of printing "0s ago" via
+  // fmtElapsed's clamp, matching auditorLastActivity's handling.
+  const lastOk = last && Number.isFinite(lastMs) && (lastMs as number) <= now;
   return {
     total: entries.length,
     approvals,
     disapprovals,
-    lastAt: last && Number.isFinite(lastMs) ? lastMs : null,
+    lastAt: lastOk ? (lastMs as number) : null,
     lastLabel: last ? auditVerdictLabel(last) : null,
   };
 }
