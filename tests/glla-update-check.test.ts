@@ -139,3 +139,66 @@ test("refreshUpdateCheck never throws and never writes on registry failure", () 
   (box.close as (code: number | null) => void)(1);
   assert.equal(readUpdateCheck(cwd), null);
 });
+
+test("async spawn error is swallowed, never crashes, never writes", () => {
+  const cwd = tmpRoot();
+  const hooks: { errors: ((err: unknown) => void)[] } = { errors: [] };
+  assert.doesNotThrow(() =>
+    refreshUpdateCheck(
+      cwd,
+      Date.now(),
+      ((..._args: unknown[]) => ({
+        on: (event: string, listener: (arg: never) => void) => {
+          if (event === "error") hooks.errors.push(listener as (err: unknown) => void);
+        },
+        unref: () => {},
+        stdout: { on: () => {} },
+      })) as never,
+    ),
+  );
+  assert.equal(hooks.errors.length, 1, "refresh subscribes to async spawn errors");
+  assert.doesNotThrow(() => hooks.errors[0]!(new Error("spawn npm ENOENT")));
+  assert.equal(readUpdateCheck(cwd), null, "failed spawn leaves no cache behind");
+});
+
+test("non-version npm stdout never poisons the sidecar", () => {
+  const cwd = tmpRoot();
+  const hooks: {
+    close: ((code: number | null) => void) | null;
+    data: ((chunk: Buffer) => void) | null;
+  } = { close: null, data: null };
+  refreshUpdateCheck(
+    cwd,
+    Date.now(),
+    ((..._args: unknown[]) => ({
+      on: (event: string, listener: (arg: never) => void) => {
+        if (event === "close") hooks.close = listener as (code: number | null) => void;
+      },
+      unref: () => {},
+      stdout: {
+        on: (_event: string, listener: (chunk: Buffer) => void) => {
+          hooks.data = listener;
+        },
+      },
+    })) as never,
+  );
+  (hooks.data as (chunk: Buffer) => void)(Buffer.from("npm warn registry noise\n"));
+  (hooks.close as (code: number | null) => void)(0);
+  assert.equal(readUpdateCheck(cwd), null, "warning tokens are not cached as latest");
+});
+
+test("future-dated cache suppresses the spawn instead of causing one per contact", () => {
+  const cwd = tmpRoot();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(
+    path.join(cwd, ".pi-glla", "update-check.json"),
+    JSON.stringify({ latest: "0.38.44", checkedAt: Date.now() + 3_600_000 }),
+  );
+  assert.equal(readUpdateCheck(cwd), null, "strict render read still rejects the future entry");
+  let spawned = 0;
+  refreshUpdateCheck(cwd, Date.now(), (() => {
+    spawned++;
+    throw new Error("must not spawn");
+  }) as never);
+  assert.equal(spawned, 0, "refresh treats a future-dated cache as fresh enough to skip");
+});
