@@ -37,8 +37,10 @@ import {
   DEFAULT_AUDIT_FEEDBACK_CHARS,
 } from "../goal-loop-core.js";
 import { loadSettings, type Settings } from "../goal-settings.js";
+
 import {
   runDetachedGoalCompletionAuditor,
+  findActiveSameSubjectAudit,
   DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
   DEFAULT_AUDITOR_STALL_MS,
   type GoalAuditorResult,
@@ -170,6 +172,12 @@ function notifyBestEffort(ctx: ExtensionContext, text: string, kind: "info" | "w
   }
 }
 
+/** Durable subject identity for one loop run — stable across iterations,
+ * unique per run, shared by the trigger and the orphan guard. */
+export function loopAuditSubject(loop: LoopState): string {
+  return `loop:${loop.startedAt}`;
+}
+
 async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: LoopState, settings: Settings): Promise<void> {
   loopAuditInFlight = true;
   const iteration = loop.iteration;
@@ -177,6 +185,22 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
   let errorText: string | undefined;
   let infrastructureClass: string | undefined;
   try {
+    // Host replacement resets the module-level guard; an orphan worker of
+    // this same run may still be alive (observed live). Skip this slot
+    // rather than run a second concurrent audit of one subject — and never
+    // reap it: its session/verdict are still valuable.
+    const jobsRoot = path.join(cwd, ".pi-glla", "audit-jobs");
+    let active: Awaited<ReturnType<typeof findActiveSameSubjectAudit>>;
+    try {
+      active = await findActiveSameSubjectAudit(jobsRoot, loopAuditSubject(loop));
+    } catch {
+      active = undefined; // guard failure never blocks the dispatch
+    }
+    if (active) {
+      appendLedger(cwd, "loop_audit_skipped_active_prior", { iteration, activeJob: path.basename(active.jobDir), pid: active.pid });
+      notifyBestEffort(ctx, `Loop audit (iteration ${iteration}): a prior audit of this run is still running (${path.basename(active.jobDir)}) — slot skipped, nothing reaped.`, "info");
+      return;
+    }
     const { model, error } = resolveAuditorModel(
       ctx,
       settings.auditorModel,
@@ -205,7 +229,7 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
       // per run — so resumable inspection sessions keep the SAME auditor
       // conversation across this loop's audits (and never bleed into goal
       // audits or other loops).
-      auditSubject: `loop:${loop.startedAt}`,
+      auditSubject: loopAuditSubject(loop),
       runtime: {
         toolTimeoutMs,
         heartbeatNoProgressMs: stallMs,

@@ -1350,6 +1350,67 @@ export async function findResumableInspectionSession(
   return best;
 }
 
+/** v0.38.43: an audit of the same subject whose worker/parent is still
+ * alive (lock role parent|worker + live pid, no result.json yet). A host
+ * replacement resets the in-memory in-flight guard; this is the durable
+ * complement — without it a restarted loop dispatches a second concurrent
+ * audit while an orphan of the same subject still runs (observed live
+ * 2026-09-10: mtvjhsok outlived its host). */
+export interface ActiveSameSubjectAudit {
+  jobDir: string;
+  pid: number;
+}
+
+/** Best-effort scan: any read/parse failure on a candidate means "not
+ * active", never a dispatch failure. PID reuse can only cause an extra
+ * conservative skip (self-heals next slot); it can never double-dispatch
+ * while the real worker is alive. */
+export async function findActiveSameSubjectAudit(
+  jobsRoot: string,
+  subject: string,
+  excludeJobDir?: string,
+): Promise<ActiveSameSubjectAudit | undefined> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(jobsRoot, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(jobsRoot, entry.name);
+    if (excludeJobDir !== undefined && dir === excludeJobDir) continue;
+    let storedSubject: string | undefined;
+    try {
+      const request = JSON.parse(await fs.readFile(path.join(dir, "request.json"), "utf8")) as StoredAuditRequest;
+      storedSubject = typeof request.auditSubject === "string"
+        ? request.auditSubject
+        : typeof request.goalRevision?.goalId === "string"
+          ? `goal:${request.goalRevision.goalId}`
+          : undefined;
+    } catch {
+      continue;
+    }
+    if (storedSubject !== subject) continue;
+    try {
+      // Finished (any verdict, even ok:false) — retention owns the dir and
+      // it is a resume source, not an in-flight audit.
+      if ((await fs.stat(path.join(dir, "result.json"))).isFile()) continue;
+    } catch {
+      // No result yet — candidate.
+    }
+    try {
+      const lock = JSON.parse(await fs.readFile(path.join(dir, "lock"), "utf8")) as { role?: unknown; pid?: unknown };
+      if (lock.role !== "worker" && lock.role !== "parent") continue;
+      if (typeof lock.pid !== "number" || !processAlive(lock.pid)) continue;
+      return { jobDir: dir, pid: lock.pid };
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Run one completion audit in a detached, extension-less child process.
  * Infrastructure failures never become semantic disapprovals and never fall

@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  findActiveSameSubjectAudit,
   findResumableInspectionSession,
   requestHash,
   runDetachedGoalCompletionAuditor,
@@ -163,6 +164,71 @@ test("resume resolver: excludes the current job dir", async () => {
     const found = await findResumableInspectionSession(jobsRoot, "goal:g1", current);
     assert.ok(found);
     assert.notEqual(found.jobDir, current);
+  } finally {
+    await cleanupRoot(root);
+  }
+});
+
+// =================================================================
+// findActiveSameSubjectAudit — durable in-flight complement
+// =================================================================
+
+async function makeActiveJob(jobsRoot: string, name: string, opts: {
+  subject: string;
+  lock: Record<string, unknown> | null;
+  withResult?: boolean;
+}): Promise<string> {
+  const dir = path.join(jobsRoot, name);
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, "request.json"), JSON.stringify({
+    protocolVersion: 1, attemptId: name, requestHash: "h", cwd: "/tmp/repo",
+    prompt: "p", model: "m", thinkingLevel: "low", createdAt: "2026-01-01T00:00:00.000Z",
+    auditSubject: opts.subject,
+  }));
+  if (opts.lock !== null) await writeFile(path.join(dir, "lock"), JSON.stringify(opts.lock));
+  if (opts.withResult) await writeFile(path.join(dir, "result.json"), JSON.stringify({ ok: true }));
+  return dir;
+}
+
+test("active-subject scan: live worker lock without result is found; finished/dead/mismatched are not", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "glla-active-"));
+  try {
+    const jobsRoot = path.join(root, "jobs");
+    const live = await makeActiveJob(jobsRoot, "live-worker", {
+      subject: "loop:r1",
+      lock: { protocolVersion: 1, attemptId: "live-worker", pid: process.pid, role: "worker", workerPath: "/w" },
+    });
+    await makeActiveJob(jobsRoot, "finished", {
+      subject: "loop:r1",
+      lock: { protocolVersion: 1, attemptId: "finished", pid: process.pid, role: "worker", workerPath: "/w" },
+      withResult: true,
+    });
+    await makeActiveJob(jobsRoot, "dead-worker", {
+      subject: "loop:r1",
+      lock: { protocolVersion: 1, attemptId: "dead-worker", pid: 999999999, role: "worker", workerPath: "/w" },
+    });
+    await makeActiveJob(jobsRoot, "other-subject", {
+      subject: "loop:other",
+      lock: { protocolVersion: 1, attemptId: "other-subject", pid: process.pid, role: "worker", workerPath: "/w" },
+    });
+    const found = await findActiveSameSubjectAudit(jobsRoot, "loop:r1");
+    assert.ok(found);
+    assert.equal(found.jobDir, live);
+    assert.equal(found.pid, process.pid);
+
+    // A live parent lock (worker not yet spawned) also counts as in-flight.
+    const parented = await makeActiveJob(jobsRoot, "parent-held", { subject: "loop:r2", lock: { protocolVersion: 1, attemptId: "parent-held", pid: process.pid, role: "parent" } });
+    const foundParent = await findActiveSameSubjectAudit(jobsRoot, "loop:r2");
+    assert.ok(foundParent);
+    assert.equal(foundParent.jobDir, parented);
+
+    // No lock at all — crashed before ownership: not active.
+    await makeActiveJob(jobsRoot, "no-lock", { subject: "loop:r3", lock: null });
+    assert.equal(await findActiveSameSubjectAudit(jobsRoot, "loop:r3"), undefined);
+
+    // Exclusion of the caller's own dir (post-mkdir pre-spawn window).
+    const foundEx = await findActiveSameSubjectAudit(jobsRoot, "loop:r1", live);
+    assert.equal(foundEx, undefined);
   } finally {
     await cleanupRoot(root);
   }
