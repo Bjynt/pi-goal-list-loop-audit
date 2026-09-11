@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.38.46 — loop auditor + resumable inspection sessions (PR #3 → #51 path) (2026-09-11)
+
+> Code markers read `v0.38.43` (the intended release before upstream shipped 0.38.43–0.38.45 mid-flight); the feature ships here.
+
+### Added
+
+- **Loop auditor (`auditLoop`, global-only, default off):** after every N loop iterations a DETACHED semantic audit — the exact goal-completion infrastructure (worker, watchdogs, verdict parsing, model resolution, inspection sessions) — asks whether the loop is making REAL progress toward its target, not just moving its metric. Approval resets the streak; the first disapproval rides its `## Required fixes` tail into the next iteration's prompt (`${AUDIT_NOTE}` in both loop templates, consumed once); the second consecutive disapproval — or an `<impossible>` target — stops the loop through the standard tick stop machinery. Infra failures are ledgered but never counted as evidence. In-flight slots are skipped and ledgered (`loop_audit_skipped_in_flight`). Surfaced in `/glla` (auditor section, integer editor 0–1000), the headless fallback listing, and `docs/SETTINGS.md`.
+- **Resumable inspection sessions:** with `auditorInspection` on, a re-audit of the same subject (`goal:<id>` / `loop:<run>`, hash-covered in `request.json`) seeds its session from the newest cleanly-finished prior audit — result.json present, non-empty session with a valid header; pre-feature jobs match via the goal revision token. The auditor's pi resumes its own conversation (cost + consistency: it remembers what it already checked); any failure falls back to a fresh session. Resume provenance lands in `inspectionResumedFrom`. Worker script unchanged.
+- **Durable same-subject in-flight guard:** host replacement resets the module-level guard; an orphan worker of the same run may still be alive (observed live). `findActiveSameSubjectAudit` (subject match + no result yet + lock holder with live pid) skips the slot instead of double-dispatching — and never reaps the orphan.
+
+### Fixed
+
+- **Prompt-only dispatches hashed an undefined `goalRevision` key:** `stableJson` hashes present-undefined keys (`Object.keys`) while `JSON.stringify` drops them on disk, so loop-audit requests could never verify and workers died pre-spawn. `goalRevision` is now included only when known (same pattern as `inspection`/`auditSubject`); goal-request shapes stay byte-identical.
+
+### Verification
+
+- Live proof end-to-end in a running `auditLoop=1` loop across three host generations — trigger cadence, tailable inspection sessions, infra-not-evidence handling, in-flight skips, and a byte-identical 23,681-byte session seed whose resumed audit returned `<approved/>`: `audit/LOOP-AUDIT-LIVE-VERIFY-2026-09-10.md`.
+- New tests: `tests/auditor-inspection-resume.test.ts` (resolver + active-scan units; fake-worker integration incl. on-disk request-hash self-verification for both dispatch shapes), `tests/loop-auditor.test.ts` (trigger predicate, pure verdict application, prompt builder, settings normalization); settings editor/menu/docs-drift contracts cover `auditLoop`. Full suite 2082 pass / 0 fail; `tsc --noEmit` clean; offline auditor-extensions verified; pack smoke OK; Actions `quality` green on every head.
+
 ## 0.38.45 — full-project audit pass: 16 fixes across version, summary, and approval paths (2026-09-10)
 
 ### Fixed
