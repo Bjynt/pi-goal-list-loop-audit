@@ -42,6 +42,7 @@ a wide brief dies at the output limit with zero report).
 ${INTERVENTION_NOTE}
 ${HYPOTHESIS_NOTE}
 ${REFINE_HINT}
+${AUDIT_NOTE}
 ${REGRESSION_NOTE}
 ${STRATEGY_NOTE}
 

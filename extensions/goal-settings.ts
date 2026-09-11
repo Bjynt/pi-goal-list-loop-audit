@@ -152,6 +152,13 @@ export interface Settings {
    * file lives inside the job dir, so its lifetime = the job-dir retention
    * window (auditJobRetentionMs). */
   auditorInspection?: boolean;
+  /** v0.38.43: loop-audit cadence — after every N loop iterations a
+   * DETACHED auditor (the same infrastructure as goal completion audits)
+   * semantically verifies the loop is making real progress toward its
+   * target, not just metric movement. Tri-state: 0/unset = off; positive
+   * integer N = audit every N iterations. Global-only: auditor
+   * infrastructure, not a project artifact. */
+  auditLoop?: number;
   /** Global-only: when main-model recovery is parked, fire an extra retry at
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
@@ -294,6 +301,7 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "auditorStallMs",
   "auditJobRetentionMs",
   "auditorInspection",
+  "auditLoop",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -349,6 +357,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.38.3: opt-in live inspection — the auditor's pi becomes a normal
   // persistent session you can tail/resume. Off = the original --no-session.
   auditorInspection: false,
+  // v0.38.43: loop auditing is opt-in — 0 = off. N = a detached audit every
+  // N loop iterations (same auditor infrastructure as goal audits).
+  auditLoop: 0,
   // v0.34.142: an extra blind retry at :00:30 after every hour starts.
   // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.
@@ -472,6 +483,13 @@ export function normalizeLoadedSettings(settings: Settings): Settings {
       MAX_AUDITOR_STALL_MS,
       Math.max(MIN_AUDITOR_STALL_MS, Math.floor(settings.auditorStallMs)),
     );
+  }
+  // v0.38.43: loop-audit cadence — 0 (or unset) = off; positive integer =
+  // audit every N iterations. Junk (non-integer / negative / out-of-range)
+  // normalizes to off rather than a default-on surprise.
+  if (typeof settings.auditLoop !== "number" || !Number.isInteger(settings.auditLoop)
+      || settings.auditLoop < 0 || settings.auditLoop > MAX_AUDIT_LOOP_INTERVAL) {
+    settings.auditLoop = 0;
   }
   // v0.38.3: retention is a review window, not a watchdog budget — 0 means
   // "reap proven-dead dirs immediately", so the floor is 0, not a minute.
@@ -597,6 +615,10 @@ export function loadSettings(cwd: string): Settings {
  * project-local opt-in from the unattended-audit era kept auto-firing the
  * list at every bare `pi` launch after the global default flipped off).
  */
+/** v0.38.43: loop-audit cadence upper bound — hand-edited files may carry
+ * junk; a cadence beyond this is a typo, not a policy. */
+export const MAX_AUDIT_LOOP_INTERVAL = 1000;
+
 export function loadGlobalSettings(): Settings {
   return normalizeLoadedSettings(mergeSettings(
     DEFAULT_SETTINGS as unknown as Record<string, unknown>,
@@ -628,6 +650,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditorStallMs",
   "auditJobRetentionMs",
   "auditorInspection",
+  "auditLoop",
   "notifyCmd",
   "tokenLimit",
   "wedgeAlertMinutes",

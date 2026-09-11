@@ -58,6 +58,7 @@ import {
   LOOP_DEFAULTS,
 } from "./goal-loop-forever.js";
 import { loadSettings } from "./goal-settings.js";
+import { maybeTriggerLoopAudit } from "./loops/loop-auditor.js";
 import { normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { createContinuationDispatch, type ContinuationDispatch } from "./goal-loop-dispatch.js";
 import { attemptFreshSessionRecovery } from "./goal-recovery.js";
@@ -281,7 +282,7 @@ async function runGit(ctx: ExtensionContext, args: string[]): Promise<{ ok: bool
   }
 }
 
-function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: string, boundsNote: string, interventionNote = "", variantNote = "", hypothesisNote = "", refineHintNote = ""): string {
+function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: string, boundsNote: string, interventionNote = "", variantNote = "", hypothesisNote = "", refineHintNote = "", auditNote = ""): string {
   // v0.23.0: metricless loops get their own prompt — no metric section,
   // anti-doorknob rules instead of anti-gaming rules.
   const metricless = !loop.measureCmd;
@@ -292,7 +293,7 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
   } catch {
     tmpl = metricless
       ? `[LOOP ITERATION ${loop.iteration + 1}] Target: ${loop.target}. Metricless spec loop — make ONE real, inspectable change advancing the target. No cosmetic churn. ${variantNote} ${interventionNote}`
-      : `[LOOP ITERATION ${loop.iteration + 1}] Target: ${loop.target}. Measure: ${loop.measureCmd} (${loop.direction}). Make ONE small change to improve the metric. ${interventionNote}`;
+      : `[LOOP ITERATION ${loop.iteration + 1}] Target: ${loop.target}. Measure: ${loop.measureCmd} (${loop.direction}). Make ONE small change to improve the metric. ${interventionNote} ${auditNote}`;
   }
   return tmpl
     .replace(/\$\{ITERATION\}/g, String(loop.iteration + 1))
@@ -310,7 +311,8 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
     .replace(/\$\{INTERVENTION_NOTE\}/g, interventionNote)
     .replace(/\$\{VARIANT_NOTE\}/g, variantNote)
     .replace(/\$\{HYPOTHESIS_NOTE\}/g, hypothesisNote)
-    .replace(/\$\{REFINE_HINT\}/g, refineHintNote);
+    .replace(/\$\{REFINE_HINT\}/g, refineHintNote)
+    .replace(/\$\{AUDIT_NOTE\}/g, auditNote);
 }
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
@@ -455,6 +457,11 @@ function sendLoopTurn(): void {
     ? `**The operator suggests refining the spec:** ${loop.refineHint} — if the current spec no longer captures "better", call propose_loop_refine (target and/or measureCmd${loop.specFile ? " and/or specText/specAppend" : ""}); if it still stands, say why in one line and keep working.`
     : "";
   if (refineHintNote) loop.refineHint = undefined;
+  // v0.38.43: loop-audit corrective directive — one-shot, consumed on use.
+  const loopAuditNote = loop.loopAuditNote
+    ? `**INDEPENDENT LOOP AUDITOR DISAPPROVAL — required fixes:** ${loop.loopAuditNote}`
+    : "";
+  if (loop.loopAuditNote) loop.loopAuditNote = undefined;
   try {
     let loopResync = "";
     if (flags.postCompactResyncPending) { try { loopResync = buildPostCompactResync(); } catch { loopResync = ""; } } // v0.33.1
@@ -469,10 +476,10 @@ function sendLoopTurn(): void {
     if (!attempt) return;
     flags.extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
-      content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote),
+      content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote, loopAuditNote),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-    flags.lastContinuationSentPayload = { content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote), display: false }; // v0.34.88: verbatim retry payload
+    flags.lastContinuationSentPayload = { content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote, loopAuditNote), display: false }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     // v0.26.1: the send path is ledgered — the hegemon zombie spun 619
     // refires with zero visibility into whether sends were landing.
@@ -708,6 +715,26 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
   // v0.24.0: the top of the stuck ladder — bounded and surfaced, same
   // philosophy as a plateau stop. The loop ends WITH the reason, not in silence.
   // v0.25.0: aggressiveMode raises the ladder (default 5 → 10, explicit wins).
+  // v0.38.43: loop-audit stop — a DETACHED loop auditor requested the stop
+  // (two consecutive disapprovals / impossible target). The request arrived
+  // asynchronously; consume it here through the SAME stop machinery as
+  // every other route so git/notify/queue-announce behavior is identical.
+  if (loop.loopAuditStopRequested) {
+    loop.active = false;
+    loop.stopReason = loop.loopAuditStopReason ?? `loop audit — 2 consecutive disapprovals`;
+    loop.loopAuditStopRequested = undefined;
+    loop.loopAuditStopReason = undefined;
+    persistState(ctx);
+    await commitPendingTerminalWork();
+    await finishLoopGit(ctx, loop);
+    if (!rebindLoop()) return;
+    const recap = compactLoopCompletionSummary({ ...loop, historyLength: loop.history.length });
+    ctx.ui.notify(`Loop stopped: ${loop.stopReason}. ${loop.history.length} iterations recorded.\nRecap: ${recap}`, "warning");
+    appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue, recap });
+    notifyExternal(ctx, `Loop stopped: ${loop.stopReason}. Recap: ${recap}`);
+    announceQueuedListAfterLoopEnd(ctx);
+    return;
+  }
   const maxStuckInterventions = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).stuckMaxInterventions;
   if (outcome.kind !== "stop" && (loop.consecutiveStuck ?? 0) >= maxStuckInterventions) {
     loop.active = false;
@@ -767,6 +794,11 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     announceQueuedListAfterLoopEnd(ctx);
     return;
   }
+  // v0.38.43: loop auditor — fire-and-forget detached semantic audit every
+  // N iterations (settings.auditLoop; off by default). Continue path only:
+  // every stop route above already returned. Never blocks the tick and
+  // never throws; its verdict applies asynchronously.
+  maybeTriggerLoopAudit(ctx, loop);
   scheduleLoopTick(ctx);
 }
 

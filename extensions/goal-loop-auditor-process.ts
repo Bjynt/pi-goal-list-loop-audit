@@ -8,7 +8,7 @@
  */
 
 import * as fs from "node:fs/promises";
-import { constants as fsConstants, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { constants as fsConstants, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, statSync, type Dirent } from "node:fs";
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
@@ -983,6 +983,16 @@ interface AuditorRequest {
    * before applying the verdict. Mismatch → stale-refusal, not a silent
    * overwrite. */
   goalRevision?: GoalRevisionToken;
+  /** v0.38.43: identity of the audited subject, for resumable inspection
+   * sessions — "goal:<goalId>" for completion audits, "loop:<runKey>" for
+   * loop audits. Part of the request hash; older workers ignore unknown
+   * fields (they hash the whole object, so validation still matches). */
+  auditSubject?: string;
+  /** v0.38.43: set when this attempt seeded its session file from an
+   * earlier audit of the same subject (basename of the source job dir) —
+   * the auditor's pi resumed that conversation instead of starting cold.
+   * Absent = fresh session. */
+  inspectionResumedFrom?: string;
 }
 
 interface AuditorToolCall {
@@ -1243,6 +1253,164 @@ export function resolveWorkerCommand(execPath: string): string {
   return JAVASCRIPT_RUNTIME_BASENAMES.has(base) ? execPath : "node";
 }
 
+/** v0.38.43: candidate for a resumable inspection session — a prior audit
+ * job of the same subject whose worker finished (result.json present) and
+ * whose session file survived with a parseable session header. */
+export interface ResumableInspectionSession {
+  jobDir: string;
+  sessionPath: string;
+  createdAt: string;
+}
+
+interface StoredAuditRequest {
+  protocolVersion?: unknown;
+  attemptId?: unknown;
+  auditSubject?: unknown;
+  goalRevision?: { goalId?: unknown };
+  createdAt?: unknown;
+}
+
+/** The session file must start with a real session record — a truncated or
+ * foreign file would make pi fail to open it at resume. */
+async function sessionHeaderValid(file: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  try {
+    handle = await fs.open(file, "r");
+    const buf = Buffer.alloc(65536);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    const head = buf.toString("utf8", 0, bytesRead);
+    const newline = head.indexOf("\n");
+    if (newline <= 0) return false;
+    const parsed = JSON.parse(head.slice(0, newline)) as { type?: unknown };
+    return parsed.type === "session";
+  } catch {
+    return false;
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+  }
+}
+
+/** v0.38.43: find the newest prior audit of the same subject that carries a
+ * resumable inspection session. Only CLEANLY-FINISHED audits qualify
+ * (result.json present — a crashed mid-turn session may not replay) with a
+ * non-empty session.jsonl whose first line is a session record. Returns
+ * undefined when nothing qualifies (the caller starts a fresh session).
+ * Best-effort: any read error means "no resume", never a dispatch failure.
+ * Pre-auditSubject jobs are matched via their goal revision token, so
+ * resume picks up after the feature landed mid-goal. */
+export async function findResumableInspectionSession(
+  jobsRoot: string,
+  subject: string,
+  excludeJobDir?: string,
+): Promise<ResumableInspectionSession | undefined> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(jobsRoot, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+  let best: ResumableInspectionSession | undefined;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(jobsRoot, entry.name);
+    if (excludeJobDir !== undefined && dir === excludeJobDir) continue;
+    let request: StoredAuditRequest;
+    try {
+      request = JSON.parse(await fs.readFile(path.join(dir, "request.json"), "utf8")) as StoredAuditRequest;
+    } catch {
+      continue; // request never fully written / unreadable — not a candidate
+    }
+    // Subject identity: explicit field first; pre-feature jobs carry the
+    // goal id only in the revision token.
+    const storedSubject = typeof request.auditSubject === "string"
+      ? request.auditSubject
+      : typeof request.goalRevision?.goalId === "string"
+        ? `goal:${request.goalRevision.goalId}`
+        : undefined;
+    if (!storedSubject || storedSubject !== subject) continue;
+    try {
+      const resultStat = await fs.stat(path.join(dir, "result.json"));
+      if (!resultStat.isFile()) continue; // worker never finished
+    } catch {
+      continue;
+    }
+    const sessionPath = path.join(dir, "session.jsonl");
+    try {
+      const sessionStat = await fs.stat(sessionPath);
+      if (sessionStat.size === 0) continue;
+    } catch {
+      continue;
+    }
+    if (!(await sessionHeaderValid(sessionPath))) continue;
+    const createdAt = typeof request.createdAt === "string" ? request.createdAt : "";
+    if (!best || createdAt > best.createdAt || (createdAt === best.createdAt && dir > best.jobDir)) {
+      best = { jobDir: dir, sessionPath, createdAt };
+    }
+  }
+  return best;
+}
+
+/** v0.38.43: an audit of the same subject whose worker/parent is still
+ * alive (lock role parent|worker + live pid, no result.json yet). A host
+ * replacement resets the in-memory in-flight guard; this is the durable
+ * complement — without it a restarted loop dispatches a second concurrent
+ * audit while an orphan of the same subject still runs (observed live
+ * 2026-09-10: mtvjhsok outlived its host). */
+export interface ActiveSameSubjectAudit {
+  jobDir: string;
+  pid: number;
+}
+
+/** Best-effort scan: any read/parse failure on a candidate means "not
+ * active", never a dispatch failure. PID reuse can only cause an extra
+ * conservative skip (self-heals next slot); it can never double-dispatch
+ * while the real worker is alive. */
+export async function findActiveSameSubjectAudit(
+  jobsRoot: string,
+  subject: string,
+  excludeJobDir?: string,
+): Promise<ActiveSameSubjectAudit | undefined> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(jobsRoot, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(jobsRoot, entry.name);
+    if (excludeJobDir !== undefined && dir === excludeJobDir) continue;
+    let storedSubject: string | undefined;
+    try {
+      const request = JSON.parse(await fs.readFile(path.join(dir, "request.json"), "utf8")) as StoredAuditRequest;
+      storedSubject = typeof request.auditSubject === "string"
+        ? request.auditSubject
+        : typeof request.goalRevision?.goalId === "string"
+          ? `goal:${request.goalRevision.goalId}`
+          : undefined;
+    } catch {
+      continue;
+    }
+    if (storedSubject !== subject) continue;
+    try {
+      // Finished (any verdict, even ok:false) — retention owns the dir and
+      // it is a resume source, not an in-flight audit.
+      if ((await fs.stat(path.join(dir, "result.json"))).isFile()) continue;
+    } catch {
+      // No result yet — candidate.
+    }
+    try {
+      const lock = JSON.parse(await fs.readFile(path.join(dir, "lock"), "utf8")) as { role?: unknown; pid?: unknown };
+      if (lock.role !== "worker" && lock.role !== "parent") continue;
+      if (typeof lock.pid !== "number" || !processAlive(lock.pid)) continue;
+      return { jobDir: dir, pid: lock.pid };
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Run one completion audit in a detached, extension-less child process.
  * Infrastructure failures never become semantic disapprovals and never fall
@@ -1250,7 +1418,13 @@ export function resolveWorkerCommand(execPath: string): string {
  */
 export async function runDetachedGoalCompletionAuditor(args: {
   cwd: string;
-  goal: Goal;
+  /** v0.38.43: optional when a prebuilt prompt is supplied (loop audits).
+   * Exactly one of goal/prompt must be present. */
+  goal?: Goal;
+  /** v0.38.43: prebuilt audit prompt (loop audits). When set, it wins over
+   * goal + summaries — the rest of the pipeline (worker, watchdogs,
+   * verdict parsing) is shared with goal completion audits. */
+  prompt?: string;
   completionSummary?: string | null;
   verificationSummary?: string | null;
   model?: AuditorModel;
@@ -1265,6 +1439,11 @@ export async function runDetachedGoalCompletionAuditor(args: {
    * worker persists the auditor's pi as a resumable session pinned inside
    * the job dir. Off/absent = the original --no-session spawn. */
   inspection?: boolean;
+  /** v0.38.43: subject identity for resumable inspection sessions. Defaults
+   * to "goal:<id>" from the captured revision token; loop audits pass
+   * "loop:<runKey>". With inspection on, the newest prior audit of the
+   * same subject seeds this job's session file (resume, not cold start). */
+  auditSubject?: string;
   signal?: AbortSignal;
   onProgress?: AuditorProgressCallback;
   /** v0.34.57: fired once when the heartbeat-without-progress watchdog
@@ -1278,6 +1457,9 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const thinkingLevel = args.thinkingLevel ?? "medium";
   if (!args.model || !model.trim() || model === "(unset)") return infra(model, thinkingLevel, "no auditor model", "", undefined, "provider");
 
+  if (args.prompt === undefined && args.goal === undefined) {
+    return infra(model, thinkingLevel, "auditor dispatch has neither a goal nor a prompt", "", undefined, "transport");
+  }
   const now = runtime.now ?? Date.now;
   // `wallTimeoutMs` remains accepted on AuditorProcessRuntime for older
   // embedded callers, but a guessed duration must never terminate a live
@@ -1336,6 +1518,27 @@ export async function runDetachedGoalCompletionAuditor(args: {
     await acquireLock(lockPath, attemptId);
     lockHeld = true;
 
+    // v0.38.43: resumable inspection — with inspection enabled, seed this
+    // job's session file from the NEWEST prior audit of the same subject so
+    // the auditor's pi RESUMES its own conversation instead of starting
+    // cold (cost + consistency: the auditor remembers what it already
+    // checked). Any failure falls back to a fresh session (the original
+    // behavior); seeding is never a dispatch failure.
+    const auditSubject = args.auditSubject
+      ?? (capturedRevisionToken ? `goal:${capturedRevisionToken.goalId}` : undefined);
+    let inspectionResumedFrom: string | undefined;
+    if (args.inspection === true && auditSubject) {
+      const source = await findResumableInspectionSession(jobsRoot, auditSubject, jobDir);
+      if (source) {
+        try {
+          await fs.copyFile(source.sessionPath, path.join(jobDir, "session.jsonl"));
+          inspectionResumedFrom = path.basename(source.jobDir);
+        } catch {
+          // copy failed (race, permissions) — fresh session fallback
+        }
+      }
+    }
+
     // v0.36.0: resolve allowlist entries to concrete install paths before
     // hashing — raw npm:/git:/relative specs are NOT directly loadable by
     // the detached worker (fresh temp npm install online, 0 models
@@ -1346,21 +1549,29 @@ export async function runDetachedGoalCompletionAuditor(args: {
       protocolVersion: PROTOCOL_VERSION,
       attemptId,
       cwd: args.cwd,
-      prompt: buildPrompt(args.goal, args.completionSummary, args.verificationSummary),
+      prompt: args.prompt ?? buildPrompt(args.goal!, args.completionSummary, args.verificationSummary),
       model,
       thinkingLevel,
       createdAt: new Date(startedAt).toISOString(),
       // v0.34.59: capture the focus revision token at dispatch. The
       // worker echoes it in result.json; the parent re-validates before
       // applying the verdict. A stale-handle ghost can no longer silently
-      // overwrite a goal that moved on.
-      goalRevision: capturedRevisionToken,
+      // overwrite a goal that moved on. Only present when known: an
+      // explicit `goalRevision: undefined` key is hashed by stableJson
+      // (Object.keys includes it) but dropped by JSON.stringify on disk,
+      // so a prompt-only (loop) dispatch would hand the worker a request
+      // whose stored hash can never verify.
+      ...(capturedRevisionToken ? { goalRevision: capturedRevisionToken } : {}),
       // v0.36.0: only present when non-empty so historical requests hash
       // byte-identically to pre-feature workers.
       ...(allowedExtensions.length ? { allowedExtensions } : {}),
       // v0.38.3: only present when enabled so default dispatches hash
       // byte-identically to pre-feature workers.
       ...(args.inspection ? { inspection: true } : {}),
+      // v0.38.43: subject identity + resume provenance — only present when
+      // known/set, so pre-feature requests stay byte-identical.
+      ...(auditSubject ? { auditSubject } : {}),
+      ...(inspectionResumedFrom ? { inspectionResumedFrom } : {}),
     };
     const request: AuditorRequest = { ...requestWithoutHash, requestHash: requestHash(requestWithoutHash) };
     await writeAtomicJson(requestPath, request);
@@ -1484,7 +1695,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
           if (parsed.approved && !usedAuditTool) {
             return stampToken({ approved: false, disapproved: true, output, model, thinkingLevel, error: "Auditor approved without calling any audit tool; treated as disapproved." }, capturedRevisionToken);
           }
-          if (parsed.approved && args.goal.verificationContract?.trim()) {
+          if (parsed.approved && args.goal?.verificationContract?.trim()) {
             const shield = checkRegressionShield(output, args.goal.verificationContract);
             if (!shield.passed) {
               // The auditor's semantic verdict was approval; the separate

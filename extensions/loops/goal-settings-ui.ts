@@ -190,6 +190,7 @@ import {
   projectSettingsPath,
   saveSettings as persistSettings,
   settingsProvenance,
+  MAX_AUDIT_LOOP_INTERVAL,
   type Settings,
 } from "../goal-settings.js";
 import { ModelSelector } from "../model-selector.js";
@@ -1159,6 +1160,29 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         saveSettings("global", ctx.cwd, { auditorInspection: on ? true : undefined });
         ctx.ui.notify(on ? "Auditor inspection ON — audits now persist a resumable session."
           : "Auditor inspection OFF — back to the original --no-session spawn.", "info");
+      }
+      return;
+    }
+    case "auditLoop": {
+      // v0.38.43: loop-audit cadence — 0 = off, N = a detached audit every
+      // N loop iterations (same auditor infrastructure as goal audits).
+      const s = loadSettings(ctx.cwd);
+      const current = typeof s.auditLoop === "number" && s.auditLoop > 0 ? s.auditLoop : 0;
+      const input = await ctx.ui.input(
+        `Loop auditor cadence — a detached audit every N loop iterations (0 = off)`,
+        `current: ${current === 0 ? "off" : `every ${current}`}`,
+      );
+      if (input === undefined) return;
+      const raw = input.trim();
+      const n = parseSettingsInteger(raw);
+      if (!raw) {
+        saveSettings("global", ctx.cwd, { auditLoop: 0 });
+        ctx.ui.notify("Loop auditor OFF — loops no longer trigger audits.", "info");
+      } else if (n !== undefined && n >= 0 && n <= MAX_AUDIT_LOOP_INTERVAL) {
+        saveSettings("global", ctx.cwd, { auditLoop: n });
+        ctx.ui.notify(n === 0 ? "Loop auditor OFF." : `Loop auditor: a detached audit every ${n} loop iteration(s).`, "info");
+      } else {
+        ctx.ui.notify(`Rejected: enter an integer 0-${MAX_AUDIT_LOOP_INTERVAL} (0 = off).`, "warning");
       }
       return;
     }
