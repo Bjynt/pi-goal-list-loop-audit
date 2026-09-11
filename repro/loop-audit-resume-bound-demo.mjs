@@ -1,8 +1,14 @@
 // Live demo of the merged fixes (bounded resume chain), real worker + model.
-import { runDetachedGoalCompletionAuditor, MAX_RESUME_SESSION_BYTES } from "/home/bjyn/external-projects/pi-goal-list-loop-audit/extensions/goal-loop-auditor-process.ts";
 import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Location-relative so the repro runs from any clone/worktree checkout.
+const {
+  runDetachedGoalCompletionAuditor,
+  MAX_RESUME_SESSION_BYTES,
+} = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "extensions", "goal-loop-auditor-process.ts"));
 
 const cwd = await mkdtemp(path.join(tmpdir(), "loopdemo-"));
 await mkdir(path.join(cwd, ".git"), { recursive: true }); // worker sanity
