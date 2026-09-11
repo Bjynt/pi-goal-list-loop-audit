@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
+import {
+  appendAuditLog,
+  readAuditLog,
+} from "../extensions/goal-loop-core.js";
 import {
   applyLoopAuditVerdict,
   buildLoopAuditLogEntry,
@@ -208,6 +215,26 @@ test("loop audits-log record: subject identity, verdict mapping, inspection poin
   assert.equal(infraEntry.error, "auditor stalled");
   assert.equal(infraEntry.sessionPath, "/j/session.jsonl");
   assert.equal(infraEntry.resumedFrom, "loop-audit-9-abc");
+});
+
+test("loop audit record round-trips through the audits.jsonl reader (what /glla audits reads)", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-loop-audit-log-"));
+  try {
+    const loop = testLoop();
+    appendAuditLog(dir, buildLoopAuditLogEntry(loop, verdict({ approved: true, output: "r <approved/>", model: "m/one", thinkingLevel: "high" }), "approved", { at: "2026-09-11T00:00:00.000Z", sessionPath: "/j/s.jsonl", durationMs: 4200 }));
+    appendAuditLog(dir, buildLoopAuditLogEntry(loop, verdict({ error: "auditor stalled", infrastructureClass: "timeout", output: "" }), "infra", { at: "2026-09-11T00:30:00.000Z", resumedFrom: "loop-audit-9-abc" }));
+    const tail = readAuditLog(dir, 2);
+    assert.equal(tail.length, 2);
+    assert.equal(tail[0]!.goalId, "loop:2026-01-01T00:00:00.000Z");
+    assert.equal(tail[0]!.verdict, "approved");
+    assert.equal(tail[0]!.sessionPath, "/j/s.jsonl");
+    assert.ok(!("resumedFrom" in tail[0]!));
+    assert.equal(tail[1]!.verdict, "error");
+    assert.equal(tail[1]!.infrastructureClass, "timeout");
+    assert.equal(tail[1]!.resumedFrom, "loop-audit-9-abc");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // =================================================================
