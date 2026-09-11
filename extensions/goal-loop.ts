@@ -58,7 +58,7 @@ import {
   LOOP_DEFAULTS,
 } from "./goal-loop-forever.js";
 import { loadSettings } from "./goal-settings.js";
-import { maybeTriggerLoopAudit } from "./loops/loop-auditor.js";
+import { maybeTriggerLoopAudit, LOOP_AUDIT_STOP_STREAK } from "./loops/loop-auditor.js";
 import { normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { createContinuationDispatch, type ContinuationDispatch } from "./goal-loop-dispatch.js";
 import { attemptFreshSessionRecovery } from "./goal-recovery.js";
@@ -1179,6 +1179,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       lines.push(`Cadence: ≥ ${Math.ceil(loop.minimumIterationIntervalMs / 1_000)}s between iterations${nextDelay > 0 ? ` · next in ${Math.ceil(nextDelay / 1_000)}s` : " · ready"}`);
     }
     if (loop.refinements?.length) lines.push(`Spec refined ${loop.refinements.length}× (latest: iteration ${loop.refinements[loop.refinements.length - 1]!.iteration})`);
+    if (loop.lastLoopAuditIteration !== undefined) {
+      const streak = loop.consecutiveLoopAuditDisapprovals ?? 0;
+      lines.push(`Loop audit: iter ${loop.lastLoopAuditIteration} → ${loop.lastLoopAuditVerdict ?? "(unknown)"}${streak > 0 ? ` · disapproval streak ${streak}/${LOOP_AUDIT_STOP_STREAK}` : ""}`);
+    }
     if (loop.stopReason) lines.push(`Stopped: ${loop.stopReason}`);
     if (!loop.active && loop.completionSummary) lines.push(`Summary:\n${loop.completionSummary}`);
     if (state.mainModelRecovery?.kind === "loop") lines.push(...formatLoopRecoveryStatusLines(ctx));

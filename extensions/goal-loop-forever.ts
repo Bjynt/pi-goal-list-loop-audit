@@ -163,9 +163,13 @@ export interface LoopState {
    * the next iteration's prompt. */
   lastHypothesis?: string;
   hypothesisFeedback?: string;
-  /** v0.38.43: loop auditor — iteration at which the last detached loop
-   * audit was triggered (display / ledger correlation). */
+  /** v0.38.43: loop auditor — iteration whose detached loop-audit verdict
+   * was consumed (display / ledger correlation; stamped at consumption). */
   lastLoopAuditIteration?: number;
+  /** v0.38.46: loop auditor — short label of that audit's consumed verdict
+   * ("approved", "disapproved-corrective", "disapproved-stop", "impossible",
+   * or "infra:<class>"); rendered by `/loop status`. */
+  lastLoopAuditVerdict?: string;
   /** v0.38.43: loop auditor — consecutive loop-audit disapprovals for THIS
    * run; resets on an approval. Reaching 2 requests a stop via
    * loopAuditStopRequested (consumed by the tick's standard stop path). */

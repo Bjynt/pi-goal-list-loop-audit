@@ -323,6 +323,11 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
       ...(resumedFrom ? { resumedFrom } : {}),
     }));
   }
+  // /loop status shows the audit state without jsonl archaeology. Iteration
+  // is stamped at CONSUMPTION (not trigger): a dispatch that never yields a
+  // verdict must not masquerade as "the last audit".
+  loop.lastLoopAuditIteration = iteration;
+  loop.lastLoopAuditVerdict = outcome === "infra" ? `infra:${infrastructureClass ?? "unknown"}` : outcome;
   try {
     persistStateLine(cwd, state);
   } catch {
@@ -363,12 +368,6 @@ export function maybeTriggerLoopAudit(ctx: ExtensionContext, loop: LoopState): v
       appendLedger(ctx.cwd, "loop_audit_skipped_in_flight", { iteration: loop.iteration });
     }
     return;
-  }
-  loop.lastLoopAuditIteration = loop.iteration;
-  try {
-    persistStateLine(ctx.cwd, state);
-  } catch {
-    /* best effort */
   }
   void runLoopAuditAndApply(ctx.cwd, ctx, loop, settings);
 }
