@@ -3,6 +3,7 @@ import * as assert from "node:assert/strict";
 
 import {
   applyLoopAuditVerdict,
+  buildLoopAuditLogEntry,
   shouldTriggerLoopAudit,
   LOOP_AUDIT_STOP_STREAK,
 } from "../extensions/loops/loop-auditor.ts";
@@ -176,6 +177,37 @@ test("loop auditor prompt: metricless mode + escaping + prior-disapproval block"
   assert.match(p, /PREVIOUS AUDIT OF THIS RUN WAS DISAPPROVED \(1 consecutive so far\)/);
   assert.match(p, /- close finding #7/);
   assert.match(p, /- iter 3: \(no number\)/);
+});
+
+// =================================================================
+// buildLoopAuditLogEntry — operator-facing audits.jsonl record
+// =================================================================
+
+test("loop audits-log record: subject identity, verdict mapping, inspection pointers", () => {
+  const loop = testLoop();
+  const base = { at: "2026-09-11T00:00:00.000Z" };
+  const okEntry = buildLoopAuditLogEntry(loop, verdict({ approved: true, output: "report <approved/>", model: "m/one", thinkingLevel: "high" }), "approved", { ...base, durationMs: 5000 });
+  assert.equal(okEntry.goalId, "loop:2026-01-01T00:00:00.000Z", "subject identity, not a goal id");
+  assert.equal(okEntry.objective, loop.target);
+  assert.equal(okEntry.verdict, "approved");
+  assert.equal(okEntry.model, "m/one");
+  assert.equal(okEntry.durationMs, 5000);
+  assert.ok(!("resumedFrom" in okEntry) && !("sessionPath" in okEntry), "absent extras stay absent");
+
+  const disEntry = buildLoopAuditLogEntry(loop, verdict({ disapproved: true, output: "x" }), "disapproved-corrective", base);
+  assert.equal(disEntry.verdict, "disapproved");
+
+  const infraEntry = buildLoopAuditLogEntry(
+    loop,
+    verdict({ error: "auditor stalled", infrastructureClass: "timeout", output: "" }),
+    "infra",
+    { ...base, sessionPath: "/j/session.jsonl", resumedFrom: "loop-audit-9-abc" },
+  );
+  assert.equal(infraEntry.verdict, "error");
+  assert.equal(infraEntry.infrastructureClass, "timeout");
+  assert.equal(infraEntry.error, "auditor stalled");
+  assert.equal(infraEntry.sessionPath, "/j/session.jsonl");
+  assert.equal(infraEntry.resumedFrom, "loop-audit-9-abc");
 });
 
 // =================================================================
