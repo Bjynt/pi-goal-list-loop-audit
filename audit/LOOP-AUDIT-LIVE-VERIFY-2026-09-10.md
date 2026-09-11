@@ -29,3 +29,11 @@ verified jointly in one live event. Target satisfied; the loop ends at
 `/loop stop` (operator-only by contract — no agent-side lever exists
 for metricless loops, confirmed against goal-tools.ts `pause_goal` and
 goal-loop.ts stop routes).
+
+## Post-merge bounded-chain demo (2026-09-11, merged tree e4e5620b)
+
+`repro/loop-audit-resume-bound-demo.mjs` — real worker + model in a scratch cwd:
+A fresh → B resumedFrom=demo-a (prefix intact) → B bloated past the 65536-byte cap
+→ C skipped B and resumed demo-a (older small hop). Cap exported and honored.
+("no verdict marker" on all three = throwaway prompt lacking complete-form;
+mechanism — resolver, seeds, lock/hash path — fully exercised.)
