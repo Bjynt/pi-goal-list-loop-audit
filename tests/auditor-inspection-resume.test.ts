@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { stat as fs_stat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   findActiveSameSubjectAudit,
   findResumableInspectionSession,
+  MAX_RESUME_SESSION_BYTES,
   requestHash,
   runDetachedGoalCompletionAuditor,
   type AuditorModel,
@@ -164,6 +165,35 @@ test("resume resolver: excludes the current job dir", async () => {
     const found = await findResumableInspectionSession(jobsRoot, "goal:g1", current);
     assert.ok(found);
     assert.notEqual(found.jobDir, current);
+  } finally {
+    await cleanupRoot(root);
+  }
+});
+
+test("resume resolver: oversized seeds are skipped (bounded resume chain)", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "glla-resume-cap-"));
+  try {
+    const jobsRoot = path.join(root, "jobs");
+    const small = await makePriorJob(jobsRoot, "small", { subject: "goal:g1", createdAt: "2026-01-01T00:00:00.000Z" });
+    const bloated = await makePriorJob(jobsRoot, "bloated", { subject: "goal:g1", createdAt: "2026-01-09T00:00:00.000Z" });
+    await writeFile(path.join(bloated, "session.jsonl"), SESSION_HEADER + "\n" + "x".repeat(MAX_RESUME_SESSION_BYTES + 1) + "\n");
+    // Newest-but-bloated is skipped; the older small candidate still wins.
+    const found = await findResumableInspectionSession(jobsRoot, "goal:g1");
+    assert.ok(found);
+    assert.equal(found.jobDir, small);
+
+    // All candidates bloated -> no resume (fresh session restarts the chain).
+    await writeFile(path.join(small, "session.jsonl"), SESSION_HEADER + "\n" + "y".repeat(MAX_RESUME_SESSION_BYTES + 1) + "\n");
+    assert.equal(await findResumableInspectionSession(jobsRoot, "goal:g1"), undefined);
+
+    // Exactly at the cap still qualifies (boundary is > not >=).
+    const exact = await makePriorJob(jobsRoot, "exact", { subject: "goal:g2", createdAt: "2026-01-01T00:00:00.000Z" });
+    const headBuf = SESSION_HEADER + "\n";
+    await writeFile(path.join(exact, "session.jsonl"), headBuf.padEnd(MAX_RESUME_SESSION_BYTES, "z"));
+    assert.ok((await fs_stat(path.join(exact, "session.jsonl"))).size === MAX_RESUME_SESSION_BYTES);
+    const foundExact = await findResumableInspectionSession(jobsRoot, "goal:g2");
+    assert.ok(foundExact);
+    assert.equal(foundExact.jobDir, exact);
   } finally {
     await cleanupRoot(root);
   }
