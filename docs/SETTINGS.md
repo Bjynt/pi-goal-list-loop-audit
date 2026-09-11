@@ -57,8 +57,8 @@ copies are ignored (the recovery runtime reads the global file):
 | `auditorToolTimeoutMs` | `300000` | Base budget per auditor tool call (30s–6h). Global-only. |
 | `auditorStallMs` | `600000` | Base silence budget for the detached auditor (1m–24h). Global-only. |
 | `auditJobRetentionMs` | `900000` | How long proven-dead audit job dirs are kept (0–7d, 0 = reap now). Global-only. |
-| `auditorInspection` | `false` | Auditor runs as a persistent session you can tail/resume. Global-only. |
-| `auditLoop` | `0` | Loop-audit cadence: a detached auditor (same infrastructure as goal audits) semantically verifies loop progress every N iterations; `0` = off. Global-only. |
+| `auditorInspection` | `false` | Auditor runs as a persistent session you can tail/resume — and re-audits of the same subject (`goal:<id>` / one loop run) resume the prior audit's own conversation, bounded: seeds over 64 KiB are skipped so cost can't grow quadratically (chain restarts fresh). Provenance in `inspectionResumedFrom`. Global-only. |
+| `auditLoop` | `0` | Loop-audit cadence: a detached auditor (same infrastructure as goal audits) semantically verifies loop progress every N iterations; `0` = off. An approval resets the disapproval streak; 2 consecutive disapprovals stop the loop; the auditor can also stop it with `<impossible>`. Verdicts show in `/loop status`, `/glla audits`, and the ledger (`loop_audit*`). Global-only. |
 | `notifyCmd` | unset | Shell command on goal complete / pause / loop stop; message is `$1`. |
 | `tokenLimit` | unset (off) | Per-goal token budget; crossing it pauses. `0` = off. |
 | `wedgeAlertMinutes` | unset (30, or off while aggressive mode is on — the default) | Busy-but-silent minutes before the wedge alert; `0` = off. The menu shows the effective value. |
