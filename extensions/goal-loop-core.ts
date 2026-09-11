@@ -3634,6 +3634,14 @@ const VERDICT_GLYPH: Record<AuditLogEntry["verdict"], string> = {
 };
 
 /** /glla audits list view: one line per verdict, newest last. */
+/** Short display label for the audits-log subject. Goal ids are tail-6
+ * distinctive; loop subjects (v0.38.46: "loop:<startedAt ISO>") are NOT —
+ * the tail is milliseconds noise — so render a readable run-start token. */
+export function auditLogSubjectLabel(goalId: string): string {
+  const m = /^loop:(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(goalId);
+  return m ? `loop ${m[3]} ${m[4]}:${m[5]}` : goalId.slice(-6);
+}
+
 export function formatAuditLog(entries: AuditLogEntry[]): string {
   if (entries.length === 0) return "(no audits logged yet — the log starts with the next verdict)";
   return entries
@@ -3642,7 +3650,7 @@ export function formatAuditLog(entries: AuditLogEntry[]): string {
       const firstLine = e.verdict === "error"
         ? sanitizeProviderDisplayText(providerErrorPresentation(e.error, "completion").display)
         : sanitizeProviderDisplayText((e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90));
-      return `${VERDICT_GLYPH[e.verdict]} ${day} [${e.goalId.slice(-6)}] ${e.model} — ${firstLine}`;
+      return `${VERDICT_GLYPH[e.verdict]} ${day} [${auditLogSubjectLabel(e.goalId)}] ${e.model} — ${firstLine}`;
     })
     .join("\n");
 }

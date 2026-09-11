@@ -15,6 +15,7 @@ import {
   auditFeedbackExcerpt,
   auditLogPath,
   countTrailingDisapprovals,
+  auditLogSubjectLabel,
   formatAuditLog,
   readAuditLog,
   stripThinkBlocks,
@@ -101,6 +102,22 @@ test("formatAuditLog: one line per verdict with glyph, goal, model, first report
   assert.match(lines[0]!, /^✖ 07-25 20:00 \[abc123\] MiniMax-M3 — ## Audit result$/);
   assert.match(lines[1]!, /^✔ 07-25 21:00 \[def456\] k3 — All checks pass\.$/);
   assert.match(formatAuditLog([]), /no audits logged yet/);
+});
+
+test("audits-log subject label: loop subjects render readably, goal ids stay tail-6", () => {
+  // v0.38.46 loop records carry goalId = "loop:<startedAt>"; slice(-6) of
+  // that is millisecond noise ("27.733") — same garbage across runs.
+  const entries: AuditLogEntry[] = [
+    { at: "2026-09-11T14:00:00Z", goalId: "loop:2026-09-11T13:39:27.733Z", objective: "t", verdict: "approved", model: "m/one", thinkingLevel: "high", report: "r <approved/>" },
+    { at: "2026-09-11T15:00:00Z", goalId: "loop:2026-09-11T13:39:27.733Z", objective: "t", verdict: "error", model: "m/one", thinkingLevel: "high", report: "", error: "Auditor stalled — heartbeats without progress" },
+    { at: "2026-09-11T16:00:00Z", goalId: "20260725-abc123", objective: "g", verdict: "disapproved", model: "m/two", thinkingLevel: "high", report: "## Audit result\nx" },
+  ];
+  const lines = formatAuditLog(entries).split("\n");
+  assert.equal(lines.length, 3);
+  assert.match(lines[0]!, /^✔ 09-11 14:00 \[loop 11 13:39\] m\/one — r <approved\/>$/);
+  assert.match(lines[1]!, /\[loop 11 13:39\] m\/one —/); // error line renders via presentation, same readable label
+  assert.match(lines[2]!, /^✖ 09-11 16:00 \[abc123\] m\/two — ## Audit result$/);
+  assert.equal(auditLogSubjectLabel("loop:not-an-iso"), "an-iso", "non-ISO loop-ish ids fall back to tail-6 without throwing");
 });
 
 test("tail-aware excerpt: capped output keeps the Required-fixes tail", () => {
