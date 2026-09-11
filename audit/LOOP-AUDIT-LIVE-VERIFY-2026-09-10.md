@@ -37,3 +37,16 @@ A fresh → B resumedFrom=demo-a (prefix intact) → B bloated past the 65536-by
 → C skipped B and resumed demo-a (older small hop). Cap exported and honored.
 ("no verdict marker" on all three = throwaway prompt lacking complete-form;
 mechanism — resolver, seeds, lock/hash path — fully exercised.)
+
+## Review pass on live failure classes (2026-09-11, tree c7052b40)
+
+Two hypotheses tested against code, both clear:
+1. Permanent dead slot from stall-cancel orphans — REFUTED. Both stall returns in
+   goal-loop-auditor-process.ts (tool-timeout ~L1762, heartbeat-no-progress ~L1802)
+   `await terminateWorker(child)` (TERM→KILL on the process group) before returning
+   infra; failed jobs' dirs self-delete, so findActiveSameSubjectAudit never sees a
+   phantom live-pid lock. Worst-case kill race self-heals via pid liveness.
+2. no-verdict class from weak prompt contract — REFUTED. buildLoopAuditorPrompt
+   asserts the verdict form twice at the tail; iter-19's `no verdict marker` on a
+   ~200 KB bloated session matches the size-collapse pattern (aborts clustered at
+   50/54/81 KB seeds), which the 64 KiB resume cap addresses at the root.
