@@ -125,6 +125,7 @@ isGoalRevisionCurrent,
   type ListItem,
 } from "../goal-loop-core.js";
 import { replayUndeliveredApprovalRenders } from "../approval-render-store.js";
+import { refreshUpdateCheck } from "../glla-update-check.js"; // v0.38.44 stale-version nudge
 import {
   createContinuationDispatch,
   dispatchMatchesOwner,
@@ -739,6 +740,10 @@ export function __testOnlyClassifyStaleContinuation(content: string, cwd: string
 /** Commands and lifecycle contacts share the same ownership and delivery gates. */
 function replayApprovalSummariesOnContact(ctx: ExtensionContext): void {
   if (shouldSkipApprovalRenderReplay(ctx)) return;
+  // v0.38.44 (field 20260909_161057): the update-sidecar refresh rides
+  // the same contact gate — throttled + fire-and-forget inside, so this
+  // never blocks the turn and never surfaces on failure.
+  refreshUpdateCheck(ctx.cwd);
   replayUndeliveredApprovalRenders(ctx, (entry) => sendTerminalCompletionNotice(ctx, {
     goalId: entry.goalId, outcome: entry.objective, details: [], chatLines: entry.chatLines,
   }));

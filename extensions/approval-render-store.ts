@@ -90,13 +90,28 @@ export function persistApprovalRender(cwd: string, render: {
 }): boolean {
   const at = nowIso();
   const existing = readRenders(cwd);
-  if (existing.some((entry) => entry.goalId === render.goalId)) return true;
+  // v0.38.30 truncation (also code-point-safe): compare what WOULD be
+  // stored, so an identical re-persist of long lines still dedups.
+  const incomingLines = render.chatLines.slice(0, MAX_RENDER_CHAT_LINES)
+    .map((line) => [...line].slice(0, MAX_RENDER_LINE_CHARS).join(""));
+  // Dedup has two layers. (1) An UNDELIVERED entry for the goal means a
+  // render is already queued — a second persist before delivery changes
+  // nothing. (2) v0.38.45 audit: delivered history dedups only EXACT
+  // duplicates (a repeated settlement re-persisting identical lines must
+  // not double-notify) — but a re-approval carries new verdict lines, and
+  // dropping those silently hid an archive-failure retry's chat summary
+  // while the caller believed it queued. Content, not goalId, decides.
+  if (existing.some((entry) => !entry.deliveredAt && entry.goalId === render.goalId)) return true;
+  const sameLines = (a: string[], b: string[]): boolean =>
+    a.length === b.length && a.every((line, i) => line === b[i]);
+  if (existing.some((entry) =>
+    entry.deliveredAt && entry.goalId === render.goalId && sameLines(entry.chatLines, incomingLines))) return true;
   const entry: PendingApprovalRender = {
     goalId: render.goalId,
     // v0.38.30 audit: code-point truncation (char slice split surrogate
     // pairs) + bounded chat lines (the 20-entry cap never bound bytes).
     objective: [...render.objective].slice(0, 300).join(""),
-    chatLines: render.chatLines.slice(0, MAX_RENDER_CHAT_LINES).map((line) => [...line].slice(0, MAX_RENDER_LINE_CHARS).join("")),
+    chatLines: incomingLines,
     createdAt: at,
   };
   // The cap trims DELIVERED history only: undelivered renders are never

@@ -1253,9 +1253,17 @@ export function resolveWorkerCommand(execPath: string): string {
   return JAVASCRIPT_RUNTIME_BASENAMES.has(base) ? execPath : "node";
 }
 
+/** Cap on the seeded session size (bytes). Chosen from live chain data:
+ * successful resumes at 23-44KB, aborts clustered at 50-81KB seeds, one
+ * success at 118KB with doubled cost; a fresh audit costs a fraction of
+ * any resume and never degrades. ~64KiB ≈ mid-chain, keeps the intended
+ * cost/consistency win without unbounded growth. */
+export const MAX_RESUME_SESSION_BYTES = 64 * 1024;
+
 /** v0.38.43: candidate for a resumable inspection session — a prior audit
- * job of the same subject whose worker finished (result.json present) and
- * whose session file survived with a parseable session header. */
+ * job of the same subject whose worker finished (result.json present),
+ * whose session file survived with a parseable session header, and whose
+ * size stays within MAX_RESUME_SESSION_BYTES (bounded resume chain). */
 export interface ResumableInspectionSession {
   jobDir: string;
   sessionPath: string;
@@ -1338,6 +1346,13 @@ export async function findResumableInspectionSession(
     try {
       const sessionStat = await fs.stat(sessionPath);
       if (sessionStat.size === 0) continue;
+      // Bounded resume chain: a resumed pi re-sends its ENTIRE conversation
+      // per turn, so an unbounded seed makes each audit's input cost grow
+      // with every hop, and failures clustered in the growth zone in live
+      // use (aborts at 50-81KB seeds; fresh audits at any size were fine).
+      // Over the cap the candidate is skipped — the chain restarts fresh
+      // (older smaller hops still qualify).
+      if (sessionStat.size > MAX_RESUME_SESSION_BYTES) continue;
     } catch {
       continue;
     }

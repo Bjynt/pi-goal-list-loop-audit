@@ -32,8 +32,10 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { state, persistStateLine } from "../goal-state.js";
 import {
+  appendAuditLog,
   appendLedger,
   auditFeedbackExcerpt,
+  type AuditLogEntry,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
 } from "../goal-loop-core.js";
 import { loadSettings, type Settings } from "../goal-settings.js";
@@ -125,6 +127,38 @@ async function buildLoopAuditFacts(loop: LoopState, cwd: string): Promise<LoopAu
   };
 }
 
+/** v0.38.46: the `/glla audits` record for one consumed loop audit — the
+ * same stream goal audits write, so an operator's usual surface shows loop
+ * verdicts too, with the inspectable session path and resume provenance.
+ * PURE: every clock/file input arrives through `extra`. */
+export function buildLoopAuditLogEntry(
+  loop: LoopState,
+  result: GoalAuditorResult,
+  outcome: "approved" | "disapproved-corrective" | "disapproved-stop" | "impossible" | "infra",
+  extra: { at: string; durationMs?: number; sessionPath?: string; resumedFrom?: string },
+): AuditLogEntry {
+  const verdict =
+    outcome === "approved" ? "approved"
+      : outcome === "impossible" ? "impossible"
+      : outcome === "infra" ? "error" as const
+      : "disapproved";
+  return {
+    at: extra.at,
+    goalId: loopAuditSubject(loop),
+    objective: loop.target,
+    verdict,
+    ...(result.infrastructureClass ? { infrastructureClass: result.infrastructureClass } : {}),
+    ...(extra.sessionPath ? { sessionPath: extra.sessionPath } : {}),
+    ...(extra.resumedFrom ? { resumedFrom: extra.resumedFrom } : {}),
+    model: result.model,
+    thinkingLevel: result.thinkingLevel ?? "",
+    report: result.output ?? "",
+    ...(result.impossibleReason ? { impossibleReason: result.impossibleReason } : {}),
+    ...(result.error ? { error: result.error.slice(0, 300) } : {}),
+    ...(extra.durationMs !== undefined ? { durationMs: extra.durationMs } : {}),
+  };
+}
+
 /**
  * PURE verdict application — mutates ONLY the loop object (no I/O), so it is
  * fully unit-testable. The caller ledger-records the returned outcome.
@@ -184,6 +218,9 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
   let outcome: ReturnType<typeof applyLoopAuditVerdict> = "infra";
   let errorText: string | undefined;
   let infrastructureClass: string | undefined;
+  let dispatchStartedAt: number | undefined;
+  let auditedJobDir: string | undefined;
+  let auditedResult: GoalAuditorResult | undefined;
   try {
     // Host replacement resets the module-level guard; an orphan worker of
     // this same run may still be alive (observed live). Skip this slot
@@ -215,6 +252,11 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
     const facts = await buildLoopAuditFacts(loop, cwd);
     const toolTimeoutMs = settings.auditorToolTimeoutMs ?? DEFAULT_AUDITOR_TOOL_TIMEOUT_MS;
     const stallMs = settings.auditorStallMs ?? DEFAULT_AUDITOR_STALL_MS;
+    // Named attempt: the audits-log record needs the job dir to point at
+    // the inspectable session file (and its resume provenance).
+    const auditAttemptId = `loop-audit-${iteration}-${Date.now().toString(36)}`;
+    dispatchStartedAt = Date.now();
+    auditedJobDir = path.join(jobsRoot, auditAttemptId);
     const result = await runDetachedGoalCompletionAuditor({
       cwd,
       prompt: buildLoopAuditorPrompt(facts),
@@ -234,12 +276,14 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
         toolTimeoutMs,
         heartbeatNoProgressMs: stallMs,
         firstEventTimeoutMs: stallMs,
+        attemptId: () => auditAttemptId,
         env: {
           GLLA_AUDITOR_TOOL_TIMEOUT_MS: String(toolTimeoutMs),
           GLLA_AUDITOR_STALL_MS: String(stallMs),
         },
       },
     });
+    auditedResult = result;
     errorText = result.error;
     infrastructureClass = result.infrastructureClass;
     // The same feedback cap as goal-auditor disapprovals: tail-preserving,
@@ -259,6 +303,26 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
     consecutiveDisapprovals: loop.consecutiveLoopAuditDisapprovals ?? 0,
     target: loop.target.slice(0, 200),
   });
+  // Operator-facing record: the same audits.jsonl stream `/glla audits`
+  // renders for goal audits, so loop verdicts are visible and each entry
+  // points at the inspectable session file + its resume provenance.
+  if (auditedResult) {
+    let sessionPath: string | undefined;
+    let resumedFrom: string | undefined;
+    if (auditedJobDir) {
+      try { resumedFrom = JSON.parse(await fs.readFile(path.join(auditedJobDir, "request.json"), "utf8")).inspectionResumedFrom ?? undefined; } catch { /* fresh or missing */ }
+      try {
+        await fs.stat(path.join(auditedJobDir, "session.jsonl"));
+        sessionPath = path.join(auditedJobDir, "session.jsonl");
+      } catch { /* inspection off */ }
+    }
+    appendAuditLog(cwd, buildLoopAuditLogEntry(loop, auditedResult, outcome, {
+      at: new Date().toISOString(),
+      ...(dispatchStartedAt !== undefined ? { durationMs: Date.now() - dispatchStartedAt } : {}),
+      ...(sessionPath ? { sessionPath } : {}),
+      ...(resumedFrom ? { resumedFrom } : {}),
+    }));
+  }
   try {
     persistStateLine(cwd, state);
   } catch {

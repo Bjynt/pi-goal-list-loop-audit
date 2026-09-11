@@ -1,11 +1,14 @@
 # Changelog
 
-## 0.38.43 — loop auditor + resumable inspection sessions (branch `feat/auditor-inspection-resume-and-loop-audit`, PR #3)
+## 0.38.46 — loop auditor + resumable inspection sessions (PR #3 → #51 path) (2026-09-11)
+
+> Code markers read `v0.38.43` (the intended release before upstream shipped 0.38.43–0.38.45 mid-flight); the feature ships here.
 
 ### Added
 
 - **Loop auditor (`auditLoop`, global-only, default off):** after every N loop iterations a DETACHED semantic audit — the exact goal-completion infrastructure (worker, watchdogs, verdict parsing, model resolution, inspection sessions) — asks whether the loop is making REAL progress toward its target, not just moving its metric. Approval resets the streak; the first disapproval rides its `## Required fixes` tail into the next iteration's prompt (`${AUDIT_NOTE}` in both loop templates, consumed once); the second consecutive disapproval — or an `<impossible>` target — stops the loop through the standard tick stop machinery. Infra failures are ledgered but never counted as evidence. In-flight slots are skipped and ledgered (`loop_audit_skipped_in_flight`). Surfaced in `/glla` (auditor section, integer editor 0–1000), the headless fallback listing, and `docs/SETTINGS.md`.
-- **Resumable inspection sessions:** with `auditorInspection` on, a re-audit of the same subject (`goal:<id>` / `loop:<run>`, hash-covered in `request.json`) seeds its session from the newest cleanly-finished prior audit — result.json present, non-empty session with a valid header; pre-feature jobs match via the goal revision token. The auditor's pi resumes its own conversation (cost + consistency: it remembers what it already checked); any failure falls back to a fresh session. Resume provenance lands in `inspectionResumedFrom`. Worker script unchanged.
+- **Resumable inspection sessions:** with `auditorInspection` on, a re-audit of the same subject (`goal:<id>` / `loop:<run>`, hash-covered in `request.json`) seeds its session from the newest cleanly-finished prior audit — result.json present, non-empty session with a valid header; pre-feature jobs match via the goal revision token. The auditor's pi resumes its own conversation (cost + consistency: it remembers what it already checked); any failure falls back to a fresh session. Resume provenance lands in `inspectionResumedFrom`. Worker script unchanged. The chain is bounded: seeds over 64 KiB are skipped and the chain restarts fresh — a resumed pi re-sends its whole conversation per turn, and live data showed cost growth with aborts clustering at 50–81 KB seeds.
+- **Loop audits are visible on `/glla audits`:** every consumed loop audit appends to the same `audits.jsonl` stream goal audits use — subject identity (`loop:<run>`), mapped verdict, model, duration, plus optional `sessionPath` (the inspectable auditor session file) and `resumedFrom` (the prior job it continued). No-dispatch cases (model unresolved, active-prior skip) stay ledger events.
 - **Durable same-subject in-flight guard:** host replacement resets the module-level guard; an orphan worker of the same run may still be alive (observed live). `findActiveSameSubjectAudit` (subject match + no result yet + lock holder with live pid) skips the slot instead of double-dispatching — and never reaps the orphan.
 
 ### Fixed
@@ -15,7 +18,45 @@
 ### Verification
 
 - Live proof end-to-end in a running `auditLoop=1` loop across three host generations — trigger cadence, tailable inspection sessions, infra-not-evidence handling, in-flight skips, and a byte-identical 23,681-byte session seed whose resumed audit returned `<approved/>`: `audit/LOOP-AUDIT-LIVE-VERIFY-2026-09-10.md`.
-- New tests: `tests/auditor-inspection-resume.test.ts` (resolver + active-scan units; fake-worker integration incl. on-disk request-hash self-verification for both dispatch shapes), `tests/loop-auditor.test.ts` (trigger predicate, pure verdict application, prompt builder, settings normalization); settings editor/menu/docs-drift contracts cover `auditLoop`. Full suite 2082 pass / 0 fail; `tsc --noEmit` clean; offline auditor-extensions verified; pack smoke OK; Actions `quality` green on both PR heads.
+- New tests: `tests/auditor-inspection-resume.test.ts` (resolver + active-scan units; fake-worker integration incl. on-disk request-hash self-verification for both dispatch shapes), `tests/loop-auditor.test.ts` (trigger predicate, pure verdict application, prompt builder, settings normalization); settings editor/menu/docs-drift contracts cover `auditLoop`. Full suite 2082 pass / 0 fail; `tsc --noEmit` clean; offline auditor-extensions verified; pack smoke OK; Actions `quality` green on every head.
+
+## 0.38.45 — full-project audit pass: 16 fixes across version, summary, and approval paths (2026-09-10)
+
+### Fixed
+
+- **Update-check spawn hardening (HIGH):** `refreshUpdateCheck` now subscribes to async `error` (a missing/broken npm crashed the host unhandled), detaches via `unref`, ignores stderr/stdin, and caches only version-shaped stdout tokens — registry noise can no longer poison the sidecar.
+- **`/glla version` honesty (HIGH):** no staleness claim when the running version is unreadable (previously printed a false "up to date"); both surfaces share one strict sidecar reader so the status tail and the command cannot disagree.
+- **Recorded-facts Next survives (HIGH):** `withoutStaleNext` exempts the concrete "review the durable record at …" fallback Next that the `/review/i` clause ate, leaving fallback approval chats actionless.
+- **No per-contact spawn storm:** the TTL skip uses the raw sidecar read, so a future-dated cache (clock skew) suppresses the spawn instead of causing one per command contact.
+- **Approval re-render after delivery:** delivered history dedups exact duplicates only (repeated settlements never double-notify); a genuine re-approval with new verdict lines queues fresh — content, not goalId, decides.
+- **SessionDir-aware sidecar path:** `updateCheckPath` resolves via `resolveGllaStateDir` instead of hardcoding `cwd/.pi-glla`.
+- **String-safety:** `clipSummaryValue` is code-point-safe (no more split surrogate pairs); `chatSafeDetailValue` converges nested machine-path groups to a fixpoint; label segmentation uses last-occurrence search so a label named inside a value no longer steals later segments.
+- **Verdict tally uses its clock:** `auditorVerdictTally(now)` suppresses future `lastAt` instead of printing "0s ago"; dead `void now` and dead `readUpdateCheck` import removed; `recovery-resume.json` documented as a reserved hook with no current producer.
+- **Pins:** spawn-error swallow, token validation, future-cache skip, prerelease compare, unknown-version silence, recorded-facts survival, nested-husk convergence, surrogate safety, last-restatement-wins, delivery-then-reapproval, paused-branch tail, future-verdict silence.
+
+## 0.38.44 — stale-version surfacing: running version in the status line (2026-09-10)
+
+### Fixed
+
+- **Stale-session visibility (field 20260909_161057):** a live session rendered the pre-0.38.39 summary voice while the repo shipped 0.38.42 with nothing visible saying so. The status line now always carries the running version (`glla: … · v0.38.44`) on every branch; when the registry is ahead it nudges (`· update vX available`).
+- **Cached staleness check:** new `extensions/glla-update-check.ts` — the render reads the `.pi-glla/update-check.json` sidecar only and never touches the network; a throttled (24h TTL) fire-and-forget `npm view` refresh rides the command/lifecycle contact gate and fails silently offline.
+- **`/glla version` names staleness:** appends `Registry latest` plus the concrete update path (`pi install npm:pi-goal-list-loop-audit@latest` then `/reload`) when the sidecar proves the session stale; legacy three lines unchanged with no cache.
+- **INSTALL.md `Updating` section:** documents the nudge, the update command, and the `/reload`-every-session requirement. Pure version/compare helpers live in `glla-version.ts` (no import cycle); the display module keeps zero runtime imports via a precomputed `versionTail` extra.
+
+### Verification
+
+- Full `release:check` 0 failures; `tsc --noEmit` clean.
+
+## 0.38.43 — ship merged PR #50, drop orphaned helpers (2026-09-10)
+
+### Fixed
+
+- **PR #50 (Bjynt, merged):** authoritative + overflow checkpoints replace dynamic fields (task state, pending completion, auditor TODOs, latest audit, stopReason/pauseKind) with the byte-stable `see .pi-glla/active.jsonl` pointer, so tool calls stop invalidating the provider KV-cache prefix. Tests pin dynamic absence, pointer presence, and smaller byte fixtures.
+- **Follow-up cleanup:** removed the now-callerless `taskState`, `pendingCompletionState`, `compactAuditEvidence`, `auditLabel`, `boundedTail`, and the orphaned `OVERFLOW_AUDIT_CHARS`.
+
+### Verification
+
+- Full `release:check` 0 failures; `tsc --noEmit` clean.
 
 ## 0.38.42 — trailer cleanup: model-free folded approval (2026-09-09)
 

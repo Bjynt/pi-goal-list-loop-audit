@@ -145,3 +145,16 @@ test("reload with a held goal paints the recovery banner from disk", async () =>
   assert.match(ledger, /"load_hold_recovery_banner"/);
   assert.match(ledger, /"pendingTasks":1/);
 });
+
+test("future verdict timestamp suppresses the age instead of printing 0s ago", () => {
+  // v0.38.45 audit: clock skew read as \"last approved 0s ago\" via the
+  // fmtElapsed clamp; now the tally drops the age like lastActivity does.
+  const future = auditorVerdictTally(
+    [verdict({ approved: true, at: new Date(Date.now() + 3_600_000).toISOString() })],
+    Date.now(),
+  );
+  assert.equal(future.lastAt, null, "future lastAt is suppressed");
+  const seg = formatVerdictTallySegment({ ...future, lastLabel: "approved" });
+  assert.doesNotMatch(seg, /0s ago/, "no confabulated recency");
+  assert.match(seg, /1 verdict/, "the count itself survives");
+});

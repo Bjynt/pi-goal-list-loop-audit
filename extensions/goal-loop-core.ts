@@ -3521,9 +3521,18 @@ export function stripThinkBlocks(text: string): string {
  * /glla audits can answer "where are we weak" across the whole project. */
 export interface AuditLogEntry {
   at: string;
+  /** Goal id for completion audits; the audit-subject identity
+   * ("loop:<run>") for loop audits — `/glla audits` renders it blind, so
+   * the prefix is what tells an operator which kind they are looking at. */
   goalId: string;
   objective: string;
   verdict: "approved" | "disapproved" | "impossible" | "shield_blocked" | "error";
+  /** Loop audits only: infrastructure failure class behind an "error". */
+  infrastructureClass?: string;
+  /** Loop audits only: where the auditor's inspectable pi session lives,
+   * and which prior job it resumed from (absent = fresh session). */
+  sessionPath?: string;
+  resumedFrom?: string;
   model: string;
   thinkingLevel: string;
   report: string;

@@ -88,6 +88,23 @@ test("active goal shows a compact state capsule (elapsed lives on the card)", ()
   assert.doesNotMatch(s, /glla: goal/, 'v0.34.1: the status line drops the policy word — the widget owns type naming');
 });
 
+test("version tail rides the status on every branch (field 20260909_161057)", () => {
+  // v0.38.44: the running version is visible at a glance so a stale
+  // session is obvious; headless callers without extras see no change.
+  const bare = buildStatusText({ goal: goalOf(), list: [] }, null, NOW)!;
+  assert.match(bare, /\[ACTIVE\]$/);
+  const tailed = buildStatusText({ goal: goalOf(), list: [] }, null, NOW, undefined, { versionTail: "· v0.38.44" })!;
+  assert.match(tailed, /\[ACTIVE\] · v0\.38\.44$/);
+  const nudged = buildStatusText(
+    { goal: goalOf(), list: [] },
+    null,
+    NOW,
+    undefined,
+    { versionTail: "· v0.38.43 · update v0.38.44 available" },
+  )!;
+  assert.match(nudged, /update v0\.38\.44 available$/);
+});
+
 test("monitor goals use the eye icon and do not masquerade as a stuck queue", () => {
   const daemon = goalOf({ objective: "Keep the book-daemon health monitor running" });
   const longRunning = goalOf({
@@ -2260,4 +2277,12 @@ test("audit-2026-09-06: truncate/wrap are cell-aware (CJK/emoji + surrogate-safe
   // Wrap packs by cells: CJK words break onto their own lines within width.
   const lines = wrap("日本語 テストです ok", 8, 5);
   for (const line of lines) assert.ok(visibleWidth(line) <= 8, `wrap line fits 8 cells: ${line}`);
+});
+
+test("version tail rides the paused branch too, not just active", () => {
+  // v0.38.45 audit: the tail pins covered one branch while every branch
+  // attaches versionTail the same way.
+  const paused = { ...goalOf(), state: "paused" as const, pausedAt: new Date(NOW).toISOString() };
+  const tailed = buildStatusText({ goal: paused, list: [] }, null, NOW, undefined, { versionTail: "· v0.38.44" })!;
+  assert.match(tailed, /· v0\.38\.44$/, "paused status carries the running version");
 });
