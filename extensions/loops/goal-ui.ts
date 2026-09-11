@@ -259,6 +259,8 @@ import {
   type ModelPickItem,
 } from "../model-picker.js";
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
+import { buildVersionTail, readUpdateCheck } from "../glla-update-check.js"; // v0.38.44 version tail
+import { readGllaVersionInfo } from "../glla-version.js"; // v0.38.44 version tail
 import {
   createGoalHeartbeat,
   endSubagentHangProbe,
@@ -500,6 +502,14 @@ let lastUIRenderAt = 0;
 let lastUIRenderContext: ExtensionContext | null = null;
 let lastUIStatusText: string | undefined;
 let lastUIWidgetKey: string | undefined;
+// v0.38.44: the running version is fixed for the process lifetime (the
+// loaded code IS the version), so resolve package.json once instead of on
+// every render tick.
+let cachedRunningGllaVersion: string | null = null;
+function runningGllaVersion(): string {
+  if (cachedRunningGllaVersion === null) cachedRunningGllaVersion = readGllaVersionInfo().version;
+  return cachedRunningGllaVersion;
+}
 
 /**
  * Completion-auditor progress is ephemeral, but it still has an owner. A
@@ -826,6 +836,11 @@ function refreshUI(ctx: ExtensionContext, force = false): void {
       modelProvenance,
       ...(durableDeferRecommendation ? { durableDeferRecommendation } : {}),
       ...(lastAuditorQuietStretch ? { auditorQuietStretch: lastAuditorQuietStretch } : {}),
+      // v0.38.44 (field 20260909_161057): precomputed version tail for
+      // the status line — package.json running version + update-sidecar
+      // latest. Render never touches the network; the sidecar refresh
+      // rides the command-contact gate.
+      versionTail: buildVersionTail(runningGllaVersion(), readUpdateCheck(ctx.cwd)?.latest ?? null),
     };
     const statusText = buildStatusText(state, latestAuditProgress, now, theme, extras, width);
     const widgetLines = buildWidgetLines(state, latestAuditProgress, now, theme, width, extras);

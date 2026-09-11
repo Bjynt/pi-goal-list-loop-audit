@@ -2385,7 +2385,7 @@ function cmdAudits(args: string, ctx: ExtensionContext): void {
 // version lookup next to the command surface makes an installed extension
 // identify itself even when its host session is stale or no live goal exists.
 function cmdGllaVersion(ctx: ExtensionContext): void {
-  ctx.ui.notify(formatGllaVersion(), "info");
+  ctx.ui.notify(formatGllaVersion(ctx.cwd), "info");
 }
 
 // v0.35.72: /glla bug — lightweight failure capture that never touches

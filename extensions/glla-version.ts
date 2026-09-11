@@ -1,13 +1,81 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveGllaStateDir } from "./glla-state-root.js";
 
 export const GLLA_PACKAGE_NAME = "pi-goal-list-loop-audit";
+
+/** Sidecar path shared with the update check (kept here so both
+ * glla-version and glla-update-check resolve it without a cycle).
+ * v0.38.45 audit: root-aware — sessionDir mode keeps the sidecar beside
+ * every other state file instead of splitting it under cwd. */
+export function updateCheckPath(cwd: string): string {
+  return path.join(resolveGllaStateDir(cwd), "update-check.json");
+}
+
+/** Numeric semver-ish compare: 1 when a > b, -1 when a < b, 0 when equal
+ * or unparseable. Pure — shared by the version command and the nudge.
+ * v0.38.45 audit: strictly numeric segments — parseInt equated
+ * prereleases (`3-beta`→3), so a prerelease running build never nudged. */
+export function compareVersions(a: string, b: string): number {
+  const numParts = (s: string): number[] | null => {
+    const parts = s.trim().replace(/^v/, "").split(".");
+    if (parts.some((part) => !/^\d+$/.test(part))) return null;
+    return parts.map((part) => Number.parseInt(part, 10));
+  };
+  const pa = numParts(a);
+  const pb = numParts(b);
+  if (!pa || !pb) return 0;
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] ?? 0;
+    const y = pb[i] ?? 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
 
 const PACKAGE_JSON_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../package.json",
 );
+
+export interface UpdateCheckCache {
+  latest: string;
+  checkedAt: number;
+}
+
+/** Raw sidecar read: null when missing/unreadable/malformed. Accepts
+ * future-dated entries — the refresh skip-check uses this so one skewed
+ * clock does not become a per-contact spawn storm (v0.38.45 audit). */
+export function readUpdateCheckRaw(cwd: string): UpdateCheckCache | null {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(updateCheckPath(cwd), "utf8"));
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const record = parsed as Record<string, unknown>;
+    if (typeof record.latest !== "string" || !record.latest.trim()) return null;
+    if (typeof record.checkedAt !== "number" || !Number.isFinite(record.checkedAt)) return null;
+    return { latest: record.latest.trim(), checkedAt: record.checkedAt };
+  } catch {
+    return null;
+  }
+}
+
+/** Strict sidecar read for render surfaces: additionally rejects
+ * future-dated entries (clock skew must read as unknown, never fresh). */
+export function readUpdateCheck(cwd: string): UpdateCheckCache | null {
+  const raw = readUpdateCheckRaw(cwd);
+  if (!raw) return null;
+  if (raw.checkedAt > Date.now() + 60_000) return null;
+  return raw;
+}
+
+/** npm-version-shaped tokens only — the refresh caches stdout, so
+ * registry noise must never poison the sidecar (v0.38.45 audit). */
+export function isVersionLike(token: string): boolean {
+  return /^v?\d+\.\d+\.\d+([\-+][\w.]+)?$/.test(token.trim());
+}
 
 export interface GllaVersionInfo {
   name: string;
@@ -38,10 +106,34 @@ export function readGllaVersionInfo(): GllaVersionInfo {
   return { name: GLLA_PACKAGE_NAME, version: "unknown" };
 }
 
-export function formatGllaVersion(info: GllaVersionInfo = readGllaVersionInfo()): string {
-  return [
+export function formatGllaVersion(cwd?: string, info: GllaVersionInfo = readGllaVersionInfo()): string {
+  const lines = [
     `${info.name} v${info.version}`,
     "Installed package version.",
     `Compare with registry latest: npm view ${info.name} version`,
-  ].join("\n");
+  ];
+  // v0.38.44 (field 20260909_161057): when the update sidecar has a
+  // cached registry latest, say whether this session is stale and how
+  // to fix it. No cache (offline / never checked) keeps the legacy
+  // three lines — absence of evidence is not evidence of freshness.
+  // v0.38.45 audit: the strict shared reader (same validation as the
+  // status tail, so the two surfaces cannot disagree), and no staleness
+  // claim at all when the running version is unreadable — "unknown"
+  // compared equal and printed a false "up to date".
+  if (cwd && info.version !== "unknown") {
+    try {
+      const cached = readUpdateCheck(cwd);
+      if (cached) {
+        lines.push(`Registry latest: v${cached.latest}.`);
+        lines.push(
+          compareVersions(cached.latest, info.version) > 0
+            ? `This session is stale — update: pi install npm:${info.name}@latest then /reload.`
+            : "This session is up to date.",
+        );
+      }
+    } catch {
+      // Sidecar read failure keeps the legacy output.
+    }
+  }
+  return lines.join("\n");
 }
