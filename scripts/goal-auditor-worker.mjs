@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { constants as fsConstants, readdirSync, readFileSync } from "node:fs";
+import { constants as fsConstants, appendFileSync, readdirSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { buildAuditorPiSpawnSpec, renameWithWindowsRetry } from "./goal-auditor-launch.mjs";
@@ -381,6 +381,19 @@ function appendRecentOutput(recentOutput, reportLine, text, flush = false) {
 
 async function main() {
   const jobDir = jobDirArg();
+  // v0.38.46: fatal self-diagnosis. The worker's stderr is invisible to the
+  // parent (stdio: "ignore"), so a crashed worker previously left nothing
+  // on disk — the identity/hash-mismatch incident needed manual repro.
+  // Bounded log in the job dir; the parent folds the tail into its
+  // no-verdict error so failures diagnose themselves.
+  const logFatal = (tag, err) => {
+    try {
+      appendFileSync(path.join(jobDir, "worker.error.log"), `${new Date().toISOString()} ${tag}: ${String(err instanceof Error ? err.stack : err).slice(0, 4000)}\n`);
+    } catch {}
+    process.exit(1);
+  };
+  process.on("uncaughtException", (e) => logFatal("uncaughtException", e));
+  process.on("unhandledRejection", (e) => logFatal("unhandledRejection", e));
   const requestPath = path.join(jobDir, "request.json");
   const resultPath = path.join(jobDir, "result.json");
   const progressPath = path.join(jobDir, "progress.json");

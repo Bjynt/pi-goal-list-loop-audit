@@ -12,6 +12,7 @@ import {
   AUDITOR_TOOLS,
   cancelDetachedGoalCompletionAuditor,
   inspectAuditJobHealth,
+  formatNoResultError,
   requestHash,
   resolveWorkerCommand,
   runDetachedGoalCompletionAuditor,
@@ -1512,4 +1513,26 @@ test("v0.36.0: a malformed allowedExtensions request fails closed as an identity
     await stopTestProcess(child);
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// v0.38.46: crashed-worker self-diagnosis — the worker's stderr is invisible
+// to the parent (stdio: "ignore"), so fatal failures used to leave zero
+// on-disk evidence (the identity/hash-mismatch incident needed manual repro).
+test("formatNoResultError folds the worker fatal-log tail, bounded, absent-safe", () => {
+  assert.equal(formatNoResultError("auditor worker exited without an atomic result"), "auditor worker exited without an atomic result");
+  assert.equal(formatNoResultError("base", undefined), "base");
+  assert.equal(formatNoResultError("base", "   \n"), "base", "whitespace-only log = none");
+  const long = "x".repeat(5000);
+  const out = formatNoResultError("base", long);
+  assert.ok(out.startsWith("base — worker fatal log:\n"));
+  assert.ok(out.length <= "base — worker fatal log:\n".length + 2000, "tail bounded to 2000 chars");
+  assert.ok(out.endsWith("x".repeat(2000)), "keeps the TAIL (newest fatal), not the head");
+});
+
+test("worker writes bounded worker.error.log on uncaught fatals (source pin)", async () => {
+  const workerSrc = await readFile(path.resolve("scripts", "goal-auditor-worker.mjs"), "utf8");
+  assert.match(workerSrc, /worker\.error\.log/);
+  assert.match(workerSrc, /process\.on\("uncaughtException"/);
+  assert.match(workerSrc, /process\.on\("unhandledRejection"/);
+  assert.match(workerSrc, /\.slice\(0, 4000\)/, "per-line fatal bounded");
 });

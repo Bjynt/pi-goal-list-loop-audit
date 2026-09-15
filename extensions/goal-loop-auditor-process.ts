@@ -584,6 +584,14 @@ const WORKER_FORCE_SETTLE_MS = 250;
 // worker as result-less; otherwise a valid identity-checked result becomes a
 // load-sensitive infrastructure failure.
 const CHILD_EXIT_RESULT_GRACE_MS = 250;
+
+/** v0.38.46: fold the worker's fatal-log tail into the no-result message so a
+ * crashed worker self-diagnoses — the worker's stderr is invisible to the
+ * parent (stdio: "ignore"), and this used to leave zero on-disk evidence. */
+export function formatNoResultError(base: string, fatalLog?: string): string {
+  const t = fatalLog?.trim().slice(-2000);
+  return t ? `${base} — worker fatal log:\n${t}` : base;
+}
 const activeChildren = new Map<string, ChildProcess>();
 const workerTermination = new WeakMap<ChildProcess, Promise<void>>();
 
@@ -1886,7 +1894,9 @@ export async function runDetachedGoalCompletionAuditor(args: {
             await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, 25)));
             continue;
           }
-          return infra(model, thinkingLevel, "auditor worker exited without an atomic result", "", capturedRevisionToken, "no-verdict");
+          let fatalLog: string | undefined;
+          try { fatalLog = await fs.readFile(path.join(jobDir, "worker.error.log"), "utf8"); } catch { /* none */ }
+          return infra(model, thinkingLevel, formatNoResultError("auditor worker exited without an atomic result", fatalLog), "", capturedRevisionToken, "no-verdict");
         }
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       }
