@@ -381,19 +381,6 @@ function appendRecentOutput(recentOutput, reportLine, text, flush = false) {
 
 async function main() {
   const jobDir = jobDirArg();
-  // v0.38.46: fatal self-diagnosis. The worker's stderr is invisible to the
-  // parent (stdio: "ignore"), so a crashed worker previously left nothing
-  // on disk — the identity/hash-mismatch incident needed manual repro.
-  // Bounded log in the job dir; the parent folds the tail into its
-  // no-verdict error so failures diagnose themselves.
-  const logFatal = (tag, err) => {
-    try {
-      appendFileSync(path.join(jobDir, "worker.error.log"), `${new Date().toISOString()} ${tag}: ${String(err instanceof Error ? err.stack : err).slice(0, 4000)}\n`);
-    } catch {}
-    process.exit(1);
-  };
-  process.on("uncaughtException", (e) => logFatal("uncaughtException", e));
-  process.on("unhandledRejection", (e) => logFatal("unhandledRejection", e));
   const requestPath = path.join(jobDir, "request.json");
   const resultPath = path.join(jobDir, "result.json");
   const progressPath = path.join(jobDir, "progress.json");
@@ -857,9 +844,26 @@ async function main() {
   }
 }
 
+// v0.38.46: fatal self-diagnosis. The worker's stderr is invisible to the
+// parent (stdio: "ignore"), so a crashed worker previously left nothing on
+// disk — the identity/hash-mismatch incident needed manual repro. Bounded
+// log in the job dir; the parent folds the tail into its no-verdict error.
+// Registered at module level because main().catch below CONSUMES main's
+// rejections — unhandledRejection alone would never see them.
+const logFatalJobDir = (() => { try { return jobDirArg(); } catch { return undefined; } })();
+const logWorkerFatal = (tag, err) => {
+  if (!logFatalJobDir) return;
+  try {
+    appendFileSync(path.join(logFatalJobDir, "worker.error.log"), `${new Date().toISOString()} ${tag}: ${String(err instanceof Error ? err.stack : err).slice(0, 4000)}\n`);
+  } catch {}
+};
+process.on("uncaughtException", (e) => { logWorkerFatal("uncaughtException", e); });
+process.on("unhandledRejection", (e) => { logWorkerFatal("unhandledRejection", e); });
+
 main().catch(async (error) => {
   // A malformed request cannot safely be associated with a result identity.
   // There is deliberately no fallback or in-process execution here.
+  logWorkerFatal("main", error);
   process.stderr.write(`goal-auditor-worker: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });

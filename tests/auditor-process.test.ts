@@ -1535,4 +1535,33 @@ test("worker writes bounded worker.error.log on uncaught fatals (source pin)", a
   assert.match(workerSrc, /process\.on\("uncaughtException"/);
   assert.match(workerSrc, /process\.on\("unhandledRejection"/);
   assert.match(workerSrc, /\.slice\(0, 4000\)/, "per-line fatal bounded");
+  // main().catch CONSUMES main's rejections — the fatal log must be written there too,
+  // not only from unhandledRejection (which would be dead code for the real failure class).
+  assert.match(workerSrc, /logWorkerFatal\("main", error\)/);
+});
+
+test("crashed worker (poisoned request hash) exits nonzero AND leaves a bounded worker.error.log", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-crash-"));
+  const attemptId = "crash-test";
+  const jobDir = path.join(dir, ".pi-glla", "audit-jobs", attemptId);
+  await mkdir(jobDir, { recursive: true });
+  await writeFile(path.join(jobDir, "lock"), "lock\n");
+  const withoutHash = {
+    protocolVersion: 1, attemptId, cwd: dir, prompt: "x.", model: "test/provider-model",
+    thinkingLevel: "medium", createdAt: new Date().toISOString(), wallDeadlineAt: Date.now() + 5_000,
+  };
+  const request = { ...withoutHash, requestHash: "0".repeat(64) }; // poisoned — the exact incident shape
+  await writeFile(path.join(jobDir, "request.json"), JSON.stringify(request));
+  const child = spawn(process.execPath, [path.resolve("scripts/goal-auditor-worker.mjs"), "--job-dir", jobDir], {
+    env: { ...process.env }, stdio: "ignore",
+  });
+  const code = await new Promise<number>((res) => child.on("exit", (c) => res(c ?? 1)));
+  try {
+    assert.notEqual(code, 0, "worker still exits nonzero");
+    const log = await readFile(path.join(jobDir, "worker.error.log"), "utf8");
+    assert.match(log, /hash/i, "the fatal names its own cause");
+    assert.ok(!existsSync(path.join(jobDir, "result.json")), "no result — this is the crashed class");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
