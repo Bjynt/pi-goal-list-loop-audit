@@ -50,3 +50,14 @@ Two hypotheses tested against code, both clear:
    asserts the verdict form twice at the tail; iter-19's `no verdict marker` on a
    ~200 KB bloated session matches the size-collapse pattern (aborts clustered at
    50/54/81 KB seeds), which the 64 KiB resume cap addresses at the root.
+
+## Production run under the merged stack (host generation 2026-09-15)
+
+First loop audit dispatched by the fixed code: job `loop-audit-30-mu38p69d`
+(named-attempt signature), inspection on, **resumedFrom: mtwbqxg5-…** — the
+resolver picked a 55,658-byte seed (under the 65,536 cap) over newer oversized
+jobs: skip-bloated/fall-back-to-older-small-hop semantics, live. Session grew
+past the cap mid-run (69 KB+ at snapshot) — per design, the NEXT audit skips
+this seed and resumes the newest qualifying smaller hop or starts fresh; the
+chain cannot grow unboundedly again. audits.jsonl record appends at verdict
+consumption (job still live at snapshot: lock + progress.json, no result yet).
