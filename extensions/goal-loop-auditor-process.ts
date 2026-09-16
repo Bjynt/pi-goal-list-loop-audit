@@ -784,6 +784,18 @@ export interface AuditJobHealthEntry {
   status: AuditJobHealthStatus;
   pid?: number;
   reason?: string;
+  /** v0.38.46: last line of the worker's fatal log, bounded — crashed jobs
+   * self-diagnose on the health surface instead of reading "proven dead".
+   * Only present on dead entries with a worker.error.log. */
+  fatalTail?: string;
+}
+
+/** v0.38.46: render dead jobs' fatal tails on the audit-job surface (bounded
+ * to 3 lines so the notify stays one screen). */
+export function formatAuditJobFatalLines(entries: AuditJobHealthEntry[]): string {
+  const lines = entries.filter((e) => e.status === "dead" && e.fatalTail).slice(0, 3)
+    .map((e) => `— ${e.attemptId} fatal: ${e.fatalTail}`);
+  return lines.length ? "\n" + lines.join("\n") : "";
 }
 
 export interface AuditJobHealthReport {
@@ -869,7 +881,15 @@ export function inspectAuditJobHealth(
     } catch {
       /* preserve ambiguous */
     }
-    entries.push({ attemptId: entry.name, dir, ageMs, bytes, status, ...(pid !== undefined ? { pid } : {}), ...(reason ? { reason } : {}) });
+    let fatalTail: string | undefined;
+    if (status === "dead") {
+      try {
+        const log = readFileSync(path.join(dir, "worker.error.log"), "utf8").trim().split("\n");
+        const last = log.pop() ?? "";
+        if (last) fatalTail = last.slice(-300);
+      } catch { /* no fatal log — not every death is a crash */ }
+    }
+    entries.push({ attemptId: entry.name, dir, ageMs, bytes, status, ...(pid !== undefined ? { pid } : {}), ...(reason ? { reason } : {}), ...(fatalTail ? { fatalTail } : {}) });
   }
   const live = entries.filter((entry) => entry.status === "live").length;
   const dead = entries.filter((entry) => entry.status === "dead").length;

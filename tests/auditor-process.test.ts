@@ -12,6 +12,7 @@ import {
   AUDITOR_TOOLS,
   cancelDetachedGoalCompletionAuditor,
   inspectAuditJobHealth,
+  formatAuditJobFatalLines,
   formatNoResultError,
   requestHash,
   resolveWorkerCommand,
@@ -1561,6 +1562,43 @@ test("crashed worker (poisoned request hash) exits nonzero AND leaves a bounded 
     const log = await readFile(path.join(jobDir, "worker.error.log"), "utf8");
     assert.match(log, /hash/i, "the fatal names its own cause");
     assert.ok(!existsSync(path.join(jobDir, "result.json")), "no result — this is the crashed class");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// v0.38.46: crashed jobs self-diagnose on the /glla audit-job surface.
+test("formatAuditJobFatalLines: dead+tail only, capped at 3, empty-safe", () => {
+  assert.equal(formatAuditJobFatalLines([]), "");
+  const mk = (id: string, status: "live" | "dead", tail?: string) => ({ attemptId: id, dir: "/x", ageMs: 0, bytes: 0, status, ...(tail ? { fatalTail: tail } : {}) });
+  const out = formatAuditJobFatalLines([
+    mk("a", "live", "crash"), // live never surfaces
+    mk("b", "dead", "hash mismatch"),
+    mk("c", "dead", undefined as unknown as string), // no log = no line
+    mk("d", "dead", "one"),
+    mk("e", "dead", "two"),
+    mk("f", "dead", "three"),
+    mk("g", "dead", "four"), // over the cap
+  ]);
+  assert.equal(out, "\n— b fatal: hash mismatch\n— d fatal: one\n— e fatal: two");
+});
+
+test("inspectAuditJobHealth exposes a crashed worker's fatal tail on its dead entry", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-health-fatal-"));
+  try {
+    const probe = spawn(process.execPath, ["-e", ""]);
+    await new Promise<void>((resolve) => probe.on("exit", () => resolve()));
+    const deadPid: number = probe.pid as number;
+    const attemptId = "fatal-health";
+    const jobDir = path.join(dir, ".pi-glla", "audit-jobs", attemptId);
+    await mkdir(jobDir, { recursive: true });
+    await writeFile(path.join(jobDir, "lock"), JSON.stringify({ protocolVersion: 1, attemptId, pid: deadPid, role: "worker", workerPath: "/nonexistent/w.mjs" }));
+    await writeFile(path.join(jobDir, "worker.error.log"), "2026-09-15T23:00:00Z main: Error: auditor request hash mismatch\n");
+    const report = inspectAuditJobHealth(dir);
+    const entry = report.entries.find((e) => e.attemptId === attemptId);
+    assert.equal(entry?.status, "dead");
+    assert.match(entry?.fatalTail ?? "", /hash mismatch/);
+    assert.equal(formatAuditJobFatalLines(report.entries).trim().split("\n").length, 1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

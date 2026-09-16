@@ -37,7 +37,7 @@ import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick 
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
 import { cmdGllaOwner, cmdGllaTakeover } from "./state-root-owner.js";
-import { AUDIT_JOB_CLEANUP_MIN_AGE_MS, cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
+import { AUDIT_JOB_CLEANUP_MIN_AGE_MS, cancelDetachedGoalCompletionAuditor, cleanupDeadAuditJobs, formatAuditJobFatalLines, inspectAuditJobHealth, DEFAULT_AUDITOR_STALL_MS, DEFAULT_AUDITOR_TOOL_TIMEOUT_MS } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
 import { inferStartFromSession, type StartContextInference } from "./start-context.js";
 
@@ -2348,7 +2348,8 @@ function cmdAudits(args: string, ctx: ExtensionContext): void {
     const action = /\bcleanup\b/.test(args) ? "cleanup" : "health";
     ctx.ui.notify(
       `glla audit-job ${action}: ${report.total} director${report.total === 1 ? "y" : "ies"} · ${report.live} live · ${report.dead} proven dead · ${report.ambiguous} ambiguous · ${report.bytes} bytes${report.cleanupCandidates > 0 ? ` · ${report.cleanupCandidates} old dead candidate(s)` : ""}.` +
-      (report.ambiguous > 0 ? " Ambiguous locks were preserved." : ""),
+      (report.ambiguous > 0 ? " Ambiguous locks were preserved." : "") +
+      formatAuditJobFatalLines(report.entries),
       report.ambiguous > 0 ? "warning" : "info",
     );
     return;
