@@ -254,3 +254,30 @@ test("auditLoop setting: valid values are preserved at the bounds", () => {
   assert.equal(normalizeLoadedSettings({ auditLoop: MAX_AUDIT_LOOP_INTERVAL }).auditLoop, MAX_AUDIT_LOOP_INTERVAL);
   assert.equal(normalizeLoadedSettings({ auditLoop: 0 }).auditLoop, 0);
 });
+
+// =================================================================
+// corrective-note injection contract (disapproval path — never live yet)
+// =================================================================
+
+test("corrective note rides exactly one iteration: templates, substitution, pre-render clear", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const metricless = await readFile("prompts/goal-loop-forever-metricless.md", "utf8");
+  const metric = await readFile("prompts/goal-loop-forever.md", "utf8");
+  // Each template carries the placeholder EXACTLY once — a second occurrence
+  // would double-inject the auditor's required fixes into the prompt.
+  assert.equal(metricless.split("${AUDIT_NOTE}").length - 1, 1);
+  assert.equal(metric.split("${AUDIT_NOTE}").length - 1, 1);
+
+  const loopSrc = await readFile("extensions/goal-loop.ts", "utf8");
+  // Builder substitutes the captured note.
+  // The pinned source line is itself a regex literal — pin its exact bytes
+  // with includes (a regex pin would need to escape those backslashes).
+  assert.ok(loopSrc.includes(".replace(/\\$\\{AUDIT_NOTE\\}/g, auditNote);"), "builder substitutes the captured note into the rendered prompt");
+  // Caller captures THEN clears BEFORE the prompt is rendered — the note
+  // cannot ride a second iteration if the send is retried or the tick loops.
+  assert.match(loopSrc, /const loopAuditNote = loop\.loopAuditNote\s*\n\s*\? \`\*\*INDEPENDENT LOOP AUDITOR DISAPPROVAL — required fixes:\*\* \$\{loop\.loopAuditNote\}\`/);
+  assert.match(loopSrc, /if \(loop\.loopAuditNote\) loop\.loopAuditNote = undefined;/);
+  // The retry payload reuses the SAME captured copy (not a re-read of state).
+  const sends = loopSrc.match(/loopResync \+ loopPrompt\(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote, loopAuditNote\)/g) ?? [];
+  assert.equal(sends.length, 2, "live send and verbatim-retry payload share one captured note");
+});
