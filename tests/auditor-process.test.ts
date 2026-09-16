@@ -1603,3 +1603,8 @@ test("inspectAuditJobHealth exposes a crashed worker's fatal tail on its dead en
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("/glla audit-job renderer appends the fatal lines (source pin — cmdGllaAuditJob is inline)", async () => {
+  const cmdSrc = await readFile(path.resolve("extensions", "goal-commands.ts"), "utf8");
+  assert.match(cmdSrc, /formatAuditJobFatalLines\(report\.entries\)/);
+});

@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- **`/glla audit-job` shows crashed jobs' fatal lines:** dead job entries carry a bounded `fatalTail` (last line of `worker.error.log`, 300 chars) and the audit-job notify renders up to three `— <attemptId> fatal: …` lines under the aggregate counts (`formatAuditJobFatalLines`, pure) — the crash names itself where operators look, not just in the parent's error.
 - **Crashed auditors left zero evidence:** the worker's stderr is invisible to the parent (`stdio: "ignore"`), so a worker dying without `result.json` gave nothing to diagnose (the identity/hash-mismatch incident needed a manual repro). Uncaught fatals now append one bounded line (4 KB slices) to `<jobDir>/worker.error.log` and exit non-zero as before; the parent's "exited without an atomic result" folds the log's 2 KB tail into the infra message (`formatNoResultError`, pure) — silent deaths now print their own stack trace.
 - **Prompt-only dispatches hashed an undefined `goalRevision` key:** `stableJson` hashes present-undefined keys (`Object.keys`) while `JSON.stringify` drops them on disk, so loop-audit requests could never verify and workers died pre-spawn. `goalRevision` is now included only when known (same pattern as `inspection`/`auditSubject`); goal-request shapes stay byte-identical.
 
