@@ -102,6 +102,26 @@ test("loop audit verdict: second consecutive disapproval requests the stop", () 
   assert.equal(loop.loopAuditNote, undefined);
 });
 
+test("loop audit verdict: the FINAL required fixes ride the stop (bounded)", () => {
+  const loop = testLoop();
+  loop.consecutiveLoopAuditDisapprovals = 1;
+  const fixes = "- fix the real gap\n- verify with the bench";
+  applyLoopAuditVerdict(loop, verdict({ disapproved: true, output: "r" }), fixes);
+  assert.match(loop.loopAuditStopReason ?? "", /auditor's final required fixes: - fix the real gap/);
+  // Bounded: a wall of fixes must not turn the stop card into a page.
+  const loop2 = testLoop();
+  loop2.consecutiveLoopAuditDisapprovals = 1;
+  applyLoopAuditVerdict(loop2, verdict({ disapproved: true, output: "r" }), "f".repeat(400));
+  const reason = loop2.loopAuditStopReason ?? "";
+  assert.ok(reason.length < 400, `stop reason stayed bounded (${reason.length})`);
+  assert.match(reason, /…$/);
+  // No report available: falls back to the plain reason (no dangling label).
+  const loop3 = testLoop();
+  loop3.consecutiveLoopAuditDisapprovals = 1;
+  applyLoopAuditVerdict(loop3, verdict({ disapproved: true, output: "r" }), "");
+  assert.equal(loop3.loopAuditStopReason, "loop audit — 2 consecutive disapprovals");
+});
+
 test("loop audit verdict: impossible target requests the stop with the reason", () => {
   const loop = testLoop();
   const outcome = applyLoopAuditVerdict(loop, verdict({ impossible: true, impossibleReason: "benchmark was deleted", output: "<impossible>benchmark was deleted</impossible>" }));

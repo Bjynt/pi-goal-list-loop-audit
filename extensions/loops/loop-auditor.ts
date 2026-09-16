@@ -179,7 +179,13 @@ export function applyLoopAuditVerdict(
     loop.consecutiveLoopAuditDisapprovals = streak;
     if (streak >= LOOP_AUDIT_STOP_STREAK) {
       loop.loopAuditStopRequested = true;
-      loop.loopAuditStopReason = `loop audit — ${streak} consecutive disapprovals`;
+      // The auditor's FINAL required fixes ride the stop itself — the loop
+      // is over, so the note has nowhere else to go, and the operator
+      // staring at the red stop card needs them to refine-and-resume.
+      const finalFixes = correctiveText?.trim();
+      loop.loopAuditStopReason = finalFixes
+        ? `loop audit — ${streak} consecutive disapprovals — auditor's final required fixes: ${finalFixes.length > 300 ? `${finalFixes.slice(0, 300)}…` : finalFixes}`
+        : `loop audit — ${streak} consecutive disapprovals`;
       loop.loopAuditNote = undefined; // the stop carries the verdict; the note is never consumed
       return "disapproved-stop";
     }
