@@ -619,3 +619,30 @@ test("auditLoop is global-only like the other auditor settings", () => {
     restoreGlobal();
   }
 });
+
+test("T5: input editor — auditLoopStopStreak saves the threshold (1..100; empty → default 2; junk rejected)", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.inputImpl = async () => "5";
+    await handleSettingChoice("auditLoopStopStreak", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoopStopStreak, 5, "a positive integer sets the threshold");
+
+    ctx.ui.inputImpl = async () => "1";
+    await handleSettingChoice("auditLoopStopStreak", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoopStopStreak, 1, "1 = first disapproval stops");
+
+    ctx.ui.inputImpl = async () => "";
+    await handleSettingChoice("auditLoopStopStreak", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoopStopStreak, 2, "empty resets to the default (there is no off)");
+
+    ctx.ui.inputImpl = async () => "not-a-number";
+    await handleSettingChoice("auditLoopStopStreak", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoopStopStreak, 2, "junk is rejected, previous value kept");
+
+    ctx.ui.inputImpl = async () => "0";
+    await handleSettingChoice("auditLoopStopStreak", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().auditLoopStopStreak, 2, "0 is out of range (minimum 1) — rejected");
+  } finally {
+    restoreGlobal();
+  }
+});

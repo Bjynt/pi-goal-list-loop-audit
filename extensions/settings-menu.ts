@@ -465,6 +465,15 @@ export function buildSettingsRows(
         "on: the auditor's pi runs as a normal persistent session (--session <jobDir>/session.jsonl) you can tail -f live or resume after the audit · off: the original --no-session spawn (default)",
     },
     {
+      id: "auditLoopStopStreak",
+      section: "auditor",
+      label: "Loop auditor stop threshold",
+      valueText: `stop after ${settings.auditLoopStopStreak ?? 2}`,
+      sourceText: src("auditLoopStopStreak"),
+      description:
+        "consecutive loop-audit DISAPPROVALS that stop the loop (the first one rides a corrective directive into the next iteration) · default 2 · raise it when you want the loop to work through more auditor objections · 1 = first disapproval stops",
+    },
+    {
       id: "auditLoop",
       section: "auditor",
       label: "Loop auditor cadence",

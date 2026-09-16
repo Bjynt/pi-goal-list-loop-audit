@@ -170,6 +170,11 @@ export interface LoopState {
    * ("approved", "disapproved-corrective", "disapproved-stop", "impossible",
    * or "infra:<class>"); rendered by `/loop status`. */
   lastLoopAuditVerdict?: string;
+  /** v0.38.46: loop auditor — the effective disapproval-stop threshold
+   * (auditLoopStopStreak setting, default 2) that produced the current
+   * streak; stamped at verdict consumption so status/widget denominators
+   * show the policy, not a hardcoded constant. */
+  loopAuditStopStreak?: number;
   /** v0.38.43: loop auditor — consecutive loop-audit disapprovals for THIS
    * run; resets on an approval. Reaching 2 requests a stop via
    * loopAuditStopRequested (consumed by the tick's standard stop path). */

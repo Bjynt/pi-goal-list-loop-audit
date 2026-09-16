@@ -30,7 +30,7 @@ copies are ignored (the recovery runtime reads the global file):
 `autoResume`, `drafterModel`, `drafterThinkingLevel`,
 `drafterModelFallbacks`, `compactorModel`, `compactorModelFallbacks`,
 `auditorModelFallbacks`, `auditorToolTimeoutMs`, `auditorStallMs`,
-`auditJobRetentionMs`, `auditorInspection`, `auditLoop`.
+`auditJobRetentionMs`, `auditorInspection`, `auditLoop`, `auditLoopStopStreak`.
 
 ## Keys
 
@@ -58,7 +58,8 @@ copies are ignored (the recovery runtime reads the global file):
 | `auditorStallMs` | `600000` | Base silence budget for the detached auditor (1m–24h). Global-only. |
 | `auditJobRetentionMs` | `900000` | How long proven-dead audit job dirs are kept (0–7d, 0 = reap now). Global-only. |
 | `auditorInspection` | `false` | Auditor runs as a persistent session you can tail/resume — and re-audits of the same subject (`goal:<id>` / one loop run) resume the prior audit's own conversation, bounded: seeds over 64 KiB are skipped so cost can't grow quadratically (chain restarts fresh). Provenance in `inspectionResumedFrom`. Global-only. |
-| `auditLoop` | `0` | Loop-audit cadence: a detached auditor (same infrastructure as goal audits) semantically verifies loop progress every N iterations; `0` = off. An approval resets the disapproval streak; 2 consecutive disapprovals stop the loop; the auditor can also stop it with `<impossible>`. Verdicts show in `/loop status`, `/glla audits`, and the ledger (`loop_audit*`). Global-only. |
+| `auditLoop` | `0` | Loop-audit cadence: a detached auditor (same infrastructure as goal audits) semantically verifies loop progress every N iterations; `0` = off. An approval resets the disapproval streak; reaching `auditLoopStopStreak` consecutive disapprovals stops the loop (the first strikes ride corrective directives); the auditor can also stop it with `<impossible>`. Verdicts show in `/loop status`, `/glla audits`, and the ledger (`loop_audit*`). Global-only. |
+| `auditLoopStopStreak` | `2` | Consecutive loop-audit DISAPPROVALS that stop the loop. The first disapproval(s) below the threshold ride their `Required fixes` into the next iteration as a corrective directive; at the threshold the loop stops and the stop reason carries the auditor's final required fixes (bounded). `1` = first disapproval stops; raise it when you want the loop to work through more auditor objections. Range `1`–`100`; junk normalizes to `2` (there is no off). Global-only. |
 | `notifyCmd` | unset | Shell command on goal complete / pause / loop stop; message is `$1`. |
 | `tokenLimit` | unset (off) | Per-goal token budget; crossing it pauses. `0` = off. |
 | `wedgeAlertMinutes` | unset (30, or off while aggressive mode is on — the default) | Busy-but-silent minutes before the wedge alert; `0` = off. The menu shows the effective value. |

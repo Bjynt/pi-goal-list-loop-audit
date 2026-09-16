@@ -1181,7 +1181,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (loop.refinements?.length) lines.push(`Spec refined ${loop.refinements.length}× (latest: iteration ${loop.refinements[loop.refinements.length - 1]!.iteration})`);
     if (loop.lastLoopAuditIteration !== undefined) {
       const streak = loop.consecutiveLoopAuditDisapprovals ?? 0;
-      lines.push(`Loop audit: iter ${loop.lastLoopAuditIteration} → ${loop.lastLoopAuditVerdict ?? "(unknown)"}${streak > 0 ? ` · disapproval streak ${streak}/${LOOP_AUDIT_STOP_STREAK}` : ""}`);
+      lines.push(`Loop audit: iter ${loop.lastLoopAuditIteration} → ${loop.lastLoopAuditVerdict ?? "(unknown)"}${streak > 0 ? ` · disapproval streak ${streak}/${loop.loopAuditStopStreak ?? LOOP_AUDIT_STOP_STREAK}` : ""}`);
     }
     if (loop.stopReason) lines.push(`Stopped: ${loop.stopReason}`);
     if (!loop.active && loop.completionSummary) lines.push(`Summary:\n${loop.completionSummary}`);

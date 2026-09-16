@@ -191,6 +191,7 @@ import {
   saveSettings as persistSettings,
   settingsProvenance,
   MAX_AUDIT_LOOP_INTERVAL,
+  MAX_AUDIT_LOOP_STOP_STREAK,
   type Settings,
 } from "../goal-settings.js";
 import { ModelSelector } from "../model-selector.js";
@@ -1183,6 +1184,25 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         ctx.ui.notify(n === 0 ? "Loop auditor OFF." : `Loop auditor: a detached audit every ${n} loop iteration(s).`, "info");
       } else {
         ctx.ui.notify(`Rejected: enter an integer 0-${MAX_AUDIT_LOOP_INTERVAL} (0 = off).`, "warning");
+      }
+      return;
+    }
+    case "auditLoopStopStreak": {
+      // v0.38.46: consecutive disapprovals that stop the loop (default 2).
+      const s = loadSettings(ctx.cwd);
+      const current = typeof s.auditLoopStopStreak === "number" ? s.auditLoopStopStreak : 2;
+      const input = await ctx.ui.input(
+        `Loop auditor stop threshold — consecutive disapprovals that stop the loop (1-${MAX_AUDIT_LOOP_STOP_STREAK})`,
+        `current: ${current} (first disapproval rides a corrective directive; no "off" — minimum is 1)`,
+      );
+      if (input === undefined) return;
+      const raw = input.trim();
+      const n = parseSettingsInteger(raw);
+      if (!raw || (n !== undefined && n >= 1 && n <= MAX_AUDIT_LOOP_STOP_STREAK)) {
+        saveSettings("global", ctx.cwd, { auditLoopStopStreak: n ?? 2 });
+        ctx.ui.notify(`Loop auditor stops after ${n ?? 2} consecutive disapproval(s).`, "info");
+      } else {
+        ctx.ui.notify(`Rejected: enter an integer 1-${MAX_AUDIT_LOOP_STOP_STREAK}.`, "warning");
       }
       return;
     }

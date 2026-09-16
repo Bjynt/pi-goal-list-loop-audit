@@ -2178,14 +2178,15 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
   const segs: string[] = [];
   segs.push(`iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations} ${paint(theme, "dim", meter(l.iteration / l.maxIterations))}` : ""}`);
   segs.push(fmtElapsed(now - Date.parse(l.startedAt)));
-  // Loop-audit state on the always-visible surface. The 2-disapproval
-  // threshold literal mirrors LOOP_AUDIT_STOP_STREAK (importing it here
-  // would cycle: display <- goal-loop-core <- loops/loop-auditor).
+  // Loop-audit state on the always-visible surface. Denominator = the
+  // stamped policy (loopAuditStopStreak); the literal 2 fallback mirrors
+  // LOOP_AUDIT_STOP_STREAK (importing it here would cycle: display <-
+  // goal-loop-core <- loops/loop-auditor).
   if (l.lastLoopAuditIteration !== undefined) {
     const v = l.lastLoopAuditVerdict;
     const glyph = v === "approved" ? "✔" : v === "impossible" ? "⛔" : v?.startsWith("infra:") ? "⚠" : "✖";
     const streak = l.consecutiveLoopAuditDisapprovals ?? 0;
-    segs.push(`audit ${glyph}${streak > 0 ? ` ${streak}/2` : ""}`);
+    segs.push(`audit ${glyph}${streak > 0 ? ` ${streak}/${l.loopAuditStopStreak ?? 2}` : ""}`);
   }
   if (l.measureCmd) {
     segs.push(`best ${paint(theme, "success", `${l.bestValue ?? "n/a"}`)}`);

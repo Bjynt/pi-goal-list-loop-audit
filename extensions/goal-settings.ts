@@ -159,6 +159,11 @@ export interface Settings {
    * integer N = audit every N iterations. Global-only: auditor
    * infrastructure, not a project artifact. */
   auditLoop?: number;
+  /** v0.38.46: how many CONSECUTIVE loop-audit disapprovals stop the loop
+   * (default 2). Raise it when you want the loop to keep working through
+   * more auditor objections before stopping. Global-only: auditor
+   * infrastructure, not a project artifact. */
+  auditLoopStopStreak?: number;
   /** Global-only: when main-model recovery is parked, fire an extra retry at
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
@@ -302,6 +307,7 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "auditJobRetentionMs",
   "auditorInspection",
   "auditLoop",
+  "auditLoopStopStreak",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -360,6 +366,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.38.43: loop auditing is opt-in — 0 = off. N = a detached audit every
   // N loop iterations (same auditor infrastructure as goal audits).
   auditLoop: 0,
+  // v0.38.46: two consecutive disapprovals stop the loop by default.
+  auditLoopStopStreak: 2,
   // v0.34.142: an extra blind retry at :00:30 after every hour starts.
   // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.
@@ -491,6 +499,12 @@ export function normalizeLoadedSettings(settings: Settings): Settings {
       || settings.auditLoop < 0 || settings.auditLoop > MAX_AUDIT_LOOP_INTERVAL) {
     settings.auditLoop = 0;
   }
+  // v0.38.46: disapproval threshold — junk normalizes to the default (2),
+  // never to off: this one has no "off".
+  if (typeof settings.auditLoopStopStreak !== "number" || !Number.isInteger(settings.auditLoopStopStreak)
+      || settings.auditLoopStopStreak < 1 || settings.auditLoopStopStreak > MAX_AUDIT_LOOP_STOP_STREAK) {
+    settings.auditLoopStopStreak = DEFAULT_SETTINGS.auditLoopStopStreak;
+  }
   // v0.38.3: retention is a review window, not a watchdog budget — 0 means
   // "reap proven-dead dirs immediately", so the floor is 0, not a minute.
   if (
@@ -618,6 +632,9 @@ export function loadSettings(cwd: string): Settings {
 /** v0.38.43: loop-audit cadence upper bound — hand-edited files may carry
  * junk; a cadence beyond this is a typo, not a policy. */
 export const MAX_AUDIT_LOOP_INTERVAL = 1000;
+/** v0.38.46: ceiling for auditLoopStopStreak — beyond single digits the
+ * setting means "keep auditing"; 100 is effectively never-stop. */
+export const MAX_AUDIT_LOOP_STOP_STREAK = 100;
 
 export function loadGlobalSettings(): Settings {
   return normalizeLoadedSettings(mergeSettings(
@@ -651,6 +668,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditJobRetentionMs",
   "auditorInspection",
   "auditLoop",
+  "auditLoopStopStreak",
   "notifyCmd",
   "tokenLimit",
   "wedgeAlertMinutes",

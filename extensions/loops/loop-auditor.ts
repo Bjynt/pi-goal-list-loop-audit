@@ -53,8 +53,10 @@ import type { LoopState } from "../goal-loop-forever.js";
 
 const execFileAsync = promisify(execFile);
 
-/** Two consecutive disapprovals stop the loop (same spirit as the goal
- * auditor's bounded no-progress escalation — one strike steers, two stop). */
+/** DEFAULT: two consecutive disapprovals stop the loop (same spirit as the
+ * goal auditor's bounded no-progress escalation — one strike steers, two
+ * stop). Operator-configurable via the `auditLoopStopStreak` setting
+ * (v0.38.46); this constant is the fallback when state predates the stamp. */
 export const LOOP_AUDIT_STOP_STREAK = 2;
 
 /** Bounded spec excerpt size for the audit prompt (chars). */
@@ -167,6 +169,7 @@ export function applyLoopAuditVerdict(
   loop: LoopState,
   result: GoalAuditorResult,
   correctiveText?: string,
+  stopStreak: number = LOOP_AUDIT_STOP_STREAK,
 ): "approved" | "disapproved-corrective" | "disapproved-stop" | "impossible" | "infra" {
   if (result.approved) {
     loop.consecutiveLoopAuditDisapprovals = 0;
@@ -177,7 +180,7 @@ export function applyLoopAuditVerdict(
   if (result.disapproved) {
     const streak = (loop.consecutiveLoopAuditDisapprovals ?? 0) + 1;
     loop.consecutiveLoopAuditDisapprovals = streak;
-    if (streak >= LOOP_AUDIT_STOP_STREAK) {
+    if (streak >= stopStreak) {
       loop.loopAuditStopRequested = true;
       // The auditor's FINAL required fixes ride the stop itself — the loop
       // is over, so the note has nowhere else to go, and the operator
@@ -295,7 +298,12 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
     // The same feedback cap as goal-auditor disapprovals: tail-preserving,
     // so the "## Required fixes" section survives truncation.
     const correctiveText = auditFeedbackExcerpt(result.output, settings.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS);
-    outcome = applyLoopAuditVerdict(loop, result, correctiveText);
+    // v0.38.46: operator-configurable stop threshold (normalized by
+    // loadSettings; default 2). Stamped on the loop so the status/widget
+    // denominators show the POLICY that produced the streak.
+    const stopStreak = loadSettings(ctx.cwd).auditLoopStopStreak ?? LOOP_AUDIT_STOP_STREAK;
+    loop.loopAuditStopStreak = stopStreak;
+    outcome = applyLoopAuditVerdict(loop, result, correctiveText, stopStreak);
   } finally {
     loopAuditInFlight = false;
   }
@@ -347,7 +355,7 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
       notifyBestEffort(ctx, `Loop audit (iteration ${iteration}) flagged gaps — corrective directive queued for the next iteration.`, "warning");
       break;
     case "disapproved-stop":
-      notifyBestEffort(ctx, `Loop audit (iteration ${iteration}): ${LOOP_AUDIT_STOP_STREAK} consecutive disapprovals — the loop stops at the next tick.`, "warning");
+      notifyBestEffort(ctx, `Loop audit (iteration ${iteration}): ${loop.loopAuditStopStreak ?? LOOP_AUDIT_STOP_STREAK} consecutive disapprovals — the loop stops at the next tick.`, "warning");
       break;
     case "impossible":
       notifyBestEffort(ctx, `Loop audit (iteration ${iteration}): the auditor says the target can never be satisfied — the loop stops at the next tick.`, "warning");

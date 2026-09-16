@@ -24,7 +24,9 @@ test("/loop status renders the loop-audit line gated on consumption state", () =
   );
   assert.match(loopSrc, /Loop audit: iter \$\{loop\.lastLoopAuditIteration\} → \$\{loop\.lastLoopAuditVerdict/);
   // Streak renders only while a disapproval is live, with the stop threshold.
-  assert.match(loopSrc, /disapproval streak \$\{streak\}\/\$\{LOOP_AUDIT_STOP_STREAK\}/);
+  // v0.38.46: denominator = the stamped policy (auditLoopStopStreak setting),
+  // falling back to the constant for state predating the stamp.
+  assert.match(loopSrc, /disapproval streak \$\{streak\}\/\$\{loop\.loopAuditStopStreak \?\? LOOP_AUDIT_STOP_STREAK\}/);
   assert.match(loopSrc, /import \{ maybeTriggerLoopAudit, LOOP_AUDIT_STOP_STREAK \} from "\.\/loops\/loop-auditor\.js";/);
 });
 

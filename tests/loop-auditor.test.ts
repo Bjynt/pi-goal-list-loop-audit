@@ -15,7 +15,7 @@ import {
   LOOP_AUDIT_STOP_STREAK,
 } from "../extensions/loops/loop-auditor.ts";
 import { buildLoopAuditorPrompt } from "../extensions/goal-loop-auditor.ts";
-import { normalizeLoadedSettings, MAX_AUDIT_LOOP_INTERVAL } from "../extensions/goal-settings.ts";
+import { normalizeLoadedSettings, MAX_AUDIT_LOOP_INTERVAL, MAX_AUDIT_LOOP_STOP_STREAK } from "../extensions/goal-settings.ts";
 import type { LoopState } from "../extensions/goal-loop-forever.ts";
 import type { GoalAuditorResult } from "../extensions/goal-loop-auditor-process.ts";
 
@@ -300,4 +300,37 @@ test("corrective note rides exactly one iteration: templates, substitution, pre-
   // The retry payload reuses the SAME captured copy (not a re-read of state).
   const sends = loopSrc.match(/loopResync \+ loopPrompt\(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote, loopAuditNote\)/g) ?? [];
   assert.equal(sends.length, 2, "live send and verbatim-retry payload share one captured note");
+});
+
+// =================================================================
+// v0.38.46: operator-configurable stop threshold (auditLoopStopStreak)
+// =================================================================
+
+test("loop audit verdict: custom threshold — strikes steer until the configured streak", () => {
+  // Threshold 3: the first TWO disapprovals ride corrective directives;
+  // only the third stops.
+  const loop = testLoop();
+  assert.equal(applyLoopAuditVerdict(loop, verdict({ disapproved: true, output: "x" }), "fix A", 3), "disapproved-corrective");
+  assert.equal(loop.consecutiveLoopAuditDisapprovals, 1);
+  assert.equal(loop.loopAuditNote, "fix A");
+  assert.equal(loop.loopAuditStopRequested, undefined);
+  assert.equal(applyLoopAuditVerdict(loop, verdict({ disapproved: true, output: "x" }), "fix B", 3), "disapproved-corrective");
+  assert.equal(loop.consecutiveLoopAuditDisapprovals, 2);
+  assert.equal(loop.loopAuditStopRequested, undefined, "streak 2 < threshold 3 — still steering, not stopping");
+  assert.equal(applyLoopAuditVerdict(loop, verdict({ disapproved: true, output: "x" }), "fix C", 3), "disapproved-stop");
+  assert.match(loop.loopAuditStopReason ?? "", /3 consecutive disapprovals/);
+  // Threshold 1: the FIRST disapproval stops (auditor veto).
+  const loop1 = testLoop();
+  assert.equal(applyLoopAuditVerdict(loop1, verdict({ disapproved: true, output: "x" }), "x", 1), "disapproved-stop");
+});
+
+test("auditLoopStopStreak setting: valid values preserved at the bounds, junk → default 2 (no off)", () => {
+  assert.equal(normalizeLoadedSettings({ auditLoopStopStreak: 5 }).auditLoopStopStreak, 5);
+  assert.equal(normalizeLoadedSettings({ auditLoopStopStreak: 1 }).auditLoopStopStreak, 1);
+  assert.equal(normalizeLoadedSettings({ auditLoopStopStreak: MAX_AUDIT_LOOP_STOP_STREAK }).auditLoopStopStreak, MAX_AUDIT_LOOP_STOP_STREAK);
+  for (const junk of ["three" as any, 0, -1, 2.5, MAX_AUDIT_LOOP_STOP_STREAK + 1, null as any]) {
+    assert.equal(normalizeLoadedSettings({ auditLoopStopStreak: junk }).auditLoopStopStreak, 2, `junk ${String(junk)} → default 2`);
+  }
+  // Unset lands on the default too — loadSettings always yields a number.
+  assert.equal(normalizeLoadedSettings({}).auditLoopStopStreak, 2);
 });
