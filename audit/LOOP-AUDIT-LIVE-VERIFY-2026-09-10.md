@@ -61,3 +61,16 @@ past the cap mid-run (69 KB+ at snapshot) — per design, the NEXT audit skips
 this seed and resumes the newest qualifying smaller hop or starts fresh; the
 chain cannot grow unboundedly again. audits.jsonl record appends at verdict
 consumption (job still live at snapshot: lock + progress.json, no result yet).
+
+## Full consumption cycle in production (loop-audit-30, host 2026-09-15)
+
+First loop audit under the merged stack COMPLETED and every surface fired:
+- result.json -> verdict approved; ledger loop_audit iter 30 (streak 0).
+- audits.jsonl record: at 2026-09-15T23:41:27Z, goalId loop:<run>, resumedFrom
+  mtwbqxg5-..., sessionPath present, durationMs 4597109 (~77 min).
+- LoopState stamped at CONSUMPTION: lastLoopAuditIteration=30,
+  lastLoopAuditVerdict="approved", streak 0 -> /loop status renders
+  "Loop audit: iter 30 -> approved".
+Cost data point supporting the cap: resuming a 55 KB seed ran ~77 min. The
+cap keeps any single resume hop bounded so no future audit can inherit an
+unbounded conversation.
