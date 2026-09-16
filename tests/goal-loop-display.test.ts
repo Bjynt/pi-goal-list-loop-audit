@@ -180,3 +180,16 @@ test("active card with an action row closes the tree", () => {
   assert.doesNotMatch(rendered, /model: primary/, "steady-state model row is dropped");
   assert.match(lines.at(-1)!, /^└─ ✓ bash/, "the action row closes the card instead of promising more");
 });
+
+test("widget loop card shows consumed loop-audit state (glyph + live streak)", () => {
+  const mk = (over: object) => ({
+    target: "t", iteration: 7, maxIterations: 0, plateauWindow: 5, stallCount: 0,
+    startedAt: "2026-09-15T20:00:00Z", active: true, ...over,
+  });
+  const run = (l: object) =>
+    buildWidgetLines({ goal: null, list: [], loop: l as never }, null, Date.parse("2026-09-15T20:01:00Z"))!.join("\n");
+  assert.match(run(mk({ lastLoopAuditIteration: 5, lastLoopAuditVerdict: "approved" })), /audit ✔/);
+  assert.match(run(mk({ lastLoopAuditIteration: 5, lastLoopAuditVerdict: "disapproved-corrective", consecutiveLoopAuditDisapprovals: 1 })), /audit ✖ 1\/2/);
+  assert.match(run(mk({ lastLoopAuditIteration: 5, lastLoopAuditVerdict: "infra:timeout" })), /audit ⚠/);
+  assert.ok(!run(mk({})).includes("audit"), "no audit segment before the first consumed verdict");
+});
