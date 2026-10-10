@@ -345,3 +345,12 @@ test("loop_audit ledger event records the governing stop policy (source pin)", a
   // is interpretable from the ledger alone (threshold N vs. higher).
   assert.match(src, /stopStreak: loop\.loopAuditStopStreak \?\? LOOP_AUDIT_STOP_STREAK,/);
 });
+
+test("in-flight skip ledger event names the running audit (source pin)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile("extensions/loops/loop-auditor.ts", "utf8");
+  assert.match(src, /loop_audit_skipped_in_flight", \{ iteration: loop\.iteration, inFlightIteration: loopAuditInFlight\.iteration \}/);
+  // The guard carries the trigger iteration and releases in finally.
+  assert.match(src, /loopAuditInFlight = \{ iteration \};/);
+  assert.match(src, /loopAuditInFlight = null;/);
+});

@@ -64,11 +64,14 @@ const LOOP_AUDIT_SPEC_EXCERPT_CHARS = 4000;
 /** Recent-iteration tail carried into the prompt (entries). */
 const LOOP_AUDIT_HISTORY_TAIL = 10;
 
-let loopAuditInFlight = false;
+/** In-flight guard: which audit is running (its trigger iteration), or
+ * null. The iteration rides the skip ledger events so an operator can tell
+ * "slot 44 skipped because audit 43 is still running" from a bare skip. */
+let loopAuditInFlight: { iteration: number } | null = null;
 
 /** Test/inspection accessor for the in-flight guard. */
 export function isLoopAuditInFlight(): boolean {
-  return loopAuditInFlight;
+  return loopAuditInFlight !== null;
 }
 
 /** Pure trigger predicate: fire when the interval is positive, the loop has
@@ -223,8 +226,8 @@ export function loopAuditSubject(loop: LoopState): string {
 }
 
 async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: LoopState, settings: Settings): Promise<void> {
-  loopAuditInFlight = true;
   const iteration = loop.iteration;
+  loopAuditInFlight = { iteration };
   let outcome: ReturnType<typeof applyLoopAuditVerdict> = "infra";
   let errorText: string | undefined;
   let infrastructureClass: string | undefined;
@@ -306,7 +309,7 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
     loop.loopAuditStopStreak = stopStreak;
     outcome = applyLoopAuditVerdict(loop, result, correctiveText, stopStreak);
   } finally {
-    loopAuditInFlight = false;
+    loopAuditInFlight = null;
   }
   // Durable evidence + user-visible signal AFTER the in-flight guard is
   // released: the next tick (or a /loop stop) sees state either way.
@@ -379,11 +382,11 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
 export function maybeTriggerLoopAudit(ctx: ExtensionContext, loop: LoopState): void {
   const settings = loadSettings(ctx.cwd);
   const interval = typeof settings.auditLoop === "number" ? settings.auditLoop : 0;
-  if (!shouldTriggerLoopAudit(loop.iteration, interval, loopAuditInFlight)) {
+  if (!shouldTriggerLoopAudit(loop.iteration, interval, loopAuditInFlight !== null)) {
     // Ledger the skip ONLY on a would-have-fired slot while an audit is in
     // flight — an off setting must stay silent.
     if (interval > 0 && loop.iteration > 0 && loop.iteration % interval === 0 && loopAuditInFlight) {
-      appendLedger(ctx.cwd, "loop_audit_skipped_in_flight", { iteration: loop.iteration });
+      appendLedger(ctx.cwd, "loop_audit_skipped_in_flight", { iteration: loop.iteration, inFlightIteration: loopAuditInFlight.iteration });
     }
     return;
   }
