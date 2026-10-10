@@ -101,3 +101,12 @@ The global settings file was edited 2026-10-10 09:08 (when `auditLoopStopStreak:
 - Audits 43, 46, 48, 50 (and later) run `--no-session`: no `session.jsonl` in the job dirs, `inspectionResumedFrom` absent from `request.json` — the chain simply doesn't start.
 - The loop target text ("inspectable, so should resume previous audit session") is stale relative to this decision; the target's core ask ("ensure the branch works as intended") stands.
 - Resume remains verified by the 2026-09-15 production evidence above, the offline repro (`repro/loop-audit-resume-bound-demo.mjs`), and the unit suites — it is a one-key re-enable (`auditorInspection: true`) away whenever wanted.
+
+## 2026-10-10 — failure paths untriggered in production; off-mode cost data
+
+Observed across the 2026-10-10 host (reloaded 14:49, inspection off, `auditLoopStopStreak: 5`):
+
+- **Durable same-subject guard**: zero `loop_audit_skipped_active_prior` events — no audit was orphaned by a host replacement (the 14:49 reload caught no in-flight audit). The guard remains verified by unit tests only.
+- **Worker fatal log**: zero `worker.error.log` files in any job dir — no worker has crashed in production. The self-diagnosis path remains verified by the integration test (poisoned-hash spawn) only.
+- **Off-mode durations** (fresh `--no-session` audits, model `paro-vllm/Qwen3.8-PA`): 61, 61, 18, 53 min for the four 2026-10-10 audits — comparable to the resumed era's 34, 71, 6, 10 min on a *different* model (`allamacpp/qwen-flash`), so the model change dominates; the 64 KiB resume cap's cost argument (quadratic growth within a chain, aborts clustering at 50–81 KB seeds) is unaffected.
+- Verdicts: 43, 46, 48, 50 all approved; streak 0 throughout.
