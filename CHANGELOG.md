@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.38.46 — loop auditor + resumable inspection sessions (PR #3 → #51 path) (2026-09-11)
+## Unreleased — loop auditor + resumable inspection sessions
 
-> Code markers read `v0.38.43` (the intended release before upstream shipped 0.38.43–0.38.45 mid-flight); the feature ships here.
+> Code markers read `v0.38.43`/`v0.38.46` (the intended release before upstream shipped ahead mid-flight); the feature ships in the next upstream release, which takes the next free version number.
 
 ### Added
 
