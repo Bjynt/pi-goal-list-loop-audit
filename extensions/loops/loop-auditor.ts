@@ -315,6 +315,9 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
     ...(errorText ? { error: errorText.slice(0, 300) } : {}),
     ...(infrastructureClass ? { infrastructureClass } : {}),
     consecutiveDisapprovals: loop.consecutiveLoopAuditDisapprovals ?? 0,
+    // The POLICY that governed this verdict — without it, a stop at streak N
+    // is uninterpretable from the ledger alone (was the threshold N or higher?).
+    stopStreak: loop.loopAuditStopStreak ?? LOOP_AUDIT_STOP_STREAK,
     target: loop.target.slice(0, 200),
   });
   // Operator-facing record: the same audits.jsonl stream `/glla audits`

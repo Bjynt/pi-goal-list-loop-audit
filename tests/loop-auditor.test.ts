@@ -334,3 +334,11 @@ test("auditLoopStopStreak setting: valid values preserved at the bounds, junk â†
   // Unset lands on the default too â€” loadSettings always yields a number.
   assert.equal(normalizeLoadedSettings({}).auditLoopStopStreak, 2);
 });
+
+test("loop_audit ledger event records the governing stop policy (source pin)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile("extensions/loops/loop-auditor.ts", "utf8");
+  // The ledger event carries the effective threshold, so a stop at streak N
+  // is interpretable from the ledger alone (threshold N vs. higher).
+  assert.match(src, /stopStreak: loop\.loopAuditStopStreak \?\? LOOP_AUDIT_STOP_STREAK,/);
+});
