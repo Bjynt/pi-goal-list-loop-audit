@@ -92,4 +92,4 @@ Live state (`.pi-glla/active.jsonl`) after the next consumed verdict:
 "loopAuditStopStreak": 5
 ```
 
-i.e. the full chain works end-to-end in production: setting → normalization → dispatch → verdict consumption → threshold stamped on loop state (the value `/loop status` and the widget render as the `N/M` denominator). Audits 41, 42 and 43 all approved (`loop_audit` ledger events, `consecutiveDisapprovals: 0`) — three consecutive full production cycles on the current tree, and the operator's stated preference ("higher than 2") is now live with no code change.
+i.e. the full chain works end-to-end in production: setting → normalization → dispatch → verdict consumption → threshold stamped on loop state (the value `/loop status` and the widget render as the `N/M` denominator). Audits 41, 42, 43 and 46 all approved (`loop_audit` ledger events, `consecutiveDisapprovals: 0`) — four consecutive full production cycles on the current tree (44/45 slots skipped in-flight, as designed), and the operator's stated preference ("higher than 2") is now live with no code change.
