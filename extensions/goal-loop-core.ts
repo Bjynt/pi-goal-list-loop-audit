@@ -3529,6 +3529,10 @@ export interface AuditLogEntry {
   verdict: "approved" | "disapproved" | "impossible" | "shield_blocked" | "error";
   /** Loop audits only: infrastructure failure class behind an "error". */
   infrastructureClass?: string;
+  /** Loop audits only: the disapproval-stop threshold (auditLoopStopStreak
+   * setting) that governed this verdict — a disapproval record is
+   * uninterpretable without knowing whether it was strike 1 of 5 or 2 of 2. */
+  stopStreak?: number;
   /** Loop audits only: where the auditor's inspectable pi session lives,
    * and which prior job it resumed from (absent = fresh session). */
   sessionPath?: string;
@@ -3650,7 +3654,7 @@ export function formatAuditLog(entries: AuditLogEntry[]): string {
       const firstLine = e.verdict === "error"
         ? sanitizeProviderDisplayText(providerErrorPresentation(e.error, "completion").display)
         : sanitizeProviderDisplayText((e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90));
-      return `${VERDICT_GLYPH[e.verdict]} ${day} [${auditLogSubjectLabel(e.goalId)}] ${e.model} — ${firstLine}`;
+      return `${VERDICT_GLYPH[e.verdict]} ${day} [${auditLogSubjectLabel(e.goalId)}]${e.stopStreak !== undefined ? ` (stop after ${e.stopStreak})` : ""} ${e.model} — ${firstLine}`;
     })
     .join("\n");
 }

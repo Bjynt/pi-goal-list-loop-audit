@@ -150,6 +150,7 @@ export function buildLoopAuditLogEntry(
     objective: loop.target,
     verdict,
     ...(result.infrastructureClass ? { infrastructureClass: result.infrastructureClass } : {}),
+    ...(loop.loopAuditStopStreak !== undefined ? { stopStreak: loop.loopAuditStopStreak } : {}),
     ...(extra.sessionPath ? { sessionPath: extra.sessionPath } : {}),
     ...(extra.resumedFrom ? { resumedFrom: extra.resumedFrom } : {}),
     model: result.model,

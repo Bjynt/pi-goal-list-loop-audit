@@ -95,12 +95,15 @@ test("formatAuditLog: one line per verdict with glyph, goal, model, first report
   const entries: AuditLogEntry[] = [
     { at: "2026-07-25T20:00:00Z", goalId: "20260725-abc123", objective: "x", verdict: "disapproved", model: "MiniMax-M3", thinkingLevel: "high", report: "\n## Audit result\nbody" },
     { at: "2026-07-25T21:00:00Z", goalId: "20260725-def456", objective: "y", verdict: "approved", model: "k3", thinkingLevel: "high", report: "All checks pass." },
+    { at: "2026-07-25T22:00:00Z", goalId: "loop:2026-07-25T22:00:00.000Z", objective: "z", verdict: "disapproved", model: "k3", thinkingLevel: "high", report: "Gaps found.", stopStreak: 5 },
   ];
   const out = formatAuditLog(entries);
   const lines = out.split("\n");
-  assert.equal(lines.length, 2);
+  assert.equal(lines.length, 3);
   assert.match(lines[0]!, /^✖ 07-25 20:00 \[abc123\] MiniMax-M3 — ## Audit result$/);
   assert.match(lines[1]!, /^✔ 07-25 21:00 \[def456\] k3 — All checks pass\.$/);
+  // Loop records carry the governing stop policy; goal records never do.
+  assert.match(lines[2]!, /^✖ 07-25 22:00 \[loop 25 22:00\] \(stop after 5\) k3 — Gaps found\.$/);
   assert.match(formatAuditLog([]), /no audits logged yet/);
 });
 

@@ -241,6 +241,7 @@ test("loop audit record round-trips through the audits.jsonl reader (what /glla 
   const dir = await mkdtemp(path.join(tmpdir(), "glla-loop-audit-log-"));
   try {
     const loop = testLoop();
+    loop.loopAuditStopStreak = 5; // the operator-raised threshold (live: 5)
     appendAuditLog(dir, buildLoopAuditLogEntry(loop, verdict({ approved: true, output: "r <approved/>", model: "m/one", thinkingLevel: "high" }), "approved", { at: "2026-09-11T00:00:00.000Z", sessionPath: "/j/s.jsonl", durationMs: 4200 }));
     appendAuditLog(dir, buildLoopAuditLogEntry(loop, verdict({ error: "auditor stalled", infrastructureClass: "timeout", output: "" }), "infra", { at: "2026-09-11T00:30:00.000Z", resumedFrom: "loop-audit-9-abc" }));
     const tail = readAuditLog(dir, 2);
@@ -249,9 +250,11 @@ test("loop audit record round-trips through the audits.jsonl reader (what /glla 
     assert.equal(tail[0]!.verdict, "approved");
     assert.equal(tail[0]!.sessionPath, "/j/s.jsonl");
     assert.ok(!("resumedFrom" in tail[0]!));
+    assert.equal(tail[0]!.stopStreak, 5, "the governing stop policy rides the record");
     assert.equal(tail[1]!.verdict, "error");
     assert.equal(tail[1]!.infrastructureClass, "timeout");
     assert.equal(tail[1]!.resumedFrom, "loop-audit-9-abc");
+    assert.equal(tail[1]!.stopStreak, 5);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
