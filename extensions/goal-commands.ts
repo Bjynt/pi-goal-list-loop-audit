@@ -2760,6 +2760,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       `auditJobRetentionMs: ${((effectiveSettings.auditJobRetentionMs ?? AUDIT_JOB_CLEANUP_MIN_AGE_MS) / 60000).toString()}m  [${prov.auditJobRetentionMs?.source ?? "default"}]`,
       fmt("auditorInspection", "auditorInspection"),
       `auditLoop: ${typeof effectiveSettings.auditLoop === "number" && effectiveSettings.auditLoop > 0 ? `every ${effectiveSettings.auditLoop}` : "off"}  [${prov.auditLoop?.source ?? "default"}]`,
+      `auditLoopStopStreak: ${effectiveSettings.auditLoopStopStreak ?? 2}  [${prov.auditLoopStopStreak?.source ?? "default"}]`,
       fmt("hourlyRetryProbe", "hourlyRetryProbe"),
       fmt("subagentModelStrategy", "subagentModelStrategy"),
       fmt("subagentModelOverrides", "subagentModelOverrides"),

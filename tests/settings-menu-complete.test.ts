@@ -428,6 +428,7 @@ test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list",
   assert.match(fallback, /mainAgent:.*\[runtime\]/, "headless fallback must show the current main agent");
   assert.match(fallback, /formatSettingValue\(p\.value\)/, "headless fallback must serialize structured settings values");
   assert.match(fallback, /auditLoop:/, "headless fallback must show the loop-audit cadence");
+  assert.match(fallback, /auditLoopStopStreak: \$\{effectiveSettings\.auditLoopStopStreak \?\? 2\}/, "headless fallback must show the loop-audit stop threshold (default 2 when unset)");
 
   for (const key of [
     "stateRoot",
