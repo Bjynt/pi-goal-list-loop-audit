@@ -93,3 +93,11 @@ Live state (`.pi-glla/active.jsonl`) after the next consumed verdict:
 ```
 
 i.e. the full chain works end-to-end in production: setting → normalization → dispatch → verdict consumption → threshold stamped on loop state (the value `/loop status` and the widget render as the `N/M` denominator). Audits 41, 42, 43 and 46 all approved (`loop_audit` ledger events, `consecutiveDisapprovals: 0`) — four consecutive full production cycles on the current tree (44/45 slots skipped in-flight, as designed), and the operator's stated preference ("higher than 2") is now live with no code change.
+
+## 2026-10-10 — inspection deliberately OFF (operator decision)
+
+The global settings file was edited 2026-10-10 09:08 (when `auditLoopStopStreak: 5` was set) and carries **no `auditorInspection` key** — inspection is off. Confirmed with the operator that this was deliberate (not a dropped key). Consequences, all expected in off mode:
+
+- Audits 43, 46, 48, 50 (and later) run `--no-session`: no `session.jsonl` in the job dirs, `inspectionResumedFrom` absent from `request.json` — the chain simply doesn't start.
+- The loop target text ("inspectable, so should resume previous audit session") is stale relative to this decision; the target's core ask ("ensure the branch works as intended") stands.
+- Resume remains verified by the 2026-09-15 production evidence above, the offline repro (`repro/loop-audit-resume-bound-demo.mjs`), and the unit suites — it is a one-key re-enable (`auditorInspection: true`) away whenever wanted.
