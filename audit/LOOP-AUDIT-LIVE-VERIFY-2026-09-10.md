@@ -74,3 +74,22 @@ First loop audit under the merged stack COMPLETED and every surface fired:
 Cost data point supporting the cap: resuming a 55 KB seed ran ~77 min. The
 cap keeps any single resume hop bounded so no future audit can inherit an
 unbounded conversation.
+
+## 2026-10-10 — configurable stop threshold verified in production
+
+Host reloaded 2026-10-10 14:49 onto the post-`2aea7614` tree (auditLoopStopStreak shipped). The operator then set the new setting in the global file (`~/.pi/agent/pi-goal-list-loop-audit.settings.json`):
+
+```json
+"auditLoop": 1,
+"auditLoopStopStreak": 5
+```
+
+Live state (`.pi-glla/active.jsonl`) after the next consumed verdict:
+
+```
+"lastLoopAuditIteration": 43
+"lastLoopAuditVerdict": "approved"
+"loopAuditStopStreak": 5
+```
+
+i.e. the full chain works end-to-end in production: setting → normalization → dispatch → verdict consumption → threshold stamped on loop state (the value `/loop status` and the widget render as the `N/M` denominator). Audits 41, 42 and 43 all approved (`loop_audit` ledger events, `consecutiveDisapprovals: 0`) — three consecutive full production cycles on the current tree, and the operator's stated preference ("higher than 2") is now live with no code change.
