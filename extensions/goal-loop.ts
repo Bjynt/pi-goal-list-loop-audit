@@ -1114,6 +1114,12 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         lastStuckReason: undefined,
         stallCount: 0,
         auditPlateauReprieves: 0,
+        // The audit ladder re-arms too: after an audit-stop the operator has
+        // read the required fixes and resumed deliberately — the disapproval
+        // chain is broken by the stop + intervention. Without this reset a
+        // loop stopped at streak 5/N would stop again on the FIRST future
+        // disapproval (streak 6 ≥ N) with no room to correct course.
+        consecutiveLoopAuditDisapprovals: 0,
         ...(resetTimeWindow ? { startedAt: resumedAt } : {}),
         ...(resetTokenBudget ? { tokensUsed: 0 } : {}),
       };

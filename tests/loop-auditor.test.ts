@@ -370,3 +370,14 @@ test("user stop clears a pending audit-stop request (no stale re-fire on resume 
   // same state write that stops the loop.
   assert.match(src, /active: false, stopReason: `stopped by user \(\/loop \$\{sub\}\)`, loopAuditStopRequested: undefined, loopAuditStopReason: undefined/);
 });
+
+test("explicit resume re-arms the audit ladder (streak reset — source pin)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile("extensions/goal-loop.ts", "utf8");
+  // The /loop resume state write must reset the disapproval streak alongside
+  // the other ladder counters (v0.29.19 principle: an explicit resume wins
+  // over the ladder's memory).
+  const idx = src.indexOf("auditPlateauReprieves: 0,");
+  assert.ok(idx > 0, "resume reset block found");
+  assert.match(src.slice(idx, idx + 700), /consecutiveLoopAuditDisapprovals: 0,/);
+});
