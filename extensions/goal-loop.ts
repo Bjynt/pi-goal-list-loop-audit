@@ -1277,7 +1277,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // A user stop is authoritative even when the loop was already held by a
     // lifecycle marker. Do not let HELD_ON_RESTORE survive `/loop stop` and
     // become an automatic successor resume later.
-    state.loop = { ...state.loop, active: false, stopReason: `stopped by user (/loop ${sub})` };
+    state.loop = { ...state.loop, active: false, stopReason: `stopped by user (/loop ${sub})`, loopAuditStopRequested: undefined, loopAuditStopReason: undefined };
+    // A pending audit-stop request is satisfied the moment the loop stops —
+    // by whom is recorded in stopReason. Left uncleared, it would re-fire on
+    // /loop resume: the next tick sees the stale flag and stops the freshly
+    // resumed loop with a reason from a previous run.
     persistState(ctx);
     // An explicit stop is authoritative: a detached loop audit can otherwise
     // keep burning tokens for its full stall window after the loop is gone.

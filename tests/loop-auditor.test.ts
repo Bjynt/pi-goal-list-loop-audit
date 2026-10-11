@@ -362,3 +362,11 @@ test("cancelInFlightLoopAudit: no-op (false) when nothing is in flight", () => {
   assert.equal(isLoopAuditInFlight(), false);
   assert.equal(cancelInFlightLoopAudit("/nonexistent-cwd"), false);
 });
+
+test("user stop clears a pending audit-stop request (no stale re-fire on resume — source pin)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile("extensions/goal-loop.ts", "utf8");
+  // The /loop stop path must clear the async stop request + reason in the
+  // same state write that stops the loop.
+  assert.match(src, /active: false, stopReason: `stopped by user \(\/loop \$\{sub\}\)`, loopAuditStopRequested: undefined, loopAuditStopReason: undefined/);
+});
