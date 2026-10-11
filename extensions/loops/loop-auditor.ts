@@ -46,6 +46,7 @@ import {
   DEFAULT_AUDITOR_TOOL_TIMEOUT_MS,
   DEFAULT_AUDITOR_STALL_MS,
   type GoalAuditorResult,
+  cancelDetachedGoalCompletionAuditor,
 } from "../goal-loop-auditor-process.js";
 import { buildLoopAuditorPrompt, type LoopAuditFacts } from "../goal-loop-auditor.js";
 import { resolveAuditorModel } from "./goal-settings-ui.js";
@@ -64,14 +65,27 @@ const LOOP_AUDIT_SPEC_EXCERPT_CHARS = 4000;
 /** Recent-iteration tail carried into the prompt (entries). */
 const LOOP_AUDIT_HISTORY_TAIL = 10;
 
-/** In-flight guard: which audit is running (its trigger iteration), or
- * null. The iteration rides the skip ledger events so an operator can tell
- * "slot 44 skipped because audit 43 is still running" from a bare skip. */
-let loopAuditInFlight: { iteration: number } | null = null;
+/** In-flight guard: which audit is running (its trigger iteration + the
+ * named attempt, once dispatched), or null. The iteration rides the skip
+ * ledger events so an operator can tell "slot 44 skipped because audit 43
+ * is still running" from a bare skip; the attemptId lets /loop stop cancel
+ * the worker (goal audits cancel the same way on replacement). */
+let loopAuditInFlight: { iteration: number; attemptId?: string } | null = null;
 
 /** Test/inspection accessor for the in-flight guard. */
 export function isLoopAuditInFlight(): boolean {
   return loopAuditInFlight !== null;
+}
+
+/** Cancel the in-flight loop audit's worker (best effort). Called by the
+ * /loop stop path: an explicit stop is authoritative, and a detached audit
+ * can otherwise keep burning tokens for its full stall window. Mirrors the
+ * goal-audit cancellation on goal replacement. Returns true when a worker
+ * cancel was issued. */
+export function cancelInFlightLoopAudit(cwd: string): boolean {
+  if (!loopAuditInFlight?.attemptId) return false;
+  const attemptId = loopAuditInFlight.attemptId;
+  return cancelDetachedGoalCompletionAuditor(cwd, attemptId);
 }
 
 /** Pure trigger predicate: fire when the interval is positive, the loop has
@@ -268,6 +282,7 @@ async function runLoopAuditAndApply(cwd: string, ctx: ExtensionContext, loop: Lo
     // Named attempt: the audits-log record needs the job dir to point at
     // the inspectable session file (and its resume provenance).
     const auditAttemptId = `loop-audit-${iteration}-${Date.now().toString(36)}`;
+    loopAuditInFlight = { iteration, attemptId: auditAttemptId };
     dispatchStartedAt = Date.now();
     auditedJobDir = path.join(jobsRoot, auditAttemptId);
     const result = await runDetachedGoalCompletionAuditor({

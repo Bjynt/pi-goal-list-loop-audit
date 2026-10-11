@@ -13,6 +13,8 @@ import {
   buildLoopAuditLogEntry,
   shouldTriggerLoopAudit,
   LOOP_AUDIT_STOP_STREAK,
+  cancelInFlightLoopAudit,
+  isLoopAuditInFlight,
 } from "../extensions/loops/loop-auditor.ts";
 import { buildLoopAuditorPrompt } from "../extensions/goal-loop-auditor.ts";
 import { normalizeLoadedSettings, MAX_AUDIT_LOOP_INTERVAL, MAX_AUDIT_LOOP_STOP_STREAK } from "../extensions/goal-settings.ts";
@@ -353,4 +355,10 @@ test("in-flight skip ledger event names the running audit (source pin)", async (
   // The guard carries the trigger iteration and releases in finally.
   assert.match(src, /loopAuditInFlight = \{ iteration \};/);
   assert.match(src, /loopAuditInFlight = null;/);
+});
+
+test("cancelInFlightLoopAudit: no-op (false) when nothing is in flight", () => {
+  // Fresh module state: no audit dispatched → nothing to cancel, no I/O.
+  assert.equal(isLoopAuditInFlight(), false);
+  assert.equal(cancelInFlightLoopAudit("/nonexistent-cwd"), false);
 });

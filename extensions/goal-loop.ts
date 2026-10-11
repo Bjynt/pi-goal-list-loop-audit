@@ -58,7 +58,7 @@ import {
   LOOP_DEFAULTS,
 } from "./goal-loop-forever.js";
 import { loadSettings } from "./goal-settings.js";
-import { maybeTriggerLoopAudit, LOOP_AUDIT_STOP_STREAK } from "./loops/loop-auditor.js";
+import { maybeTriggerLoopAudit, LOOP_AUDIT_STOP_STREAK, cancelInFlightLoopAudit } from "./loops/loop-auditor.js";
 import { normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { createContinuationDispatch, type ContinuationDispatch } from "./goal-loop-dispatch.js";
 import { attemptFreshSessionRecovery } from "./goal-recovery.js";
@@ -1279,6 +1279,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // become an automatic successor resume later.
     state.loop = { ...state.loop, active: false, stopReason: `stopped by user (/loop ${sub})` };
     persistState(ctx);
+    // An explicit stop is authoritative: a detached loop audit can otherwise
+    // keep burning tokens for its full stall window after the loop is gone.
+    if (cancelInFlightLoopAudit(ctx.cwd)) {
+      ctx.ui.notify("In-flight loop audit cancelled with the loop.", "info");
+    }
     const stopGeneration = flags.sessionGeneration;
     await finishLoopGit(ctx, state.loop);
     const afterFinish = freshCtxForGeneration(stopGeneration);

@@ -27,7 +27,7 @@ test("/loop status renders the loop-audit line gated on consumption state", () =
   // v0.38.46: denominator = the stamped policy (auditLoopStopStreak setting),
   // falling back to the constant for state predating the stamp.
   assert.match(loopSrc, /disapproval streak \$\{streak\}\/\$\{loop\.loopAuditStopStreak \?\? LOOP_AUDIT_STOP_STREAK\}/);
-  assert.match(loopSrc, /import \{ maybeTriggerLoopAudit, LOOP_AUDIT_STOP_STREAK \} from "\.\/loops\/loop-auditor\.js";/);
+  assert.match(loopSrc, /import \{ maybeTriggerLoopAudit, LOOP_AUDIT_STOP_STREAK, cancelInFlightLoopAudit \} from "\.\/loops\/loop-auditor\.js";/);
 });
 
 test("the iteration+verdict stamp is consumed-side only — trigger no longer stamps", () => {
